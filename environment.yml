@@ -1,0 +1,12 @@
+name: rodeo2
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - numpy
+  - matplotlib
+  - pip
+  - scipy
+  - pip:
+    - polars
+    - git+https://github.com/NeptuneProjects/uwac-data-utils.git

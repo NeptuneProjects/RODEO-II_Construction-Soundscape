@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
 
-def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None):
+
+def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()
     return ax.pcolormesh(t, f, 10 * np.log10(Sxx), cmap="inferno", vmin=vmin, vmax=vmax)
@@ -24,7 +25,7 @@ def plot_spectrograms(
     vmin: Optional[float] = 60,
     vmax: Optional[float] = 120,
     fig_size: tuple[float] = (8, 6),
-):
+) -> plt.Figure:
     fs = ds.stats.sampling_rate
 
     window = 1
@@ -58,7 +59,7 @@ def plot_spectrograms(
 
         ax = axs[i]
         im = plot_spectrogram(f, t, Sxx, ax=ax, vmin=vmin, vmax=vmax)
-        
+
         ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
         if channel == ds.stats.channels[-1]:
             ax.set_xlabel("Time [s]")
@@ -66,7 +67,7 @@ def plot_spectrograms(
         else:
             ax.set_xticklabels([])
             ax.set_xlabel("")
-        
+
         cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
         cbar = fig.colorbar(im, cax=cax)
         cbar.set_label(f"PSD [$\\mathrm{{{ds.stats.units}}} / \\mathrm{{Hz}}^2$]")

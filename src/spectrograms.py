@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from argparse import ArgumentParser
+import argparse
 from pathlib import Path
 
 from datautils.data import read
@@ -11,7 +11,7 @@ import numpy as np
 import plotting
 
 
-def main(args):
+def main(args: argparse.Namespace):
     time_start = np.datetime64(args.time_start, "us")
     time_end = np.datetime64(args.time_end, "us")
     time_interval = np.timedelta64(args.time_interval, args.time_units)
@@ -53,7 +53,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Spectrogram plotting routine")
+    parser = argparse.ArgumentParser(description="Spectrogram plotting routine")
     parser.add_argument(
         "--catalogue",
         help="Path to the catalogue file",

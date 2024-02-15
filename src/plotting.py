@@ -17,7 +17,7 @@ def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
 def plot_spectrograms(
     ds: DataStream,
     title: Optional[str] = None,
-    window: int = 1,
+    tperseg: int = 1,
     overlap: float = 0.75,
     nfft: Optional[int] = None,
     fmin: Optional[float] = None,
@@ -28,12 +28,10 @@ def plot_spectrograms(
 ) -> plt.Figure:
     fs = ds.stats.sampling_rate
 
-    window = 1
-    window_size = int(window * fs)
-    overlap = 0.75
-    overlap_size = int(overlap * fs)
+    nperseg = int(tperseg * fs)
+    overlap_size = int(overlap * nperseg)
     if nfft is None:
-        nfft = window_size
+        nfft = nperseg
 
     fig, axs = plt.subplots(4, 1, figsize=fig_size, gridspec_kw={"hspace": 0.25})
     fig.suptitle(title)
@@ -42,7 +40,7 @@ def plot_spectrograms(
         f, t, Sxx = signal.spectrogram(
             ds.waveform[:, i],
             fs=fs,
-            nperseg=window_size,
+            nperseg=nperseg,
             noverlap=overlap_size,
             nfft=nfft,
         )

@@ -34,7 +34,7 @@ def main(args: argparse.Namespace):
         fig = plotting.plot_spectrograms(
             ds,
             title=f"{args.title}\n{np.datetime_as_string(time_start_i, unit="s")} - {np.datetime_as_string(time_end_i, unit="s")}",
-            window=args.window,
+            tperseg=args.tperseg,
             overlap=args.overlap,
             nfft=args.nfft,
             fmin=args.fmin,
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         "--channels", help="Channels to be read", type=str, default="0,1,2,3"
     )
     parser.add_argument("--title", help="Title of the plot", type=str, default="SHRU905/VLA1")
-    parser.add_argument("--window", help="Window size in seconds", type=int, default=1)
+    parser.add_argument("--tperseg", help="Window size in seconds", type=int, default=1)
     parser.add_argument(
         "--overlap", help="Overlap size in percentage", type=float, default=0.75
     )

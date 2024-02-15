@@ -21,6 +21,11 @@ def main(args: argparse.Namespace):
     for i in range(num_intervals):
         time_start_i = time_start + i * time_interval
         time_end_i = time_start + (i + 1) * time_interval
+        title = (
+            f"{args.title}\n"
+            f"{np.datetime_as_string(time_start_i, unit='s')}"
+            f" - {np.datetime_as_string(time_end_i, unit='s')}"
+        )
 
         cat_query = CatalogueQuery(
             catalogue=args.catalogue,
@@ -33,7 +38,7 @@ def main(args: argparse.Namespace):
 
         fig = plotting.plot_spectrograms(
             ds,
-            title=f"{args.title}\n{np.datetime_as_string(time_start_i, unit="s")} - {np.datetime_as_string(time_end_i, unit="s")}",
+            title=title,
             tperseg=args.tperseg,
             overlap=args.overlap,
             nfft=args.nfft,
@@ -43,13 +48,16 @@ def main(args: argparse.Namespace):
             vmax=args.vmax,
         )
         filename = (
-            np.datetime_as_string(time_start_i, unit='s')
+            np.datetime_as_string(time_start_i, unit="s")
             .replace("-", "")
             .replace("T", "_")
-            .replace(":", "") + \
-            "_" + args.title.replace("/", "_")
+            .replace(":", "")
+            + "_"
+            + args.title.replace("/", "_")
         )
-        fig.savefig(Path(args.destination / filename), bbox_inches="tight", facecolor="w")
+        fig.savefig(
+            Path(args.destination / filename), bbox_inches="tight", facecolor="w"
+        )
 
 
 if __name__ == "__main__":
@@ -77,14 +85,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--channels", help="Channels to be read", type=str, default="0,1,2,3"
     )
-    parser.add_argument("--title", help="Title of the plot", type=str, default="SHRU905/VLA1")
+    parser.add_argument(
+        "--title", help="Title of the plot", type=str, default="SHRU905/VLA1"
+    )
     parser.add_argument("--tperseg", help="Window size in seconds", type=int, default=1)
     parser.add_argument(
         "--overlap", help="Overlap size in percentage", type=float, default=0.75
     )
-    parser.add_argument("--nfft", help="Number of data points used in each block", type=int)
-    parser.add_argument("--fmin", help="Minimum frequency in Hz", type=float, default=20.0)
-    parser.add_argument("--fmax", help="Maximum frequency in Hz", type=float, default=300.0)
+    parser.add_argument(
+        "--nfft", help="Number of data points used in each block", type=int
+    )
+    parser.add_argument(
+        "--fmin", help="Minimum frequency in Hz", type=float, default=20.0
+    )
+    parser.add_argument(
+        "--fmax", help="Maximum frequency in Hz", type=float, default=300.0
+    )
     parser.add_argument(
         "--vmin", help="Minimum value for the color scale", type=float, default=60
     )

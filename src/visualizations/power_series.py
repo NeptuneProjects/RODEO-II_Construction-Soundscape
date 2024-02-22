@@ -10,23 +10,8 @@ from datautils.query import CatalogueQuery
 import matplotlib.pyplot as plt
 import numpy as np
 
+import helpers
 import plotting
-
-
-def moving_average(data, window_size):
-    if data.ndim == 1:
-        return np.convolve(data, np.ones(window_size) / window_size, mode="valid")
-    return np.apply_along_axis(
-        lambda m: np.convolve(m, np.ones(window_size) / window_size, mode="valid"),
-        axis=0,
-        arr=data,
-    )
-
-
-def safe_log10(x, eps=1e-10):
-    result = np.where(x > eps, x, -10)
-    np.log10(result, out=result, where=result > 0)
-    return result
 
 
 def main(args: argparse.Namespace):
@@ -65,7 +50,7 @@ def main(args: argparse.Namespace):
         
         if args.cutoff is not None:
             win_size = int(1 / args.cutoff * ds.stats.sampling_rate)
-            power = moving_average(power, win_size)
+            power = helpers.moving_average(power, win_size)
             if args.db:
                 title += f"\nAverage Power (window: $1 / {args.cutoff}$ Hz) [dB re 1 {ds.stats.units}$^2$]"
             else:
@@ -77,7 +62,7 @@ def main(args: argparse.Namespace):
                 title += f"\nInstantaneous Power [{ds.stats.units}$^2$]"
 
         if args.db:
-            power = 10 * safe_log10(power)
+            power = 10 * helpers.safe_log10(power)
         ds.waveform = power
 
         if not args.ymax:
@@ -102,7 +87,7 @@ def main(args: argparse.Namespace):
             filename += "_db"
         args.destination.mkdir(parents=True, exist_ok=True)
         fig.savefig(
-            Path(args.destination / filename), bbox_inches="tight", facecolor="w"
+            Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=200
         )
         print(f"{filename}.png saved to {args.destination}")
         plt.close()

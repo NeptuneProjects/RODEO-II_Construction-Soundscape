@@ -19,6 +19,8 @@ def main(args: argparse.Namespace):
         warnings.warn("Time interval is not an integer. Rounding to the nearest integer.")
         args.time_interval = round(args.time_interval)
     time_interval = np.timedelta64(args.time_interval, args.time_units)
+    if time_end - time_start < time_interval:
+        time_interval = time_end - time_start
     num_intervals = int((time_end - time_start) / time_interval)
     channels = [int(c) for c in args.channels.split(",")]
 

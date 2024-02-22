@@ -20,6 +20,8 @@ def main(args: argparse.Namespace):
         warnings.warn("Time interval is not an integer. Rounding to the nearest integer.")
         args.time_interval = round(args.time_interval)
     time_interval = np.timedelta64(args.time_interval, args.time_units)
+    if time_end - time_start < time_interval:
+        time_interval = time_end - time_start
     num_intervals = int((time_end - time_start) / time_interval)
     channels = [int(c) for c in args.channels.split(",")]
 
@@ -40,11 +42,9 @@ def main(args: argparse.Namespace):
             channels=channels,
         )
         ds = read(cat_query)
+        title += f"\nAmplitude [{ds.stats.units}]"
 
-        fig = plotting.plot_time_series(
-            ds,
-            title=title,
-        )
+        fig = plotting.plot_time_series(ds, title=title, ymin=args.ymin, ymax=args.ymax)
         filename = (
             np.datetime_as_string(time_start_i, unit="s")
             .replace("-", "")
@@ -90,10 +90,10 @@ if __name__ == "__main__":
         "--title", help="Title of the plot", type=str, default="SHRU905/VLA1"
     )
     parser.add_argument(
-        "--ymin", help="Minimum value for the color scale", type=float, default=60
+        "--ymin", help="Minimum value for the color scale", type=float
     )
     parser.add_argument(
-        "--ymax", help="Maximum value for the color scale", type=float, default=120
+        "--ymax", help="Maximum value for the color scale", type=float
     )
 
     args = parser.parse_args()

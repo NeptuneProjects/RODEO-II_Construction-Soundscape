@@ -39,7 +39,7 @@ def main(args: argparse.Namespace):
             time_start=time_start_i,
             time_end=time_end_i,
             channels=channels,
-        )
+        ) 
         ds = read(cat_query)
 
         fig = plotting.plot_spectrograms(
@@ -62,7 +62,7 @@ def main(args: argparse.Namespace):
             + args.title.replace("/", "_")
         )
         fig.savefig(
-            Path(args.destination / filename), bbox_inches="tight", facecolor="w"
+            Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=200
         )
         fig.clf()
         

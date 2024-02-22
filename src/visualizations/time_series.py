@@ -41,7 +41,7 @@ def main(args: argparse.Namespace):
         )
         ds = read(cat_query)
 
-        fig = plotting.plot_timeseries(
+        fig = plotting.plot_time_series(
             ds,
             title=title,
         )

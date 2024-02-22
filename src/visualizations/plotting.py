@@ -8,6 +8,10 @@ import numpy as np
 from scipy import signal
 
 
+def plot_power_series():
+    return
+
+
 def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()
@@ -75,7 +79,7 @@ def plot_spectrograms(
     return fig
 
 
-def plot_timeseries(
+def plot_time_series(
     ds: DataStream,
     ymin: Optional[float] = None,
     ymax: Optional[float] = None,
@@ -90,8 +94,8 @@ def plot_timeseries(
     for i, channel in enumerate(ds.stats.channels):
         ax = axs[i]
         ax.plot(ds.time_vector, ds.waveform[:, i])
+        ax.set_xlim(ds.time_vector[0], ds.time_vector[-1])
 
-        # ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
         ax.set_ylabel(f"Channel {channel}")
         if channel == ds.stats.channels[-1]:
             ax.set_xlabel("Time [s]")

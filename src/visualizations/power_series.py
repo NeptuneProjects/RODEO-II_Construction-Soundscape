@@ -62,17 +62,22 @@ def main(args: argparse.Namespace):
         ds = read(cat_query)
 
         power = ds.waveform**2
-
+        
         if args.cutoff is not None:
             win_size = int(1 / args.cutoff * ds.stats.sampling_rate)
             power = moving_average(power, win_size)
-            title += f"\nAverage Power (window: $1 / {args.cutoff}$ Hz) [{ds.stats.units}$^2$]"
+            if args.db:
+                title += f"\nAverage Power (window: $1 / {args.cutoff}$ Hz) [dB re 1 {ds.stats.units}$^2$]"
+            else:
+                title += f"\nAverage Power (window: $1 / {args.cutoff}$ Hz) [{ds.stats.units}$^2$]"
         else:
-            title += f"\nInstantaneous Power [{ds.stats.units}$^2$]"
+            if args.db:
+                title += f"\nInstantaneous Power [dB re 1 {ds.stats.units}$^2$]"
+            else:
+                title += f"\nInstantaneous Power [{ds.stats.units}$^2$]"
 
         if args.db:
             power = 10 * safe_log10(power)
-
         ds.waveform = power
 
         if not args.ymax:
@@ -95,6 +100,7 @@ def main(args: argparse.Namespace):
         )
         if args.db:
             filename += "_db"
+        args.destination.mkdir(parents=True, exist_ok=True)
         fig.savefig(
             Path(args.destination / filename), bbox_inches="tight", facecolor="w"
         )
@@ -114,7 +120,7 @@ if __name__ == "__main__":
         "--destination",
         help="Path to the destination directory",
         type=Path,
-        default="reports/power/inst",
+        default="reports/power_series/5min/inst",
     )
     parser.add_argument("--time_interval", help="Time interval", type=int, default=5)
     parser.add_argument("--time_units", help="Time units", type=str, default="m")

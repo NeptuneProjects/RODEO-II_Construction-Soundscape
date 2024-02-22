@@ -130,12 +130,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--title", help="Title of the plot", type=str, default="SHRU905/VLA1"
     )
-    parser.add_argument(
-        "--ymin", help="Minimum value for the color scale", type=float
-    )
-    parser.add_argument(
-        "--ymax", help="Maximum value for the color scale", type=float
-    )
+    parser.add_argument("--ymin", help="Minimum value for the color scale", type=float)
+    parser.add_argument("--ymax", help="Maximum value for the color scale", type=float)
     parser.add_argument(
         "--cutoff", help="Cutoff frequency for moving average", type=float
     )

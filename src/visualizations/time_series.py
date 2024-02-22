@@ -3,9 +3,11 @@
 
 import argparse
 from pathlib import Path
+import warnings
 
 from datautils.data import read
 from datautils.query import CatalogueQuery
+import matplotlib.pyplot as plt
 import numpy as np
 
 import plotting
@@ -14,6 +16,9 @@ import plotting
 def main(args: argparse.Namespace):
     time_start = np.datetime64(args.time_start, "us")
     time_end = np.datetime64(args.time_end, "us")
+    if args.time_interval % 1 != 0:
+        warnings.warn("Time interval is not an integer. Rounding to the nearest integer.")
+        args.time_interval = round(args.time_interval)
     time_interval = np.timedelta64(args.time_interval, args.time_units)
     num_intervals = int((time_end - time_start) / time_interval)
     channels = [int(c) for c in args.channels.split(",")]
@@ -36,16 +41,9 @@ def main(args: argparse.Namespace):
         )
         ds = read(cat_query)
 
-        fig = plotting.plot_spectrograms(
+        fig = plotting.plot_timeseries(
             ds,
             title=title,
-            tperseg=args.tperseg,
-            overlap=args.overlap,
-            nfft=args.nfft,
-            fmin=args.fmin,
-            fmax=args.fmax,
-            vmin=args.vmin,
-            vmax=args.vmax,
         )
         filename = (
             np.datetime_as_string(time_start_i, unit="s")
@@ -55,9 +53,12 @@ def main(args: argparse.Namespace):
             + "_"
             + args.title.replace("/", "_")
         )
+        
         fig.savefig(
             Path(args.destination / filename), bbox_inches="tight", facecolor="w"
         )
+        print(f"{filename}.png saved to {args.destination}")
+        plt.close()
 
 
 if __name__ == "__main__":
@@ -72,9 +73,9 @@ if __name__ == "__main__":
         "--destination",
         help="Path to the destination directory",
         type=Path,
-        default="reports/spectrograms",
+        default="reports/time_series",
     )
-    parser.add_argument("--time_interval", help="Time interval", type=float, default=5)
+    parser.add_argument("--time_interval", help="Time interval", type=int, default=5)
     parser.add_argument("--time_units", help="Time units", type=str, default="m")
     parser.add_argument(
         "--time_start", help="Start time", type=str, default="2023-07-09T10:00:00"
@@ -88,24 +89,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--title", help="Title of the plot", type=str, default="SHRU905/VLA1"
     )
-    parser.add_argument("--tperseg", help="Window size in seconds", type=int, default=1)
     parser.add_argument(
-        "--overlap", help="Overlap size in percentage", type=float, default=0.75
+        "--ymin", help="Minimum value for the color scale", type=float, default=60
     )
     parser.add_argument(
-        "--nfft", help="Number of data points used in each block", type=int
-    )
-    parser.add_argument(
-        "--fmin", help="Minimum frequency in Hz", type=float, default=20.0
-    )
-    parser.add_argument(
-        "--fmax", help="Maximum frequency in Hz", type=float, default=300.0
-    )
-    parser.add_argument(
-        "--vmin", help="Minimum value for the color scale", type=float, default=60
-    )
-    parser.add_argument(
-        "--vmax", help="Maximum value for the color scale", type=float, default=120
+        "--ymax", help="Maximum value for the color scale", type=float, default=120
     )
 
     args = parser.parse_args()

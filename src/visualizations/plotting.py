@@ -8,10 +8,6 @@ import numpy as np
 from scipy import signal
 
 
-def plot_power_series():
-    return
-
-
 def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()
@@ -89,7 +85,7 @@ def plot_time_series(
     fig, axs = plt.subplots(
         ds.num_channels, 1, figsize=fig_size, gridspec_kw={"hspace": 0.25}
     )
-    fig.suptitle(title + f"\nAmplitude [$\\mathrm{{{ds.stats.units}}}$]")
+    fig.suptitle(title)
 
     for i, channel in enumerate(ds.stats.channels):
         ax = axs[i]

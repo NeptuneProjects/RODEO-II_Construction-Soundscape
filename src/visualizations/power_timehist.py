@@ -30,12 +30,12 @@ def main(args: argparse.Namespace):
 
 
     num_bins = 100
-
-    hist_data = np.zeros((num_intervals, num_bins))
+    power_range = (args.ymin, args.ymax)
+    hist_data = np.zeros((len(channels), num_intervals, num_bins))
     
-    for i in range(num_intervals):
-        time_start_i = time_start + i * time_interval
-        time_end_i = time_start + (i + 1) * time_interval
+    for j in range(num_intervals):
+        time_start_i = time_start + j * time_interval
+        time_end_i = time_start + (j + 1) * time_interval
         title = (
             f"{args.title}\n"
             f"{np.datetime_as_string(time_start_i, unit='s')}"
@@ -51,23 +51,30 @@ def main(args: argparse.Namespace):
         )
         ds = read(cat_query)
 
-        power = ds.waveform[:, 0] ** 2
-        power = 10 * helpers.safe_log10(power)
-
-        hist, bins = np.histogram(power, bins=num_bins, range=(0, 200))
-        hist_data[i, :] = hist
-
-    plt.imshow(hist_data.T, aspect="auto", origin="lower", cmap="viridis")
-    plt.colorbar(label="Counts")
-    plt.xlabel(f"Minutes after {np.datetime_as_string(time_start, unit='us')}")
-    plt.ylabel("Power (dB)")
-    plt.show()
-
+        for i in range(ds.num_channels):
+            power = ds.waveform[:, i] ** 2
+            if args.cutoff is not None:
+                win_size = int(1 / args.cutoff * ds.stats.sampling_rate)
+                power = helpers.moving_average(power, win_size)
+            
+            power = 10 * helpers.safe_log10(power)
+            hist, _ = np.histogram(power, bins=num_bins, range=power_range)
+            hist_data[i, j, :] = hist
     
-
-
-
-
+    fig = plotting.plot_inst_power_timehist(hist_data, title, power_range=power_range, channels=channels)
+    filename = (
+        np.datetime_as_string(time_start_i, unit="s")
+        .replace("-", "")
+        .replace("T", "_")
+        .replace(":", "")
+        + "_"
+        + args.title.replace("/", "_")
+    )
+    args.destination.mkdir(parents=True, exist_ok=True)
+    fig.savefig(
+        Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=200
+    )
+    plt.close()
 
 
 
@@ -83,15 +90,15 @@ if __name__ == "__main__":
         "--destination",
         help="Path to the destination directory",
         type=Path,
-        default="reports/power_series/5min/inst",
+        default="reports/power_timehist/inst",
     )
-    parser.add_argument("--time_interval", help="Time interval", type=int, default=10)
+    parser.add_argument("--time_interval", help="Time interval", type=int, default=1)
     parser.add_argument("--time_units", help="Time units", type=str, default="m")
     parser.add_argument(
-        "--time_start", help="Start time", type=str, default="2023-07-09T10:00:00"
+        "--time_start", help="Start time", type=str, default="2023-07-09T09:45:00"
     )
     parser.add_argument(
-        "--time_end", help="End time", type=str, default="2023-07-09T11:30:00"
+        "--time_end", help="End time", type=str, default="2023-07-09T11:45:00"
     )
     parser.add_argument(
         "--channels", help="Channels to be read", type=str, default="0,1,2,3"
@@ -99,13 +106,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--title", help="Title of the plot", type=str, default="SHRU905/VLA1"
     )
-    parser.add_argument("--ymin", help="Minimum value for the color scale", type=float)
-    parser.add_argument("--ymax", help="Maximum value for the color scale", type=float)
+    parser.add_argument("--ymin", help="Minimum value for the color scale", type=float, default=100)
+    parser.add_argument("--ymax", help="Maximum value for the color scale", type=float, default=160)
     parser.add_argument(
-        "--cutoff", help="Cutoff frequency for moving average", type=float
-    )
-    parser.add_argument(
-        "--db", help="Use decibel scale", default=False, action="store_true"
+        "--cutoff", help="Cutoff frequency for moving average", type=float, default=None
     )
 
     args = parser.parse_args()

@@ -53,7 +53,7 @@ def main(args: argparse.Namespace):
             + "_"
             + args.title.replace("/", "_")
         )
-        
+        args.destination.mkdir(parents=True, exist_ok=True)
         fig.savefig(
             Path(args.destination / filename), bbox_inches="tight", facecolor="w"
         )

@@ -32,15 +32,15 @@ def main(args: argparse.Namespace):
     num_bins = 100
     power_range = (args.ymin, args.ymax)
     hist_data = np.zeros((len(channels), num_intervals, num_bins))
+    title = (
+        f"{args.title}\n"
+        f"{np.datetime_as_string(time_start, unit='s')}"
+        f" - {np.datetime_as_string(time_end, unit='s')}"
+    )
     
     for j in range(num_intervals):
         time_start_i = time_start + j * time_interval
         time_end_i = time_start + (j + 1) * time_interval
-        title = (
-            f"{args.title}\n"
-            f"{np.datetime_as_string(time_start_i, unit='s')}"
-            f" - {np.datetime_as_string(time_end_i, unit='s')}"
-        )
 
         cat_query = CatalogueQuery(
             catalogue=args.catalogue,

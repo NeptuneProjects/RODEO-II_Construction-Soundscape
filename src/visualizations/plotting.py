@@ -8,6 +8,55 @@ import numpy as np
 from scipy import signal
 
 
+def plot_inst_power_timehist(
+    hist_data: np.ndarray,
+    title: Optional[str] = None,
+    power_range: tuple[float] = (100, 160),
+    channels=None,
+    fig_size: tuple[float] = (8, 6),
+) -> plt.Figure:
+
+    num_channels = hist_data.shape[0]
+    num_intervals = hist_data.shape[1]
+    vmax = hist_data.max()
+
+    fig, axs = plt.subplots(
+        hist_data.shape[0], 1, figsize=fig_size, gridspec_kw={"hspace": 0.3}
+    )
+    fig.suptitle(title)
+
+    enumerator = enumerate(channels) if channels else enumerate(range(num_channels))
+
+    for i, channel in enumerator:
+        ax = axs[i]
+        im = ax.imshow(
+            hist_data[i].T,
+            aspect="auto",
+            origin="lower",
+            cmap="jet",
+            extent=[0, num_intervals, power_range[0], power_range[1]],
+            interpolation="none",
+            vmin=0,
+            vmax=vmax,
+        )
+
+        ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
+        if channel == channels[-1]:
+            ax.set_xlabel("Time Interval")
+            ax.set_ylabel("Power [dB re 1 uPa$^2$]")
+        else:
+            ax.set_xticklabels([])
+            ax.set_xlabel("")
+            ax.set_yticklabels([])
+            ax.set_ylabel("")
+
+    cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    cbar = fig.colorbar(im, cax=cax)
+    cbar.set_label("Frequency")
+
+    return fig
+
+
 def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()

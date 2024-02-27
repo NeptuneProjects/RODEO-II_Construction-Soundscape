@@ -63,7 +63,7 @@ def main(args: argparse.Namespace):
     
     fig = plotting.plot_inst_power_timehist(hist_data, title, power_range=power_range, channels=channels)
     filename = (
-        np.datetime_as_string(time_start_i, unit="s")
+        np.datetime_as_string(time_start, unit="s")
         .replace("-", "")
         .replace("T", "_")
         .replace(":", "")
@@ -72,7 +72,7 @@ def main(args: argparse.Namespace):
     )
     args.destination.mkdir(parents=True, exist_ok=True)
     fig.savefig(
-        Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=200
+        Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=300
     )
     plt.close()
 
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--title", help="Title of the plot", type=str, default="SHRU905/VLA1"
     )
-    parser.add_argument("--ymin", help="Minimum value for the color scale", type=float, default=100)
+    parser.add_argument("--ymin", help="Minimum value for the color scale", type=float, default=120)
     parser.add_argument("--ymax", help="Maximum value for the color scale", type=float, default=160)
     parser.add_argument(
         "--cutoff", help="Cutoff frequency for moving average", type=float, default=None

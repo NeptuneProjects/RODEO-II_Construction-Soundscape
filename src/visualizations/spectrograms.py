@@ -62,7 +62,7 @@ def main(args: argparse.Namespace):
             + args.title.replace("/", "_")
         )
         fig.savefig(
-            Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=200
+            Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=300
         )
         fig.clf()
         

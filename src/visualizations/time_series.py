@@ -78,10 +78,10 @@ if __name__ == "__main__":
     parser.add_argument("--time_interval", help="Time interval", type=int, default=5)
     parser.add_argument("--time_units", help="Time units", type=str, default="m")
     parser.add_argument(
-        "--time_start", help="Start time", type=str, default="2023-07-09T10:00:00"
+        "--time_start", help="Start time", type=str, default="2023-07-09T09:45:00"
     )
     parser.add_argument(
-        "--time_end", help="End time", type=str, default="2023-07-09T11:30:00"
+        "--time_end", help="End time", type=str, default="2023-07-09T11:45:00"
     )
     parser.add_argument(
         "--channels", help="Channels to be read", type=str, default="0,1,2,3"

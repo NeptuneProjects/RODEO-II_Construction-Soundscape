@@ -13,7 +13,7 @@ def plot_inst_power_timehist(
     title: Optional[str] = None,
     power_range: tuple[float] = (100, 160),
     channels=None,
-    fig_size: tuple[float] = (8, 6),
+    fig_size: tuple[float] = (8, 10),
 ) -> plt.Figure:
 
     num_channels = hist_data.shape[0]

@@ -1,11 +1,53 @@
 # -*- coding: utf-8 -*-
 
+import re
 from typing import Optional
 
 from datautils.data import DataStream
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
+
+
+
+def plot_avg_power_timehist(
+        mean_hist: np.ndarray,
+        bins: np.ndarray,
+        events: list[dict],
+        title: Optional[str] = None,
+        power_range: tuple[float] = (100, 160),
+        channels=None,
+        figsize: tuple[float] = (8, 10),
+) -> plt.Figure:
+    
+    LINE_STYLES = {
+        "Ambient": "-",
+        "Soft Start": "--",
+        "Full Power": ":",
+    }
+    
+    fig, axs = plt.subplots(nrows=len(channels), ncols=1, figsize=figsize)
+
+    for i in range(len(channels)):
+        for j, event in enumerate(events):
+            ax = axs[i]
+            base_name = re.sub(r" \d+$", "", event["name"])
+            ls = LINE_STYLES.get(base_name, "-")
+            ax.plot(bins[0:-1], mean_hist[j, i, :], linestyle=ls, label=event["name"])
+            ax.set_xlim(power_range)
+            ax.text(0.0, 1.02, f"Channel {channels[i]}", fontsize=10, ha="left", va="bottom", transform=ax.transAxes)
+            if i < len(channels) - 1:
+                ax.set_xticklabels([])
+            
+            if i == 0:
+                ax.set_title(title)
+                ax.legend()
+
+    ax.set_xlabel("Power [dB re 1 uPa$^2$]")
+    ax.set_ylabel("PDF")
+
+    return fig
+
 
 
 def plot_inst_power_timehist(

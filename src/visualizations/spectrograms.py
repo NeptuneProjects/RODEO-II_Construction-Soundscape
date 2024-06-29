@@ -7,6 +7,7 @@ import warnings
 
 from datautils.data import read
 from datautils.query import CatalogueQuery
+import matplotlib.pyplot as plt
 import numpy as np
 
 import plotting
@@ -18,7 +19,7 @@ def main(args: argparse.Namespace):
     if args.time_interval % 1 != 0:
         warnings.warn("Time interval is not an integer. Rounding to the nearest integer.")
         args.time_interval = round(args.time_interval)
-    time_interval = np.timedelta64(args.time_interval, args.time_units)
+    time_interval = np.timedelta64(args.time_interval, args.time_unit)
     if time_end - time_start < time_interval:
         time_interval = time_end - time_start
     num_intervals = int((time_end - time_start) / time_interval)
@@ -61,10 +62,11 @@ def main(args: argparse.Namespace):
             + "_"
             + args.title.replace("/", "_")
         )
+        args.destination.mkdir(parents=True, exist_ok=True)
         fig.savefig(
             Path(args.destination / filename), bbox_inches="tight", facecolor="w", dpi=300
         )
-        fig.clf()
+        plt.close()
         
 
 
@@ -80,10 +82,10 @@ if __name__ == "__main__":
         "--destination",
         help="Path to the destination directory",
         type=Path,
-        default="reports/spectrograms",
+        default="reports/spectrograms/5min",
     )
     parser.add_argument("--time_interval", help="Time interval", type=int, default=5)
-    parser.add_argument("--time_units", help="Time units", type=str, default="m")
+    parser.add_argument("--time_unit", help="Time units", type=str, default="m")
     parser.add_argument(
         "--time_start", help="Start time", type=str, default="2023-07-09T10:00:00"
     )
@@ -96,7 +98,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--title", help="Title of the plot", type=str, default="SHRU905/VLA1"
     )
-    parser.add_argument("--tperseg", help="Window size in seconds", type=int, default=1)
+    parser.add_argument("--tperseg", help="Window size in seconds", type=float, default=1)
     parser.add_argument(
         "--overlap", help="Overlap size in percentage", type=float, default=0.75
     )

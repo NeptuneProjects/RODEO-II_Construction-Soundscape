@@ -18,13 +18,19 @@ catalogues = [
     Path("data/catalogues/SHRU921_Tetra_FileInfo.csv"),
 ]
 
+filter_args = [
+    {"filt_type": "lowpass", "freq": 50},
+    {"filt_type": "bandpass", "freqmin": 50, "freqmax": 350},
+    {"filt_type": "highpass", "freq": 350},
+]
+
 
 def main(args: argparse.Namespace) -> None:
 
     time_start = np.datetime64(args.time_start, TIME_PRECISION)
     time_end = np.datetime64(args.time_end, TIME_PRECISION)
 
-    for catalogue in catalogues:
+    for i, catalogue in enumerate(catalogues):
         title = (
             f"{'_'.join(catalogue.name.split('_')[0:2])}\n"
             f"{np.datetime_as_string(time_start, unit='s')}"
@@ -38,17 +44,21 @@ def main(args: argparse.Namespace) -> None:
             channels=[int(c) for c in args.channels.split(",")],
         )
         ds = read(cq)
+        ds.filter(
+            **filter_args[i],
+        )
 
         fig = plotting.plot_spectrograms(
             ds,
             title=title,
             tperseg=0.1,
-            fmin=20,
-            fmax=300,
-            vmin=60,
-            vmax=120,
+            fmin=0,
+            fmax=500,
+            # vmin=60,
+            # vmax=120,
         )
-        plt.show()
+        plt.draw()
+    plt.show()
 
 
 if __name__ == "__main__":

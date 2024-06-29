@@ -3,10 +3,17 @@ channels:
   - defaults
 dependencies:
   - python=3.12
-  - numpy
+  - basemap
+  - h5py
   - matplotlib
+  - numpy
   - pip
   - scipy
+  - tqdm
   - pip:
+    - bathyreq
+    - cmasher
+    - cmocean
     - polars
+    - python-dotenv
     - git+https://github.com/NeptuneProjects/uwac-data-utils.git

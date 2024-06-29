@@ -3,14 +3,31 @@
 
 import argparse
 from pathlib import Path
+from typing import Union
 import warnings
 
-from datautils.data import read
+from datautils.data import DataStream, read
 from datautils.query import CatalogueQuery
 import matplotlib.pyplot as plt
 import numpy as np
 
 import plotting
+
+
+def plot_time_series(
+    ds: DataStream,
+    title: str,
+    ymin: Union[float, None] = None,
+    ymax: Union[float, None] = None,
+):
+    fig, ax = plt.subplots()
+    ax.set_title(title)
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Amplitude")
+    ax.plot(ds.time_vector, ds.waveform)
+    if ymin is not None and ymax is not None:
+        ax.set_ylim(ymin, ymax)
+    return fig
 
 
 def main(args: argparse.Namespace):

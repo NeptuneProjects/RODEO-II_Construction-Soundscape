@@ -5,7 +5,7 @@ import argparse
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 import uuid
 
 from datautils.data import DataStream, read
@@ -34,6 +34,7 @@ class Detection:
     time_end: np.datetime64
     sampling_rate: float
     unit: str
+    metadata: Optional[dict] = None
 
 
 def apply_linear_taper(time_series: np.ndarray, taper_length: int) -> np.ndarray:
@@ -125,6 +126,10 @@ def save_detections_to_hdf5(
                 detection.time_end, timezone="UTC", unit=TIME_PRECISION
             ).encode("utf-8")
             grp.attrs["sampling_rate"] = detection.sampling_rate
+            if detection.metadata:
+                grp.create_group("metadata")
+                for key, value in detection.metadata.items():
+                    grp["metadata"].attrs[key] = value
 
 
 def process_stream(
@@ -138,6 +143,7 @@ def process_stream(
     taper: Union[float, list[float]] = 5.0,
     station: str = "unknown",
     dbpath: Path = Path.cwd() / "detections.h5",
+    metadata: Optional[dict] = None,
 ) -> None:
     if not isinstance(pulse_start, list):
         pulse_start = [pulse_start] * ds.num_channels
@@ -176,11 +182,12 @@ def process_stream(
                     station=station,
                     waveform=excerpt.waveform,
                     time_vector=excerpt.time_vector,
-                    channel=dsc.stats.channels,
-                    time_init=dsc.stats.time_init,
-                    time_end=dsc.stats.time_end,
-                    sampling_rate=dsc.stats.sampling_rate,
-                    unit=dsc.stats.units,
+                    channel=excerpt.stats.channels,
+                    time_init=excerpt.stats.time_init,
+                    time_end=excerpt.stats.time_end,
+                    sampling_rate=excerpt.stats.sampling_rate,
+                    unit=excerpt.stats.units,
+                    metadata=metadata,
                 )
             )
         save_detections_to_hdf5(chan, detections, dbpath)

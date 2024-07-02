@@ -10,12 +10,15 @@ from datautils.query import CatalogueQuery
 from datautils.time import TIME_PRECISION
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import pyproj
 
-import detect, plotting
+import detect, metrics, plotting
 
 
 BASEPATH = Path("data/results")
-
+SENSOR_DATA = Path("data/arrays/equipment.csv")
+TURBINE_DATA = Path("data/logs/turbines.csv")
 
 def load_configs(data: Path, events: Path) -> tuple[dict, dict]:
     with open(data, "rb") as f:
@@ -44,6 +47,14 @@ def get_catalogue(sensors: list[dict], sensor: str) -> Path:
             None,
         )
     )
+
+
+def get_range(
+    point1_lon: float, point1_lat: float, point2_lon: float, point2_lat: float
+) -> float:
+    geod = pyproj.Geod(ellps="WGS84")
+    _, _, dist = geod.inv(point1_lon, point1_lat, point2_lon, point2_lat)
+    return dist
 
 
 def run_workflow(data: dict, events: dict) -> None:
@@ -83,7 +94,18 @@ def run_workflow(data: dict, events: dict) -> None:
             # fig.savefig(path / f"spectrogram_{sensor_name}.png", dpi=600, bbox_inches="tight", facecolor="w")
             # plt.close(fig)
 
+            # Compute the range between the sensor and the event site
+            df_t = pd.read_csv(TURBINE_DATA)
+            site_lon = df_t.loc[df_t["Turbine"] == event_site, "lon"].values[0]
+            site_lat = df_t.loc[df_t["Turbine"] == event_site, "lat"].values[0]
+            df_s = pd.read_csv(SENSOR_DATA)
+            sensor_lon = df_s.loc[df_s["Name"] == sensor_name, "Longitude [dd]"].values[0]
+            sensor_lat = df_s.loc[df_s["Name"] == sensor_name, "Latitude [dd]"].values[0]
+            
+            r = get_range(sensor_lon, sensor_lat, site_lon, site_lat)
+
             # Run analyses for individual pulses
+            dbpath = path / f"detections_{sensor_name}.hdf5"
             detect.process_stream(
                 ds,
                 pulse_start=[d["pulse_start"] for d in sensor["channels"]],
@@ -93,9 +115,18 @@ def run_workflow(data: dict, events: dict) -> None:
                 threshold=[d["threshold"] for d in sensor["channels"]],
                 distance=[d["distance"] for d in sensor["channels"]],
                 taper=sensor["taper"],
-                station=event_site,
-                dbpath=path / f"detections_{sensor_name}.hdf5",
+                station=sensor_name,
+                dbpath=dbpath,
+                metadata={
+                    "event_name": event_name,
+                    "event_site": event_site,
+                    "range": r,
+                },
             )
+
+            destination = path / f"metrics_{sensor_name}.csv"
+            all_metrics = metrics.compute_metrics(dbpath)
+            metrics.save_metrics_to_csv(all_metrics, destination)
 
             # figs = plotting.plot_detection_diagnostic(
             #     ds,
@@ -126,6 +157,8 @@ def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=Path("src/config/data.toml"))
-    parser.add_argument("--events", type=Path, default=Path("src/config/events.toml"))
+    parser.add_argument(
+        "--events", type=Path, default=Path("src/config/events/A10-B.toml")
+    )
     args = parser.parse_args()
     main(args)

@@ -2,15 +2,46 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 import h5py
 import numpy as np
+import pandas as pd
 from scipy.stats import kurtosis
 
 from detect import Detection
 
 REF_PRESSURE = 1.0  # in uPa
+
+
+@dataclass
+class Metrics:
+    uid: str
+    station: str
+    channel: int
+    time_init: np.datetime64
+    time_end: np.datetime64
+    unit: str
+    RL_rms: float
+    RL_pk: float
+    RL_pkpk: float
+    SEL: float
+    t_rise: float
+    t_decay: float
+    kurtosis: float
+    SEL_cum: float = 0.0
+    metadata: Optional[dict] = None
+
+    def __post_init__(self):
+        if self.metadata:
+            [setattr(self, k, v) for k, v in self.metadata.items()]
+
+
+def save_metrics_to_csv(all_metrics: list[Metrics], destination: Path) -> None:
+    df = pd.DataFrame([vars(m) for m in all_metrics]).drop("metadata", axis=1)
+    df.to_csv(destination, index=False)
 
 
 def sel_cum(levels: np.ndarray) -> float:
@@ -72,34 +103,45 @@ def rl_pkpk(x: np.ndarray) -> float:
     return rl(x.max() - x.min())
 
 
-def compute_metrics(detection: Detection):
+def compute_pulse_metrics(detection: Detection, running_sel_cum: float) -> Metrics:
     x = detection.waveform
     t = detection.time_vector
 
     rise_time, decay_time = rise_decay_times(x, t)
+    sound_exp_level = sel(x)
+    running_sel_cum = sel_cum(np.array([running_sel_cum, sound_exp_level]))
+    return Metrics(
+        uid=detection.uid,
+        station=detection.station,
+        channel=detection.channel,
+        time_init=detection.time_init,
+        time_end=detection.time_end,
+        unit=detection.unit,
+        RL_rms=rl_rms(x),
+        RL_pk=rl_pk(x),
+        RL_pkpk=rl_pkpk(x),
+        SEL=sound_exp_level,
+        t_rise=rise_time,
+        t_decay=decay_time,
+        kurtosis=kurtosis(x),
+        SEL_cum=running_sel_cum,
+        metadata=detection.metadata,
+    )
 
-    metrics = {
-        "RL_rms": rl_rms(x),
-        "RL_pk": rl_pk(x),
-        "RL_pkpk": rl_pkpk(x),
-        "SEL": sel(x),
-        "t_rise": rise_time,
-        "t_decay": decay_time,
-        "kurtosis": kurtosis(x),
-    }
-    return metrics
 
-
-def save_metrics_to_hdf(metrics: dict):
-    return
-
-
-def main(args: argparse.Namespace) -> None:
-    with h5py.File(args.dbpath, "r") as fr, h5py.File(args.destination, "a") as fw:
+def compute_metrics(dbpath: Path) -> list[Metrics]:
+    with h5py.File(dbpath, "r") as fr:
+        all_metrics = []
         for chan in fr.keys():
             running_sel_cum = 0.0
             for k in fr[chan].keys():
                 det = fr[chan][k]
+
+                if "metadata" in det:
+                    mdgrp = det["metadata"]
+                    metadata = {k: mdgrp.attrs[k] for k in mdgrp.attrs.keys()}
+                else:
+                    metadata = None
 
                 detection = Detection(
                     uid=det.attrs["uid"],
@@ -113,18 +155,19 @@ def main(args: argparse.Namespace) -> None:
                     time_end=det.attrs["time_end"],
                     sampling_rate=det.attrs["sampling_rate"],
                     unit=det.attrs["unit"],
+                    metadata=metadata,
                 )
 
-                metrics = compute_metrics(detection)
-                running_sel_cum = sel_cum(np.array([running_sel_cum, metrics["SEL"]]))
-                metrics["SEL_cum"] = running_sel_cum
+                metrics = compute_pulse_metrics(detection, running_sel_cum)
+                running_sel_cum = metrics.SEL_cum
+                all_metrics.append(metrics)
 
-                
+    return all_metrics
 
 
-                print(metrics)
-                return
-    return
+def main(args: argparse.Namespace) -> None:
+    all_metrics = compute_metrics(args.dbpath)
+    save_metrics_to_csv(all_metrics, args.destination)
 
 
 if __name__ == "__main__":
@@ -140,7 +183,7 @@ if __name__ == "__main__":
         "--destination",
         type=Path,
         default=Path(
-            "/Users/wfjenkins/Research/Projects/RODEOII/data/metrics/SHRU921_Tetra.h5"
+            "/Users/wfjenkins/Research/Projects/RODEOII/data/metrics/SHRU921_Tetra.csv"
         ),
     )
     args = parser.parse_args()

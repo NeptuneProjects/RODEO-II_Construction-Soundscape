@@ -7,6 +7,7 @@ dependencies:
   - h5py
   - matplotlib
   - numpy
+  - pandas
   - pip
   - pyproj
   - scipy
@@ -15,6 +16,5 @@ dependencies:
     - bathyreq
     - cmasher
     - cmocean
-    - polars
     - python-dotenv
     - git+https://github.com/NeptuneProjects/uwac-data-utils.git

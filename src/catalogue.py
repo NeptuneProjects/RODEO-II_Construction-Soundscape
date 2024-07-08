@@ -12,8 +12,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def main(args: argparse.Namespace):
+    print("Building file queries...")
     queries = load_file_query(args.config)
+    print(f"...complete. {len(queries)} queries loaded.")
+    print("Building and saving catalogues...")
     build_and_save_catalogues(queries, fmt=["csv", "mat"])
+    print("...complete.")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,8 @@ from tqdm import tqdm
 
 load_dotenv()
 
-DATAPATH = Path(os.getenv("DATAPATH"))
+CATPATH = Path(os.getenv("CATPATH"))
+DBPATH = Path(os.getenv("DBPATH"))
 
 
 @dataclass
@@ -196,9 +197,9 @@ def process_stream(
 def main(args: argparse.Namespace) -> None:
     time_start = np.datetime64(args.time_start, TIME_PRECISION)
     time_end = np.datetime64(args.time_end, TIME_PRECISION)
-    catalogue = DATAPATH / args.catalogue
+    catalogue = CATPATH / args.catalogue
     station = get_station_from_catalogue_name(catalogue)
-    dbpath = DATAPATH / args.database
+    dbpath = DBPATH / args.database
     dbpath.parent.mkdir(exist_ok=True, parents=True)
 
     cq = CatalogueQuery(

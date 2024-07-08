@@ -2,8 +2,8 @@
 [SHRU905_VLA1]
 
 [SHRU905_VLA1.data]
-directory = "/Volumes/T7_Shield/RODEOII/data/acoustic"
-glob_pattern = "SHRU905*/[!._]*.D23"
+directory = "/data/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_905"
+glob_pattern = "SHRU_905*/[!._]*.D23"
 destination = "data/catalogues"
 file_format = "SHRU" # Optional
 
@@ -22,8 +22,8 @@ serial_number = ["722013", "722014", "722015", "722016"]
 [SHRU920_VLA2]
 
 [SHRU920_VLA2.data]
-directory = "/Volumes/T7_Shield/RODEOII/data/acoustic"
-glob_pattern = "SHRU920*/[!._]*.D23"
+directory = "/data/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_920"
+glob_pattern = "SHRU_920*/[!._]*.D23"
 destination = "data/catalogues"
 
 [SHRU920_VLA2.clock]
@@ -41,8 +41,8 @@ serial_number = ["722017", "722019", "722020", "722022"]
 [SHRU921_Tetra]
 
 [SHRU921_Tetra.data]
-directory = "/Volumes/T7_Shield/RODEOII/data/acoustic"
-glob_pattern = "SHRU921*/[!._]*.D23"
+directory = "/data/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_921"
+glob_pattern = "SHRU_921*/[!._]*.D23"
 destination = "data/catalogues"
 
 [SHRU921_Tetra.clock]

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import logging
 from pathlib import Path
 import tomllib
 
@@ -19,6 +20,9 @@ import detect, metrics, plotting
 BASEPATH = Path("data/results")
 SENSOR_DATA = Path("data/arrays/equipment.csv")
 TURBINE_DATA = Path("data/logs/turbines.csv")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+
 
 def load_configs(data: Path, events: Path) -> tuple[dict, dict]:
     with open(data, "rb") as f:
@@ -63,6 +67,10 @@ def run_workflow(data: dict, events: dict) -> None:
         event_site = event["site"]
         event_start = event["start"]
 
+        logging.info(
+            f"Analyzing event {event_name} at site {event_site} at {event_start}."
+        )
+
         path = BASEPATH / f"{event_name}_{event_start[0:10]}"
         path.mkdir(parents=True, exist_ok=True)
         for sensor in event["sensors"]:
@@ -70,6 +78,8 @@ def run_workflow(data: dict, events: dict) -> None:
             sensor_name = sensor["name"]
             sensor_filter = sensor.get("filter", None)
             sensor_freq = sensor.get("freq", None)
+
+            logging.info(f"    Analayzing sensor {sensor_name}.")
 
             ds = load_data(data, event, sensor)
             if sensor_filter is not None:
@@ -99,9 +109,13 @@ def run_workflow(data: dict, events: dict) -> None:
             site_lon = df_t.loc[df_t["Turbine"] == event_site, "lon"].values[0]
             site_lat = df_t.loc[df_t["Turbine"] == event_site, "lat"].values[0]
             df_s = pd.read_csv(SENSOR_DATA)
-            sensor_lon = df_s.loc[df_s["Name"] == sensor_name, "Longitude [dd]"].values[0]
-            sensor_lat = df_s.loc[df_s["Name"] == sensor_name, "Latitude [dd]"].values[0]
-            
+            sensor_lon = df_s.loc[df_s["Name"] == sensor_name, "Longitude [dd]"].values[
+                0
+            ]
+            sensor_lat = df_s.loc[df_s["Name"] == sensor_name, "Latitude [dd]"].values[
+                0
+            ]
+
             r = get_range(sensor_lon, sensor_lat, site_lon, site_lat)
 
             # Run analyses for individual pulses
@@ -145,6 +159,8 @@ def run_workflow(data: dict, events: dict) -> None:
             #         facecolor="w",
             #     )
             #     plt.close(fig)
+            logging.info(f"    Completed sensor {sensor_name}.")
+        logging.info(f"Completed {event_name} at {event_site} on {event_start[0:10]}.")
 
     return
 

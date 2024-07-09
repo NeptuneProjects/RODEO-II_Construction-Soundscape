@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import logging
 import os
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from datautils.query import load_file_query
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
 
 def main(args: argparse.Namespace):
     print("Building file queries...")

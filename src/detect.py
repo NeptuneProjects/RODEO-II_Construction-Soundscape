@@ -170,7 +170,7 @@ def process_stream(
             threshold=threshold[chan],
             distance=distance[chan],
             taper=taper[chan],
-        )[1:]
+        )
 
         detections = []
         for pulse in tqdm(pulse_times):

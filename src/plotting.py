@@ -294,26 +294,34 @@ def plot_detection_diagnostic(
     taper: float = 5.0,
     figsize: tuple[float] = (24, 6),
     sensor: str = "UnkSta",
+    channel: Optional[int] = None,
 ) -> list[plt.Figure]:
     fs = ds.stats.sampling_rate
     time = ds.time_vector
 
+    if channel is not None:
+        channels = [channel]
+        num_channels = 1
+    else:
+        channels = ds.stats.channels
+        num_channels = ds.num_channels
+
     if not isinstance(stwin, list):
-        stwin = [stwin] * ds.num_channels
+        stwin = [stwin] * num_channels
     if not isinstance(ltwin, list):
-        ltwin = [ltwin] * ds.num_channels
+        ltwin = [ltwin] * num_channels
     if not isinstance(threshold, list):
-        threshold = [threshold] * ds.num_channels
+        threshold = [threshold] * num_channels
     if not isinstance(distance, list):
-        distance = [distance] * ds.num_channels
+        distance = [distance] * num_channels
 
     fig_list = []
-    for i, channel in enumerate(ds.stats.channels):
-        print(f"Processing channel {channel}...")
+    for i, chan in enumerate(channels):
+        print(f"Processing channel {chan}...")
 
-        title = f"{sensor} | Channel {channel} | STWIN: {stwin[i]} | LTWIN: {ltwin[i]} | THRESHOLD: {threshold[i]} | DISTANCE: {distance[i]}"
+        title = f"{sensor} | Channel {chan} | STWIN: {stwin[i]} | LTWIN: {ltwin[i]} | THRESHOLD: {threshold[i]} | DISTANCE: {distance[i]}"
 
-        data = detect.apply_linear_taper(ds.waveform[:, i], int(fs * taper))
+        data = detect.apply_linear_taper(ds.waveform[:, chan], int(fs * taper))
         chf = detect.characteristic_function(data, stwin=int(fs * stwin[i]), ltwin=int(fs * ltwin[i]))
         peaks, _ = signal.find_peaks(chf, height=threshold[i], distance=distance[i] * fs)
 
@@ -341,6 +349,6 @@ def plot_detection_diagnostic(
 
         fig_list.append(fig)
 
-        print(f"Channel {channel} complete.")
+        print(f"Channel {chan} complete.")
 
     return fig_list

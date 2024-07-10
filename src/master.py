@@ -9,12 +9,11 @@ import tomllib
 from datautils.data import DataStream, read
 from datautils.query import CatalogueQuery
 from datautils.time import TIME_PRECISION
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyproj
 
-import detect, metrics, plotting
+import detect, metrics
 
 
 BASEPATH = Path("data/results")
@@ -85,25 +84,6 @@ def run_workflow(data: dict, events: dict) -> None:
             if sensor_filter is not None:
                 ds = ds.filter(filt_type=sensor_filter, freq=sensor_freq)
 
-            # # Time series
-            # fig = plotting.plot_time_series(
-            #     ds,
-            #     title=f"Site {event_site} | {event_start[0:10]} | {sensor_name.replace('_', '/')}\nPressure [$\\mu$Pa]",
-            # )
-            # fig.savefig(path / f"time-series_{sensor_name}.png", dpi=600, bbox_inches="tight", facecolor="w")
-            # plt.close(fig)
-
-            # # Spectrogram
-            # fig = plotting.plot_spectrograms(
-            #     ds,
-            #     fmin=10,
-            #     fmax=1000,
-            #     vmin=60,
-            #     vmax=120,
-            # )
-            # fig.savefig(path / f"spectrogram_{sensor_name}.png", dpi=600, bbox_inches="tight", facecolor="w")
-            # plt.close(fig)
-
             # Compute the range between the sensor and the event site
             df_t = pd.read_csv(TURBINE_DATA)
             site_lon = df_t.loc[df_t["Turbine"] == event_site, "lon"].values[0]
@@ -142,23 +122,6 @@ def run_workflow(data: dict, events: dict) -> None:
             all_metrics = metrics.compute_metrics(dbpath)
             metrics.save_metrics_to_csv(all_metrics, destination)
 
-            # figs = plotting.plot_detection_diagnostic(
-            #     ds,
-            #     stwin=[d["stwin"] for d in sensor["channels"]],
-            #     ltwin=[d["ltwin"] for d in sensor["channels"]],
-            #     threshold=[d["threshold"] for d in sensor["channels"]],
-            #     distance=[d["distance"] for d in sensor["channels"]],
-            #     taper=sensor["taper"],
-            #     sensor=sensor_name,
-            # )
-            # for i, fig in enumerate(figs):
-            #     fig.savefig(
-            #         path / f"detection-diagnostic_{sensor_name}_chan{i}.png",
-            #         dpi=600,
-            #         bbox_inches="tight",
-            #         facecolor="w",
-            #     )
-            #     plt.close(fig)
             logging.info(f"    Completed sensor {sensor_name}.")
         logging.info(f"Completed {event_name} at {event_site} on {event_start[0:10]}.")
 

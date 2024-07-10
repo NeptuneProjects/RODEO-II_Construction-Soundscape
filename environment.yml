@@ -5,6 +5,7 @@ dependencies:
   - python=3.12
   - basemap
   - h5py
+  - jupyterlab
   - matplotlib
   - numpy
   - pandas

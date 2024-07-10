@@ -319,11 +319,18 @@ def plot_detection_diagnostic(
     for i, chan in enumerate(channels):
         print(f"Processing channel {chan}...")
 
-        title = f"{sensor} | Channel {chan} | STWIN: {stwin[i]} | LTWIN: {ltwin[i]} | THRESHOLD: {threshold[i]} | DISTANCE: {distance[i]}"
-
         data = detect.apply_linear_taper(ds.waveform[:, chan], int(fs * taper))
-        chf = detect.characteristic_function(data, stwin=int(fs * stwin[i]), ltwin=int(fs * ltwin[i]))
-        peaks, _ = signal.find_peaks(chf, height=threshold[i], distance=distance[i] * fs)
+        chf = detect.characteristic_function(
+            data, stwin=int(fs * stwin[i]), ltwin=int(fs * ltwin[i])
+        )
+        peaks, _ = signal.find_peaks(
+            chf, height=threshold[i], distance=distance[i] * fs
+        )
+
+        title = (
+            f"{sensor} | Channel {chan} | STWIN: {stwin[i]} | LTWIN: {ltwin[i]} | "
+            f"THRESHOLD: {threshold[i]} | DISTANCE: {distance[i]} | N_PEAKS: {len(peaks)}"
+        )
 
         fig, axs = plt.subplots(
             nrows=3, ncols=1, figsize=figsize, gridspec_kw={"hspace": 0.25}

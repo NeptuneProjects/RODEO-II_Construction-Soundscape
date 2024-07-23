@@ -333,7 +333,7 @@ def plot_detection_diagnostic(
         )
 
         fig, axs = plt.subplots(
-            nrows=3, ncols=1, figsize=figsize, gridspec_kw={"hspace": 0.25}
+            nrows=2, ncols=1, figsize=figsize, gridspec_kw={"hspace": 0.25}
         )
         fig.suptitle(title)
 
@@ -342,12 +342,12 @@ def plot_detection_diagnostic(
         ax.set_xticklabels([])
         ax.set_ylabel(f"Pressure [{ds.stats.units}]")
 
-        ax = axs[1]
-        ax.plot(time, detect.rms(data, int(stwin[i] * fs)))
-        ax.set_xticklabels([])
-        ax.set_ylabel("RMS")
+        # ax = axs[1]
+        # ax.plot(time, detect.rms(data, int(stwin[i] * fs)))
+        # ax.set_xticklabels([])
+        # ax.set_ylabel("RMS")
 
-        ax = axs[2]
+        ax = axs[1]
         ax.plot(time, chf)
         ax.plot(time[peaks], chf[peaks], "rx")
         ax.axhline(threshold[i], color="r", linestyle="--")

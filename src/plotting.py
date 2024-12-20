@@ -62,14 +62,13 @@ def plot_avg_power_timehist(
 def plot_pulse_coherence(
     time_matrix: np.ndarray,
     corr_matrix: np.ndarray,
-    n_peaks: int,
-    title: str,
-    channel: int,
+    n_traces: Optional[int] = None,
+    title: Optional[str] = None,
+    channel: Optional[int] = None,
 ) -> plt.Figure:
     fig = plt.figure(figsize=(6, 4))
     ax = plt.gca()
-    # n_traces = corr_matrix.shape[0]
-    n_traces = 20
+    n_traces = corr_matrix.shape[0] if n_traces is None else n_traces
     [ax.plot(time_matrix[k], corr_matrix[k], "k-", alpha=0.5) for k in range(n_traces)]
     ax.set_xlim(0, 33)
     ax.set_ylim(0.6, 1.01)
@@ -81,7 +80,11 @@ def plot_pulse_coherence(
 
 
 def plot_pulse_stack(
-    sig_matrix: np.ndarray, corr_matrix: np.ndarray, fs: float, title: str, channel: int
+    sig_matrix: np.ndarray,
+    corr_matrix: np.ndarray,
+    fs: float,
+    title: Optional[str] = None,
+    channel: Optional[int] = None,
 ):
     fig, axs = plt.subplots(
         nrows=20, ncols=1, figsize=(10, 10), gridspec_kw={"hspace": 0.0}
@@ -117,13 +120,10 @@ def plot_summed_pulses(sig_matrix: np.ndarray, fs: float):
     fig = plt.figure(figsize=(15, 5))
     ax = plt.gca()
 
-    summed = sig_matrix.sum(axis=0)
+    summed = sig_matrix.mean(axis=0)
     tvec = np.arange(0, sig_matrix.shape[1]) / fs
-    [
-        ax.plot(tvec, sig_matrix[i] / max(abs(sig_matrix[i])), "k", alpha=0.5)
-        for i in range(10)
-    ]
-    ax.plot(tvec, summed / max(abs(summed)), "r", linewidth=2, zorder=50)
+    [ax.plot(tvec, sig_matrix[i], "k", alpha=0.5) for i in range(10)]
+    ax.plot(tvec, summed, "r", linewidth=2, zorder=50)
     ax.set_xlim(0, max(tvec))
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Normalized Amplitude")
@@ -183,7 +183,18 @@ def plot_inst_power_timehist(
 def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()
-    return ax.pcolormesh(t, f, 10 * np.log10(Sxx), cmap="inferno", vmin=vmin, vmax=vmax)
+    # return ax.pcolormesh(t, f, 10 * np.log10(Sxx), cmap="inferno", vmin=vmin, vmax=vmax)
+    extent = (t[0], t[-1], f[0], f[-1])
+    return ax.imshow(
+        10 * np.log10(Sxx),
+        extent=extent,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        aspect="auto",
+        origin="lower",
+        interpolation="none",
+    )
 
 
 def plot_spectrograms(

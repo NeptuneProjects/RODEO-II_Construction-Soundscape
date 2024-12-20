@@ -21,6 +21,7 @@ def safe_log10(x, eps=1e-10):
 
 
 def shift_signal(signal: np.ndarray, lag: int) -> np.ndarray:
+    print(lag)
     if lag < 0:
         # Add zeros at the end
         padded = np.pad(signal, (0, -lag), 'constant')

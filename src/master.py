@@ -137,7 +137,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=Path("src/config/data.toml"))
     parser.add_argument(
-        "--events", type=Path, default=Path("src/config/events/A10-B.toml")
+        "--events", type=Path, default=Path("src/config/events/A08.toml")
     )
     args = parser.parse_args()
     main(args)

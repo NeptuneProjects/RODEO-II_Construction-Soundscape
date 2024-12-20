@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import itertools
 from pathlib import Path
+from typing import Optional
 import warnings
 
 from datautils.data import read
@@ -14,6 +14,72 @@ import scipy.signal as signal
 
 import helpers
 import plotting
+
+
+def compute_coherence_matrix(
+    sig: np.ndarray,
+    fs: float,
+    time: Optional[np.ndarray] = None,
+    t_corr_front: float = 1.0,
+    t_corr_back: float = 0.5,
+    t_view_front: float = 2.0,
+    t_view_back: float = 2.0,
+    height: float = 1.5e7,
+    distance: int = 2000,
+    num_to_stack: int = 20,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    if time is None:
+        time = np.arange(len(sig)) / fs
+    n_corr_front = int(t_corr_front * fs)
+    n_corr_back = int(t_corr_back * fs)
+    n_view_front = int(t_view_front * fs)
+    n_view_back = int(t_view_back * fs)
+
+    # Detect peaks
+    all_peaks, _ = signal.find_peaks(sig, height=height, distance=distance)
+
+    # Remove peaks that are too close to the edges
+    peaks = all_peaks[(all_peaks > n_view_front) & (all_peaks < len(sig) - n_view_back)]
+    n_peaks = len(peaks) - num_to_stack
+
+    # Initialize matrices
+    corr_matrix = np.full((n_peaks, num_to_stack), np.nan)
+    lag_matrix = np.full((n_peaks, num_to_stack), np.nan)
+    time_matrix = np.full((n_peaks, num_to_stack), np.nan)
+    # sig_matrix = np.full((num_to_stack, n_corr_front + n_corr_back), np.nan)
+    sig_matrix = np.full((num_to_stack, n_view_front + n_view_back), np.nan)
+
+    for k in range(n_peaks):
+        in1 = signal.detrend(sig[peaks[k] - n_corr_front : peaks[k] + n_corr_back])
+        in1_std = in1.std()
+        in1_len = len(in1)
+        for l in range(num_to_stack):
+            in2 = signal.detrend(
+                sig[peaks[k + l] - n_corr_front : peaks[k + l] + n_corr_back]
+            )
+            corr = signal.correlate(in1, in2, method="direct", mode="full")
+            lags = signal.correlation_lags(len(in1), len(in2), mode="full")
+
+            max_corr_ind = np.argmax(corr)
+            max_corr = corr[max_corr_ind]
+            max_lag = lags[max_corr_ind]
+
+            corr_matrix[k, l] = max_corr / (in1_std * in2.std() * in1_len)
+            lag_matrix[k, l] = max_lag
+            time_matrix[k, l] = (time[peaks[k + l]] - time[peaks[k]]) / 1e6
+            if k == 0:
+                start_ind = peaks[k + l] - n_view_front - max_lag
+                stop_ind = peaks[k + l] + n_view_back - max_lag
+                sig_matrix[l, :] = signal.detrend(sig[start_ind : stop_ind])
+
+
+    # shifted_sig_matrix = np.array(
+    #     [
+    #         helpers.shift_signal(sig_matrix[i], int(lag_matrix[0, i]))
+    #         for i in range(20)
+    #     ]
+    # )
+    return corr_matrix, lag_matrix, time_matrix, sig_matrix, peaks
 
 
 def main(args):
@@ -33,7 +99,7 @@ def main(args):
     for i in range(num_intervals):
         time_start_i = time_start + i * time_interval
         time_end_i = time_start + (i + 1) * time_interval
-        
+
         cat_query = CatalogueQuery(
             catalogue=args.catalogue,
             destination=args.destination,
@@ -44,84 +110,22 @@ def main(args):
         ds = read(cat_query)
         ds = ds.decimate(factor=int(ds.stats.sampling_rate / 2000))
         ds = ds.filter(filt_type="lowpass", freq=50.0)
-        
+
         time = ds.time_vector
         fs = ds.stats.sampling_rate
 
         for j, channel in enumerate([channels[1]]):
             sig = ds.waveform[:, j]
-            all_peaks, _ = signal.find_peaks(sig, height=args.height, distance=2000)
 
-            t_corr_front = 1.0
-            t_corr_back = 0.5
-            n_corr_front = int(t_corr_front * fs)
-            n_corr_back = int(t_corr_back * fs)
-
-            t_plot_front = 2.0
-            t_plot_back = 2.0
-            n_plot_front = int(t_plot_front * fs)
-            n_plot_back = int(t_plot_back * fs)
-
-
-            # Remove peaks that are too close to the edges
-            # [peaks.remove(p) for p in peaks if p < n_plot_front or p > len(sig) - n_plot_back]
-            peaks = all_peaks[(all_peaks > n_plot_front) & (all_peaks < len(sig) - n_plot_back)]
-
-            # if peaks[0] < n_corr_front:
-            #     peaks = peaks[1:]
-            # if peaks[-1] > len(sig) - n_corr_back:
-            #     peaks = peaks[:-1]
-
-            num_to_stack = 20
-            n_peaks = len(peaks) - num_to_stack
-            print(n_peaks)
-
-            corr_matrix = np.full((n_peaks, num_to_stack), np.nan)
-            lag_matrix = np.full((n_peaks, num_to_stack), np.nan)
-            time_matrix = np.full((n_peaks, num_to_stack), np.nan)
-
-            for k in range(n_peaks):
-                # print(f"Computing for pulse {k} of {n_peaks}...")
-                if k == 0:
-                    sig_matrix = np.full((num_to_stack, n_corr_front + n_corr_back), np.nan)
-                for l in range(num_to_stack):
-                    in1 = signal.detrend(sig[peaks[k] - n_corr_front : peaks[k] + n_corr_back])
-                    in2 = signal.detrend(sig[peaks[k + l] - n_corr_front : peaks[k + l] + n_corr_back])
-
-                    # an1 = signal.hilbert(in1)
-                    # an2 = signal.hilbert(in2)
-                    # env1 = np.abs(an1)
-                    # env2 = np.abs(an2)
-
-                    # in1 /= env1.std()
-                    # in2 /= env2.std()
-
-                    corr = signal.correlate(in1, in2, method="direct", mode="full")
-                    
-                    lags = signal.correlation_lags(len(in1), len(in2), mode="full")
-
-                    max_corr_ind = np.argmax(corr)
-                    max_corr = corr[max_corr_ind]
-                    max_lag = lags[max_corr_ind]
-
-                    corr_matrix[k, l] = max_corr / (in1.std() * in2.std() * len(in1))
-                    lag_matrix[k, l] = max_lag
-                    time_matrix[k, l] = (time[peaks[k + l]] - time[peaks[k]]) / 1e6
-                    if k == 0:
-                        sig_matrix[l, :] = in2
-
-                    # plt.figure()
-                    # plt.subplot(3, 1, 1)
-                    # plt.plot(in1)
-                    # plt.plot(in2)
-                    # plt.subplot(3, 1, 2)
-                    # plt.plot(corr)
-                    # plt.title(f"Max Lag = {max_lag}")
-                    # plt.tight_layout()
-                    # plt.subplot(3, 1, 3)
-                    # plt.plot(in1)
-                    # plt.plot(helpers.shift_signal(in2, max_lag))
-                    # plt.show()
+            corr_matrix, lag_matrix, time_matrix, sig_matrix, peaks = (
+                compute_coherence_matrix(
+                    sig,
+                    fs,
+                    time,
+                    height=args.height,
+                    distance=2000,
+                )
+            )
 
             filename_append = (
                 np.datetime_as_string(time_start_i, unit="s")
@@ -141,14 +145,11 @@ def main(args):
             # )
             # np.save(Path.cwd() / "data" / "coherence" / f"sig_matrix_{filename_append}.npy", sig_matrix)
 
-            title = (
-                f"{args.title}\n"
-                f"Reference Peak: {time[peaks[0]]}"
-            )
+            title = f"{args.title}\n" f"Reference Peak: {time[peaks[0]]}"
 
             args.destination.mkdir(parents=True, exist_ok=True)
             fig = plotting.plot_pulse_coherence(
-                time_matrix, corr_matrix, n_peaks, title, channel
+                time_matrix, corr_matrix, corr_matrix.shape[0], title, channel
             )
             # fig.savefig(
             #     args.destination
@@ -167,7 +168,9 @@ def main(args):
                 ]
             )
 
-            fig = plotting.plot_pulse_stack(shifted_matrix, corr_matrix, fs, title, channel)
+            fig = plotting.plot_pulse_stack(
+                shifted_matrix, corr_matrix, fs, title, channel
+            )
             # fig.savefig(
             #     args.destination.parent / "pulse_stack"
             #     / f"__{filename_append}.png",
@@ -190,42 +193,42 @@ def main(args):
 
         plt.show()
 
-            # corr_matrix = np.full((n_peaks, n_peaks), np.nan)
-            # lag_matrix = np.full((n_peaks, n_peaks), np.nan)
+        # corr_matrix = np.full((n_peaks, n_peaks), np.nan)
+        # lag_matrix = np.full((n_peaks, n_peaks), np.nan)
 
-            # Pre-compute all signal segments
-            # segments = [sig[pk - 1000:pk + 1001] for pk in peaks]
+        # Pre-compute all signal segments
+        # segments = [sig[pk - 1000:pk + 1001] for pk in peaks]
 
-            # for k in range(n_peaks):
-            #     for l in range(k+1, n_peaks):
-            #         in1 = segments[k]
-            #         in2 = segments[l]
-            #         corr = signal.correlate(in1, in2)
-            #         lags = signal.correlation_lags(len(in1), len(in2))
-            #         max_corr_ind = np.argmax(corr)
-            #         max_corr = corr[max_corr_ind]
-            #         max_lag = lags[max_corr_ind]
-            #         corr_matrix[k, l] = max_corr
-            #         corr_matrix[l, k] = max_corr  # Use symmetry
-            #         lag_matrix[k, l] = max_lag
-            #         lag_matrix[l, k] = max_lag    # Use symmetry
+        # for k in range(n_peaks):
+        #     for l in range(k+1, n_peaks):
+        #         in1 = segments[k]
+        #         in2 = segments[l]
+        #         corr = signal.correlate(in1, in2)
+        #         lags = signal.correlation_lags(len(in1), len(in2))
+        #         max_corr_ind = np.argmax(corr)
+        #         max_corr = corr[max_corr_ind]
+        #         max_lag = lags[max_corr_ind]
+        #         corr_matrix[k, l] = max_corr
+        #         corr_matrix[l, k] = max_corr  # Use symmetry
+        #         lag_matrix[k, l] = max_lag
+        #         lag_matrix[l, k] = max_lag    # Use symmetry
 
-            # np.save(f"lag_matrix_{i}_{j}.npy", lag_matrix)
-            # np.save(f"corr_matrix_{i}_{j}.npy", corr_matrix)
+        # np.save(f"lag_matrix_{i}_{j}.npy", lag_matrix)
+        # np.save(f"corr_matrix_{i}_{j}.npy", corr_matrix)
 
-            # plt.figure()
-            # ax = plt.gca()
-            # im = ax.imshow(corr_matrix)
-            # ax.set_title("Correlation")
-            # cbar = ax.figure.colorbar(im, ax=ax)
+        # plt.figure()
+        # ax = plt.gca()
+        # im = ax.imshow(corr_matrix)
+        # ax.set_title("Correlation")
+        # cbar = ax.figure.colorbar(im, ax=ax)
 
-            # plt.figure()
-            # ax = plt.gca()
-            # im = ax.imshow(lag_matrix)
-            # ax.set_title("Lag")
-            # cbar = ax.figure.colorbar(im, ax=ax)
+        # plt.figure()
+        # ax = plt.gca()
+        # im = ax.imshow(lag_matrix)
+        # ax.set_title("Lag")
+        # cbar = ax.figure.colorbar(im, ax=ax)
 
-            # plt.show()
+        # plt.show()
 
     return
 
@@ -236,7 +239,9 @@ if __name__ == "__main__":
         "--catalogue",
         help="Path to the catalogue file",
         type=Path,
-        default="data/catalogues/SHRU920_VLA2_FileInfo.csv",
+        default="data/catalogues/SHRU921_Tetra_FileInfo.csv",
+        # default="data/catalogues/SHRU905_VLA1_FileInfo.csv",
+        # default="data/catalogues/SHRU920_VLA2_FileInfo.csv",
     )
     parser.add_argument(
         "--destination",
@@ -254,7 +259,10 @@ if __name__ == "__main__":
         # help="End time",
         # type=str,
         # default="2023-07-09T10:26:10",
-        "--time_end", help="End time", type=str, default="2023-07-09T10:30:00"
+        "--time_end",
+        help="End time",
+        type=str,
+        default="2023-07-09T10:30:00",
     )
     parser.add_argument(
         "--channels", help="Channels to be read", type=str, default="0,1,2,3"
@@ -281,9 +289,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--vmax", help="Maximum value for the color scale", type=float, default=120
     )
-    parser.add_argument(
-        "--height", type=float, default=1.5e7
-    )
+    parser.add_argument("--height", type=float, default=1.5e7)
 
     args = parser.parse_args()
     main(args)

@@ -18,4 +18,4 @@ dependencies:
     - cmasher
     - cmocean
     - python-dotenv
-    - git+https://github.com/TritonOA/TritonOA.git
+    - git+ssh://git@github.com/TritonOA/TritonOA.git

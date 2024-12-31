@@ -1,0 +1,21 @@
+name: rodeo2
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - basemap
+  - h5py
+  - jupyterlab
+  - matplotlib
+  - numpy
+  - pandas
+  - pip
+  - pyproj
+  - scipy
+  - tqdm
+  - pip:
+    - bathyreq
+    - cmasher
+    - cmocean
+    - python-dotenv
+    - git+https://github.com/TritonOA/TritonOA.git

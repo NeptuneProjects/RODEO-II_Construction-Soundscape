@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from pathlib import Path
 import os
+from pathlib import Path
 import tomllib
 
 from dotenv import load_dotenv
@@ -47,14 +47,14 @@ def main(args: argparse.Namespace) -> None:
             clock_params=clock_params,
             conditioner=signal_params,
         )
-        savepath = Path(data_cfg["destination"]) / f"{key}_FileInfo.csv"
+        savepath = Path(data_cfg["destination"])
         inv.save(savepath)
 
         print(f"Inventory saved to {savepath.resolve()}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build and save catalogues")
+    parser = argparse.ArgumentParser(description="Build and save inventories")
     parser.add_argument(
         "--config",
         type=Path,

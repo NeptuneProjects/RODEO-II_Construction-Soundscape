@@ -21,6 +21,7 @@ def main(args: argparse.Namespace) -> None:
 
     for key in config:
         print(f"Building inventory for {key}...")
+        
         data_cfg = config[key]["data"]
         clock_cfg = config[key]["clock"]
         hyd_cfg = config[key]["hydrophone"]
@@ -46,7 +47,10 @@ def main(args: argparse.Namespace) -> None:
             clock_params=clock_params,
             conditioner=signal_params,
         )
-        inv.save(data_cfg["destination"] / f"{key}_FileInfo.csv")
+        savepath = Path(data_cfg["destination"]) / f"{key}_FileInfo.csv"
+        inv.save(savepath)
+
+        print(f"Inventory saved to {savepath.resolve()}")
 
 
 if __name__ == "__main__":

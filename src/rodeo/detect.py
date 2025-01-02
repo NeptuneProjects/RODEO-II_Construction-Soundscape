@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Optional, Union
 import uuid
 
-from tritonoa.data.stream import DataStream, read
-from datautils.query import CatalogueQuery
+from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
 from dotenv import load_dotenv
 import h5py

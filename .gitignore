@@ -166,6 +166,7 @@ cython_debug/
 .vscode
 data/
 demo/
+docs/
 reports/
 *.npy
 *.npz

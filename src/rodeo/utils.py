@@ -1,6 +1,20 @@
 # -*- coding: utf-8 -*-
 
+import pandas as pd
 import pyproj
+
+
+def clean_ctd_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove data points with depth less than 1.0 m.
+
+    Args:
+        df: CTD data.
+
+    Returns:
+        Cleaned CTD data.
+    """
+    df = df[df["Depth"] > 1.0]
+    return df
 
 
 def compute_range(

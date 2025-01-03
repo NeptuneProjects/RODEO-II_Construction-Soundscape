@@ -1,26 +1,18 @@
 # -*- coding: utf-8 -*-
 
-# import argparse
 from dataclasses import dataclass
-import os
 from pathlib import Path
 from typing import Optional, Union
 import uuid
 
-from tritonoa.data.stream import DataStream
-from tritonoa.data.time import TIME_PRECISION
-# from dotenv import load_dotenv
 import h5py
 import numpy as np
 from scipy import signal
 from tqdm import tqdm
+from tritonoa.data.stream import DataStream
+from tritonoa.data.time import TIME_PRECISION
 
-
-# load_dotenv()
-
-# CATPATH = Path(os.getenv("CATPATH"))
-# DBPATH = Path(os.getenv("DBPATH"))
-
+import matplotlib.pyplot as plt
 
 @dataclass
 class Detection:
@@ -76,7 +68,7 @@ def detect_pulses(
     time = ds.time_vector
 
     chf = characteristic_function(
-        apply_linear_taper(ds.waveform, int(fs * taper)),
+        apply_linear_taper(ds.data, int(fs * taper)),
         int(stwin * fs),
         int(ltwin * fs),
     )
@@ -84,7 +76,7 @@ def detect_pulses(
     return time[peaks]
 
 
-def get_station_from_catalogue_name(fname: Union[Path, str]) -> str:
+def station_from_catalogue_name(fname: Union[Path, str]) -> str:
     return fname.stem.split("FileInfo")[0].rstrip("_")
 
 
@@ -160,7 +152,7 @@ def process_stream(
         taper = [taper] * ds.num_channels
 
     for chan in range(ds.num_channels):
-        dsc = ds[:, chan]
+        dsc = ds[chan]
         pulse_times = detect_pulses(
             dsc,
             stwin=stwin[chan],
@@ -175,11 +167,16 @@ def process_stream(
             t_start = pulse - np.timedelta64(pulse_start[chan], "ms")
             t_end = pulse + np.timedelta64(pulse_end[chan], "ms")
             excerpt = dsc.slice(t_start, t_end)
+            # TODO: Something is wrong with the slize method.
+            fig = plt.figure()
+            plt.plot(excerpt.data)
+            fig.savefig("stream.png")
+            break
             detections.append(
                 Detection(
                     uid=uuid.uuid4().hex[:8],
                     station=station,
-                    waveform=excerpt.waveform,
+                    waveform=excerpt.data,
                     time_vector=excerpt.time_vector,
                     channel=excerpt.stats.channels,
                     time_init=excerpt.stats.time_init,
@@ -190,85 +187,3 @@ def process_stream(
                 )
             )
         save_detections_to_hdf5(chan, detections, dbpath)
-
-
-# def main(args: argparse.Namespace) -> None:
-#     time_start = np.datetime64(args.time_start, TIME_PRECISION)
-#     time_end = np.datetime64(args.time_end, TIME_PRECISION)
-#     catalogue = CATPATH / args.catalogue
-#     station = get_station_from_catalogue_name(catalogue)
-#     dbpath = DBPATH / args.database
-#     dbpath.parent.mkdir(exist_ok=True, parents=True)
-
-#     cq = CatalogueQuery(
-#         catalogue=catalogue,
-#         destination="data/interrogation",
-#         time_start=time_start,
-#         time_end=time_end,
-#         channels=[int(c) for c in args.channels.split(",")],
-#     )
-#     ds = read(cq)
-#     ds = ds.filter("highpass", freq=10.0)
-#     process_stream(
-#         ds,
-#         pulse_start=args.pulse_start,
-#         pulse_end=args.pulse_end,
-#         stwin=args.stwin,
-#         ltwin=args.ltwin,
-#         threshold=args.threshold,
-#         distance=args.distance,
-#         station=station,
-#         dbpath=dbpath,
-#     )
-
-
-# if __name__ == "__main__":
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument(
-#         "--catalogue",
-#         help="Catalogue file",
-#         type=str,
-#         default="catalogues/SHRU921_Tetra_FileInfo.csv",
-#     )
-#     parser.add_argument(
-#         "--time_start", help="Start time", type=str, default="2023-07-09T10:00:00"
-#     )
-#     parser.add_argument(
-#         "--time_end", help="End time", type=str, default="2023-07-09T11:30:00"
-#     )
-#     parser.add_argument(
-#         "--channels", help="Channels  to be read", type=str, default="0,1,2,3"
-#     )
-#     parser.add_argument(
-#         "--threshold", help="Threshold for peak detection", type=float, default=2.25
-#     )
-#     parser.add_argument(
-#         "--stwin", help="Short time window for RMS", type=float, default=0.025
-#     )
-#     parser.add_argument(
-#         "--ltwin", help="Long time window for mean RMS", type=float, default=5.0
-#     )
-#     parser.add_argument(
-#         "--distance", help="Minimum distance between peaks", type=float, default=0.75
-#     )
-#     parser.add_argument(
-#         "--database",
-#         help="Database file",
-#         type=str,
-#         default="detections/SHRU921_Tetra.h5",
-#     )
-#     parser.add_argument(
-#         "--pulse_start",
-#         help="Time (ms) before pulse peak to retrieve",
-#         type=int,
-#         default=500,
-#     )
-#     parser.add_argument(
-#         "--pulse_end",
-#         help="Time (ms) after pulse peak to retrieve",
-#         type=int,
-#         default=500,
-#     )
-#     parser.add_argument("--metadata", help="", type=str)
-#     args = parser.parse_args()
-#     main(args)

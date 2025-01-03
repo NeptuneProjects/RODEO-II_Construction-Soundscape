@@ -1,16 +1,16 @@
-[[events]]
+[[event]]
 name = "A08"
 site = "A08"
 start = "2023-07-06T15:15:00"
 end = "2023-07-06T18:20:00"
 
-[[events.sensors]]
+[[event.sensors]]
 name = "SHRU921_Tetra"
 filter = "highpass"
 freq = 10.0
 taper = 5.0
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 0
 pulse_start = 500
 pulse_end = 500
@@ -19,7 +19,7 @@ ltwin = 5.0
 threshold = 2.23
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 1
 pulse_start = 500
 pulse_end = 500
@@ -28,7 +28,7 @@ ltwin = 5.0
 threshold = 2.225
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 2
 pulse_start = 500
 pulse_end = 500
@@ -37,7 +37,7 @@ ltwin = 5.0
 threshold = 2.2
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 3
 pulse_start = 500
 pulse_end = 500
@@ -46,13 +46,13 @@ ltwin = 5.0
 threshold = 2.25
 distance = 0.95
 
-[[events.sensors]]
+[[event.sensors]]
 name = "SHRU905_VLA1"
 filter = "highpass"
 freq = 10.0
 taper = 5.0
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 0
 pulse_start = 500
 pulse_end = 500
@@ -61,7 +61,7 @@ ltwin = 5.0
 threshold = 2.55
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 1
 pulse_start = 500
 pulse_end = 500
@@ -70,7 +70,7 @@ ltwin = 5.0
 threshold = 2.57
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 2
 pulse_start = 500
 pulse_end = 500
@@ -79,7 +79,7 @@ ltwin = 5.0
 threshold = 2.5
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 3
 pulse_start = 500
 pulse_end = 500
@@ -88,13 +88,13 @@ ltwin = 5.0
 threshold = 2.5
 distance = 0.95
 
-[[events.sensors]]
+[[event.sensors]]
 name = "SHRU920_VLA2"
 filter = "highpass"
 freq = 10.0
 taper = 5.0
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 0
 pulse_start = 500
 pulse_end = 500
@@ -103,7 +103,7 @@ ltwin = 5.0
 threshold = 2.32
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 1
 pulse_start = 500
 pulse_end = 500
@@ -112,7 +112,7 @@ ltwin = 5.0
 threshold = 2.2675
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 2
 pulse_start = 500
 pulse_end = 500
@@ -121,7 +121,7 @@ ltwin = 5.0
 threshold = 2.25
 distance = 0.95
 
-[[events.sensors.channels]]
+[[event.sensors.channels]]
 channel = 3
 pulse_start = 500
 pulse_end = 500

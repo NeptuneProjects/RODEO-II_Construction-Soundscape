@@ -16,9 +16,27 @@ from tritonoa.data.time import TIME_PRECISION
 
 from rodeo import detect, metrics, utils
 
+import matplotlib.pyplot as plt
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+
+
+def compute_range(
+    df_equip: pd.DataFrame, df_turb: pd.DataFrame, sensor_name: str, event_site: str
+) -> float:
+    # Compute the range between the sensor and the event site
+    site_lon = df_turb.loc[df_turb["Turbine"] == event_site, "lon"].values[0]
+    site_lat = df_turb.loc[df_turb["Turbine"] == event_site, "lat"].values[0]
+    sensor_lon = df_equip.loc[df_equip["Name"] == sensor_name, "Longitude [dd]"].values[
+        0
+    ]
+    sensor_lat = df_equip.loc[df_equip["Name"] == sensor_name, "Latitude [dd]"].values[
+        0
+    ]
+
+    return utils.compute_range(sensor_lon, sensor_lat, site_lon, site_lat)
 
 
 def load_configs(invpath: Path, eventpath: Path) -> tuple[dict, dict]:
@@ -29,7 +47,9 @@ def load_configs(invpath: Path, eventpath: Path) -> tuple[dict, dict]:
     return inv_config, event_config
 
 
-def load_data(inv_config: dict, event: dict, sensor_name: str, sensor_channels) -> DataStream:
+def load_data(
+    inv_config: dict, event: dict, sensor_name: str, sensor_channels: list[dict]
+) -> DataStream:
     invpath = Path(inv_config[sensor_name]["data"]["destination"])
     return read_inventory(
         file_path=invpath,
@@ -62,21 +82,10 @@ def run_workflow(
         logging.info(f"    Analayzing sensor {sensor_name}.")
 
         ds = load_data(inv_config, event, sensor_name, sensor_channels)
-        return
         if sensor_filter is not None:
             ds = ds.filter(filt_type=sensor_filter, freq=sensor_freq)
 
-        # Compute the range between the sensor and the event site
-        site_lon = df_turb.loc[df_turb["Turbine"] == event_site, "lon"].values[0]
-        site_lat = df_turb.loc[df_turb["Turbine"] == event_site, "lat"].values[0]
-        sensor_lon = df_equip.loc[
-            df_equip["Name"] == sensor_name, "Longitude [dd]"
-        ].values[0]
-        sensor_lat = df_equip.loc[
-            df_equip["Name"] == sensor_name, "Latitude [dd]"
-        ].values[0]
-
-        r = utils.compute_range(sensor_lon, sensor_lat, site_lon, site_lat)
+        r = compute_range(df_equip, df_turb, sensor_name, event_site)
 
         # Run analyses for individual pulses
         dbpath = path / f"detections_{sensor_name}.hdf5"
@@ -98,9 +107,8 @@ def run_workflow(
             },
         )
 
-        destination = path / f"metrics_{sensor_name}.csv"
         all_metrics = metrics.compute_metrics(dbpath)
-        metrics.save_metrics_to_csv(all_metrics, destination)
+        metrics.save_metrics_to_csv(all_metrics, path / f"metrics_{sensor_name}.csv")
 
         logging.info(f"    Completed sensor {sensor_name}.")
     logging.info(f"Completed {event_name} at {event_site} on {event_start[0:10]}.")

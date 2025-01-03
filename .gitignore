@@ -168,6 +168,7 @@ data/
 demo/
 docs/
 reports/
+results/
 *.npy
 *.npz
 /old

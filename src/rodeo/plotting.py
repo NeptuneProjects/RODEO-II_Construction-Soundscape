@@ -8,7 +8,7 @@ def plot_ctd_profiles(
     df: pd.DataFrame,
     figsize: tuple[float, float] = (4, 3),
     gridspec_kw: dict = {"wspace": 0.1},
-    dpi: int = 300,
+    dpi: int = 150,
     **plot_kwargs,
 ) -> plt.Figure:
     fig, axs = plt.subplots(figsize=figsize, ncols=3, gridspec_kw=gridspec_kw, dpi=dpi)

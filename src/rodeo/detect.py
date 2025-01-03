@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import argparse
+# import argparse
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -9,17 +9,17 @@ import uuid
 
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 import h5py
 import numpy as np
 from scipy import signal
 from tqdm import tqdm
 
 
-load_dotenv()
+# load_dotenv()
 
-CATPATH = Path(os.getenv("CATPATH"))
-DBPATH = Path(os.getenv("DBPATH"))
+# CATPATH = Path(os.getenv("CATPATH"))
+# DBPATH = Path(os.getenv("DBPATH"))
 
 
 @dataclass

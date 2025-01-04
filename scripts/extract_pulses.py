@@ -11,12 +11,10 @@ from dotenv import load_dotenv
 import numpy as np
 import pandas as pd
 from tritonoa.data.reader import read_inventory
-from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
 
 from rodeo import detect, metrics, utils
 
-import matplotlib.pyplot as plt
 
 load_dotenv()
 
@@ -47,18 +45,6 @@ def load_configs(invpath: Path, eventpath: Path) -> tuple[dict, dict]:
     return inv_config, event_config
 
 
-def load_data(
-    inv_config: dict, event: dict, sensor_name: str, sensor_channels: list[dict]
-) -> DataStream:
-    invpath = Path(inv_config[sensor_name]["data"]["destination"])
-    return read_inventory(
-        file_path=invpath,
-        time_start=np.datetime64(event["start"], TIME_PRECISION),
-        time_end=np.datetime64(event["end"], TIME_PRECISION),
-        channels=[i["channel"] for i in sensor_channels],
-    )
-
-
 def run_workflow(
     inv_config: dict, event: dict, df_equip: pd.DataFrame, df_turb: pd.DataFrame
 ) -> None:
@@ -81,7 +67,13 @@ def run_workflow(
 
         logging.info(f"    Analayzing sensor {sensor_name}.")
 
-        ds = load_data(inv_config, event, sensor_name, sensor_channels)
+        ds = read_inventory(
+            file_path=Path(inv_config[sensor_name]["data"]["destination"]),
+            time_start=np.datetime64(event["start"], TIME_PRECISION),
+            time_end=np.datetime64(event["end"], TIME_PRECISION),
+            channels=[i["channel"] for i in sensor_channels],
+        )
+
         if sensor_filter is not None:
             ds = ds.filter(filt_type=sensor_filter, freq=sensor_freq)
 

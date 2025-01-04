@@ -106,8 +106,6 @@ def compute_pulse_metrics(detection: Detection, running_sel_cum: float) -> Metri
     x = detection.waveform
     t = detection.time_vector
 
-    print(x.shape, t.shape)
-
     rise_time, decay_time = rise_decay_times(x, t)
     sound_exp_level = sel(x)
     running_sel_cum = sel_cum(np.array([running_sel_cum, sound_exp_level]))

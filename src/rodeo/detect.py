@@ -12,7 +12,6 @@ from tqdm import tqdm
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
 
-import matplotlib.pyplot as plt
 
 @dataclass
 class Detection:
@@ -68,7 +67,7 @@ def detect_pulses(
     time = ds.time_vector
 
     chf = characteristic_function(
-        apply_linear_taper(ds.data, int(fs * taper)),
+        apply_linear_taper(ds.data.squeeze(), int(fs * taper)),
         int(stwin * fs),
         int(ltwin * fs),
     )
@@ -167,11 +166,7 @@ def process_stream(
             t_start = pulse - np.timedelta64(pulse_start[chan], "ms")
             t_end = pulse + np.timedelta64(pulse_end[chan], "ms")
             excerpt = dsc.slice(t_start, t_end)
-            # TODO: Something is wrong with the slize method.
-            fig = plt.figure()
-            plt.plot(excerpt.data)
-            fig.savefig("stream.png")
-            break
+
             detections.append(
                 Detection(
                     uid=uuid.uuid4().hex[:8],

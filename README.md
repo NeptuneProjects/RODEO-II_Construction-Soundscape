@@ -13,7 +13,9 @@ Exceptions are specified below, and are usually supplied as command-line argumen
 
 1. Configure the dataset inventory using the file `config/inventory.toml`.
 2. Build the dataset inventory by running:  
-   `python scripts/inventory.py`
+   `python scripts/inventory.py`  
+   The inventory is performed for each station, and saved as:  
+   `data/inventory/SHRU905_VLA1_FileInfo.csv`
 
 ### 2. Detect & save pile driving pulses.
 

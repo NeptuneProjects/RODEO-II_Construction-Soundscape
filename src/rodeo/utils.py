@@ -22,3 +22,73 @@ def compute_range(
     geod = pyproj.Geod(ellps="WGS84")
     _, _, dist = geod.inv(point1_lon, point1_lat, point2_lon, point2_lat)
     return dist
+
+
+def format_channel_text(
+    channel: int,
+    pulse_start: float,
+    pulse_end: float,
+    stwin: float,
+    ltwin: float,
+    threshold: float,
+    distance: float,
+) -> str:
+    return (
+        "\n\n[[events.sensors.channels]]"
+        f"\nchannel = {channel}"
+        f"\npulse_start = {pulse_start}"
+        f"\npulse_end = {pulse_end}"
+        f"\nstwin = {stwin}"
+        f"\nltwin = {ltwin}"
+        f"\nthreshold = {threshold}"
+        f"\ndistance = {distance}"
+    )
+
+
+def format_event_text(event_name, event_site, event_start, event_stop) -> str:
+    return (
+        "\n[[events]]"
+        f'\nname = "{event_name}"'
+        f'\nsite = "{event_site}"'
+        f'\nstart = "{event_start}"'
+        f'\nend = "{event_stop}"'
+    )
+
+
+def format_sensor_text(
+    sensor_name,
+    filter_type,
+    filter_freq,
+    taper,
+    channels: list,
+    pulse_start: list,
+    pulse_end: list,
+    stwin: list,
+    ltwin: list,
+    threshold: list,
+    distance: list,
+) -> str:
+    sensor_text = (
+        "\n[[events.sensors]]"
+        f'\nname = "{sensor_name}"'
+        f'\nfilter = "{filter_type}"'
+        f"\nfreq = {filter_freq}"
+        f"\ntaper = {taper}"
+    )
+    channel_text = "".join(
+        [
+            format_channel_text(
+                channel=c,
+                pulse_start=ps,
+                pulse_end=pe,
+                stwin=st,
+                ltwin=lt,
+                threshold=th,
+                distance=d,
+            )
+            for c, ps, pe, st, lt, th, d in zip(
+                channels, pulse_start, pulse_end, stwin, ltwin, threshold, distance
+            )
+        ]
+    )
+    return sensor_text + channel_text

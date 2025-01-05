@@ -34,7 +34,7 @@ def format_channel_text(
     distance: float,
 ) -> str:
     return (
-        "\n\n[[events.sensors.channels]]"
+        "\n\n[[event.sensors.channels]]"
         f"\nchannel = {channel}"
         f"\npulse_start = {pulse_start}"
         f"\npulse_end = {pulse_end}"
@@ -47,7 +47,7 @@ def format_channel_text(
 
 def format_event_text(event_name, event_site, event_start, event_stop) -> str:
     return (
-        "\n[[events]]"
+        "\n[[event]]"
         f'\nname = "{event_name}"'
         f'\nsite = "{event_site}"'
         f'\nstart = "{event_start}"'
@@ -70,7 +70,7 @@ def format_sensor_text(
     distance: list,
 ) -> str:
     sensor_text = (
-        "\n[[events.sensors]]"
+        "\n[[event.sensors]]"
         f'\nname = "{sensor_name}"'
         f'\ndec_factor = "{dec_factor}"'
         f'\nfilter = "{filter_type}"'

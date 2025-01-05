@@ -18,11 +18,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 def compute_metrics(
     event: dict,
 ) -> None:
-    logging.info(f"Computing metrics for event {event_name}.")
-
     event_name = event["name"]
     event_start = event["start"][0:10]
     event_dir = f"{event_name}_{event_start}"
+
+    logging.info(f"Computing metrics for event {event_name}.")
 
     savepath = Path(os.getenv("METRICSPATH")) / event_dir
     savepath.mkdir(parents=True, exist_ok=True)
@@ -34,10 +34,10 @@ def compute_metrics(
         dbpath = Path(os.getenv("METRICSPATH")) / event_dir / f"detections_{sensor_name}.hdf5"
 
         all_metrics = metrics.compute_metrics(dbpath)
-        metrics.save_metrics_to_csv(
-            all_metrics, savepath / f"metrics_{sensor_name}.csv"
-        )
+        savename = savepath / f"metrics_{sensor_name}.csv"
+        metrics.save_metrics_to_csv(all_metrics, savename)
 
+        logging.info(f"-Metrics saved to {savename}.")
         logging.info(f"-Completed {sensor_name}.")
     logging.info(f"Completed {event_name}.")
 

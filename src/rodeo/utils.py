@@ -57,7 +57,7 @@ def format_event_text(event_name, event_site, event_start, event_stop) -> str:
 
 def format_sensor_text(
     sensor_name: str,
-    dec_factor: str,
+    dec_factor: int,
     filter_type: str,
     filter_freq: float,
     taper: float,
@@ -72,7 +72,7 @@ def format_sensor_text(
     sensor_text = (
         "\n[[event.sensors]]"
         f'\nname = "{sensor_name}"'
-        f'\ndec_factor = "{dec_factor}"'
+        f"\ndec_factor = {dec_factor}"
         f'\nfilter = "{filter_type}"'
         f"\nfreq = {filter_freq}"
         f"\ntaper = {taper}"

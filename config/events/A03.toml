@@ -6,7 +6,7 @@ end = "2023-07-12T21:50:00"
 
 [[event.sensors]]
 name = "SHRU921_Tetra"
-dec_factor = "39"
+dec_factor = 39
 filter = "highpass"
 freq = 50.0
 taper = 5.0
@@ -49,7 +49,7 @@ distance = 0.95
 
 [[event.sensors]]
 name = "SHRU905_VLA1"
-dec_factor = "39"
+dec_factor = 39
 filter = "highpass"
 freq = 50.0
 taper = 5.0
@@ -92,7 +92,7 @@ distance = 0.95
 
 [[event.sensors]]
 name = "SHRU920_VLA2"
-dec_factor = "39"
+dec_factor = 39
 filter = "highpass"
 freq = 50.0
 taper = 5.0

@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
 import uuid
 
 import h5py
@@ -24,7 +23,7 @@ class Detection:
     time_end: np.datetime64
     sampling_rate: float
     unit: str
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
 
 
 def apply_linear_taper(time_series: np.ndarray, taper_length: int) -> np.ndarray:
@@ -75,7 +74,7 @@ def detect_pulses(
     return time[peaks]
 
 
-def station_from_catalogue_name(fname: Union[Path, str]) -> str:
+def station_from_catalogue_name(fname: Path) -> str:
     return fname.stem.split("FileInfo")[0].rstrip("_")
 
 
@@ -84,7 +83,7 @@ def rms(y: np.ndarray, win: int) -> np.ndarray:
 
 
 def save_detections_to_hdf5(
-    channel: Union[int, str], detections: list[Detection], file_path: str
+    channel: int | str, detections: list[Detection], file_path: str
 ) -> None:
     with h5py.File(file_path, "a") as f:
         for i, detection in enumerate(detections):
@@ -124,16 +123,21 @@ def save_detections_to_hdf5(
 
 def process_stream(
     ds: DataStream,
-    pulse_start: Union[int, list[int]] = 500,
-    pulse_end: Union[int, list[int]] = 500,
-    stwin: Union[float, list[float]] = 0.025,
-    ltwin: Union[float, list[float]] = 5.0,
-    threshold: Union[float, list[float]] = 2.25,
-    distance: Union[float, list[float]] = 0.75,
-    taper: Union[float, list[float]] = 5.0,
+    pulse_start: int | list[int] = 500,
+    pulse_end: int | list[int] = 500,
+    stwin: float | list[float] = 0.025,
+    ltwin: float | list[float] = 5.0,
+    threshold: float | list[float] = 2.25,
+    distance: float | list[float] = 0.75,
+    taper: float | list[float] = 5.0,
+    pulse_filter_type: str | None = None,
+    pulse_filter_freq: float | None = None,
+    detector_filter_type: str | None = None,
+    detector_filter_freq: float | None = None,
+    detector_decimate_factor: int | None = None,
     station: str = "unknown",
     dbpath: Path = Path.cwd() / "detections.h5",
-    metadata: Optional[dict] = None,
+    metadata: dict | None = None,
 ) -> None:
     if not isinstance(pulse_start, list):
         pulse_start = [pulse_start] * ds.num_channels
@@ -152,14 +156,25 @@ def process_stream(
 
     for chan in range(ds.num_channels):
         dsc = ds[chan]
+        if detector_decimate_factor is not None:
+            dsc_det = dsc.copy()
+            dsc_det.decimate(detector_decimate_factor)
+        else:
+            dsc_det = dsc
+        if detector_filter_type is not None:
+            dsc_det.filter(filter_type=detector_filter_type, freq=detector_filter_freq)
+
         pulse_times = detect_pulses(
-            dsc,
+            dsc_det,
             stwin=stwin[chan],
             ltwin=ltwin[chan],
             threshold=threshold[chan],
             distance=distance[chan],
             taper=taper[chan],
         )
+
+        if pulse_filter_type is not None:
+            dsc.filter(filter_type=pulse_filter_type, freq=pulse_filter_freq)
 
         detections = []
         for pulse in tqdm(pulse_times):

@@ -3,12 +3,15 @@
 
 import argparse
 import logging
+import os
 from pathlib import Path
 import tomllib
 
+import dotenv
+
 from rodeo import metrics
 
-
+dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
 
@@ -19,20 +22,23 @@ def compute_metrics(
 
     event_name = event["name"]
     event_start = event["start"][0:10]
+    event_dir = f"{event_name}_{event_start}"
 
-    path = Path.cwd() / "results" / "events" / f"{event_name}_{event_start}"
-    path.mkdir(parents=True, exist_ok=True)
+    savepath = Path(os.getenv("METRICSPATH")) / event_dir
+    savepath.mkdir(parents=True, exist_ok=True)
 
     for sensor in event["sensors"]:
         sensor_name = sensor["name"]
-        logging.info(f"    Computing metrics for {sensor_name}.")
+        logging.info(f"-Computing metrics for {sensor_name}.")
 
-        dbpath = path / f"detections_{sensor_name}.hdf5"
+        dbpath = Path(os.getenv("METRICSPATH")) / event_dir / f"detections_{sensor_name}.hdf5"
 
         all_metrics = metrics.compute_metrics(dbpath)
-        metrics.save_metrics_to_csv(all_metrics, path / f"metrics_{sensor_name}.csv")
+        metrics.save_metrics_to_csv(
+            all_metrics, savepath / f"metrics_{sensor_name}.csv"
+        )
 
-        logging.info(f"    Completed {sensor_name}.")
+        logging.info(f"-Completed {sensor_name}.")
     logging.info(f"Completed {event_name}.")
 
 

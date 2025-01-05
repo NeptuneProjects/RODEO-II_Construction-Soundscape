@@ -1,131 +1,134 @@
-[[event]]
+[[events]]
 name = "A03"
 site = "A03"
 start = "2023-07-12T19:00:00"
 end = "2023-07-12T21:50:00"
 
-[[event.sensors]]
+[[events.sensors]]
 name = "SHRU921_Tetra"
+dec_factor = "39"
 filter = "highpass"
-freq = 10.0
+freq = 50.0
 taper = 5.0
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 0
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.35
+threshold = 2.8
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 1
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.35
+threshold = 2.8
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 2
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.45
+threshold = 2.8
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 3
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.5
+threshold = 2.8
 distance = 0.95
 
-[[event.sensors]]
+[[events.sensors]]
 name = "SHRU905_VLA1"
+dec_factor = "39"
 filter = "highpass"
-freq = 10.0
+freq = 50.0
 taper = 5.0
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 0
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.35
+threshold = 3.0
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 1
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.35
+threshold = 3.1
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 2
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.45
+threshold = 3.15
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 3
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.5
+threshold = 3.15
 distance = 0.95
 
-[[event.sensors]]
+[[events.sensors]]
 name = "SHRU920_VLA2"
+dec_factor = "39"
 filter = "highpass"
-freq = 10.0
+freq = 50.0
 taper = 5.0
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 0
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.3
+threshold = 2.8
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 1
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.3
+threshold = 2.8
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 2
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.3
+threshold = 2.8
 distance = 0.95
 
-[[event.sensors.channels]]
+[[events.sensors.channels]]
 channel = 3
 pulse_start = 600
 pulse_end = 600
 stwin = 0.025
 ltwin = 5.0
-threshold = 2.25
+threshold = 2.8
 distance = 0.95

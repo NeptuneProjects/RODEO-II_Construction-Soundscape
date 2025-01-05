@@ -53,25 +53,23 @@ def run_workflow(
     pulse_filter: str | None = None,
     pulse_filt_freq: float | None = None,
 ) -> None:
-    base_path = Path.cwd() / "results" / "events"
-
     event_name = event["name"]
     event_site = event["site"]
     event_start = event["start"][0:10]
 
-    logging.info(f"Analyzing event {event_name} at site {event_site} at {event_start}.")
+    logging.info(f"Analyzing event {event_name}.")
 
-    path = base_path / f"{event_name}_{event_start}"
+    path = Path.cwd() / "data" / "events" / f"{event_name}_{event_start}"
     path.mkdir(parents=True, exist_ok=True)
 
     for sensor in event["sensors"]:
         sensor_name = sensor["name"]
-        sensor_dec_factor = sensor.get("decimate_factor", None)
+        sensor_dec_factor = sensor.get("dec_factor", None)
         sensor_filter = sensor.get("filter", None)
         sensor_freq = sensor.get("freq", None)
         sensor_channels = sensor["channels"]
 
-        logging.info(f"    Analayzing sensor {sensor_name}.")
+        logging.info(f"-Analayzing sensor {sensor_name}.")
 
         ds = read_inventory(
             file_path=Path(inv_config[sensor_name]["data"]["destination"]),
@@ -79,6 +77,7 @@ def run_workflow(
             time_end=np.datetime64(event["end"], TIME_PRECISION),
             channels=[i["channel"] for i in sensor_channels],
         )
+        logging.info(f"-Data loaded from disk.")
 
         r = compute_range(df_equip, df_turb, sensor_name, event_site)
 
@@ -109,8 +108,8 @@ def run_workflow(
             },
         )
 
-        logging.info(f"    Completed sensor {sensor_name}.")
-    logging.info(f"Completed {event_name} at {event_site} on {event_start}.")
+        logging.info(f"-Completed sensor {sensor_name}.")
+    logging.info(f"Completed {event_name}.")
 
     return
 

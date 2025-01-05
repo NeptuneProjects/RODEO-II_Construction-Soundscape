@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import uuid
 
@@ -155,14 +156,20 @@ def process_stream(
         taper = [taper] * ds.num_channels
 
     for chan in range(ds.num_channels):
+        logging.info(f"--Processing channel {chan}.")
         dsc = ds[chan]
         if detector_decimate_factor is not None:
             dsc_det = dsc.copy()
             dsc_det.decimate(detector_decimate_factor)
+            logging.info(f"--Detector data decimated by {detector_decimate_factor}.")
         else:
             dsc_det = dsc
         if detector_filter_type is not None:
-            dsc_det.filter(filter_type=detector_filter_type, freq=detector_filter_freq)
+            dsc_det.filter(filt_type=detector_filter_type, freq=detector_filter_freq)
+            logging.info(
+                f"--Detector data filtered with {detector_filter_type} "
+                f"at {detector_filter_freq} Hz."
+            )
 
         pulse_times = detect_pulses(
             dsc_det,
@@ -174,7 +181,11 @@ def process_stream(
         )
 
         if pulse_filter_type is not None:
-            dsc.filter(filter_type=pulse_filter_type, freq=pulse_filter_freq)
+            dsc.filter(filt_type=pulse_filter_type, freq=pulse_filter_freq)
+            logging.info(
+                f"--Pulse filtered with {pulse_filter_type} "
+                f"at {pulse_filter_freq} Hz."
+            )
 
         detections = []
         for pulse in tqdm(pulse_times):
@@ -197,3 +208,5 @@ def process_stream(
                 )
             )
         save_detections_to_hdf5(chan, detections, dbpath)
+        logging.info(f"--Detections saved to {dbpath}.")
+        logging.info(f"--Completed channel {chan}.")

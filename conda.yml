@@ -19,5 +19,6 @@ dependencies:
     - bathyreq
     - cmasher
     - cmocean
+    - polars
     - python-dotenv
     - git+ssh://git@github.com/TritonOA/TritonOA.git

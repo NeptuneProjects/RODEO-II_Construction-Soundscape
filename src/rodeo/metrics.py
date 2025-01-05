@@ -162,28 +162,3 @@ def compute_metrics(dbpath: Path) -> list[Metrics]:
                 all_metrics.append(metrics)
 
     return all_metrics
-
-
-def main(args: argparse.Namespace) -> None:
-    all_metrics = compute_metrics(args.dbpath)
-    save_metrics_to_csv(all_metrics, args.destination)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dbpath",
-        type=Path,
-        default=Path(
-            "/Users/wfjenkins/Research/Projects/RODEOII/data/detections/SHRU921_Tetra.h5"
-        ),
-    )
-    parser.add_argument(
-        "--destination",
-        type=Path,
-        default=Path(
-            "/Users/wfjenkins/Research/Projects/RODEOII/data/metrics/SHRU921_Tetra.csv"
-        ),
-    )
-    args = parser.parse_args()
-    main(args)

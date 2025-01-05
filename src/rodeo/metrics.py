@@ -38,6 +38,28 @@ class Metrics:
             [setattr(self, k, v) for k, v in self.metadata.items()]
 
 
+def build_detection(det: h5py.Group) -> Detection:
+    if "metadata" in det:
+        mdgrp = det["metadata"]
+        metadata = {k: mdgrp.attrs[k] for k in mdgrp.attrs.keys()}
+    else:
+        metadata = None
+    return Detection(
+        uid=det.attrs["uid"],
+        station=det.attrs["station"],
+        waveform=np.array(det["waveform"]),
+        time_vector=np.array(det["time_vector"], dtype=np.int64).astype(
+            "datetime64[us]"
+        ),
+        channel=det.attrs["channel"],
+        time_init=det.attrs["time_init"],
+        time_end=det.attrs["time_end"],
+        sampling_rate=det.attrs["sampling_rate"],
+        unit=det.attrs["unit"],
+        metadata=metadata,
+    )
+
+
 def save_metrics_to_csv(all_metrics: list[Metrics], destination: Path) -> None:
     df = pd.DataFrame([vars(m) for m in all_metrics]).drop("metadata", axis=1)
     df.to_csv(destination, index=False)
@@ -103,7 +125,7 @@ def rl_pkpk(x: np.ndarray) -> float:
 
 
 def compute_pulse_metrics(detection: Detection, running_sel_cum: float) -> Metrics:
-    x = detection.waveform
+    x = detection.waveform.squeeze()
     t = detection.time_vector
 
     rise_time, decay_time = rise_decay_times(x, t)
@@ -135,28 +157,7 @@ def compute_metrics(dbpath: Path) -> list[Metrics]:
             running_sel_cum = 0.0
             for k in fr[chan].keys():
                 det = fr[chan][k]
-
-                if "metadata" in det:
-                    mdgrp = det["metadata"]
-                    metadata = {k: mdgrp.attrs[k] for k in mdgrp.attrs.keys()}
-                else:
-                    metadata = None
-
-                detection = Detection(
-                    uid=det.attrs["uid"],
-                    station=det.attrs["station"],
-                    waveform=np.array(det["waveform"]),
-                    time_vector=np.array(det["time_vector"], dtype=np.int64).astype(
-                        "datetime64[us]"
-                    ),
-                    channel=det.attrs["channel"],
-                    time_init=det.attrs["time_init"],
-                    time_end=det.attrs["time_end"],
-                    sampling_rate=det.attrs["sampling_rate"],
-                    unit=det.attrs["unit"],
-                    metadata=metadata,
-                )
-
+                detection = build_detection(det)
                 metrics = compute_pulse_metrics(detection, running_sel_cum)
                 running_sel_cum = metrics.SEL_cum
                 all_metrics.append(metrics)

@@ -13,7 +13,7 @@ import pandas as pd
 from tritonoa.data.reader import read_inventory
 from tritonoa.data.time import TIME_PRECISION
 
-from rodeo import detect, metrics, utils
+from rodeo import detect, utils
 
 
 load_dotenv()

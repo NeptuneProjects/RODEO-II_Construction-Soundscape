@@ -1,0 +1,91 @@
+[[event]]
+name = "A02"
+site = "A02"
+start = "2023-07-31T19:00:00"
+end = "2023-07-31T22:20:00"
+
+[[event.sensors]]
+name = "SHRU905_VLA1"
+dec_factor = 39
+filter = "highpass"
+freq = 50.0
+taper = 5.0
+
+[[event.sensors.channels]]
+channel = 0
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95
+
+[[event.sensors.channels]]
+channel = 1
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95
+
+[[event.sensors.channels]]
+channel = 2
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95
+
+[[event.sensors.channels]]
+channel = 3
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95
+
+[[event.sensors]]
+name = "SHRU920_VLA2"
+dec_factor = 39
+filter = "highpass"
+freq = 50.0
+taper = 5.0
+
+[[event.sensors.channels]]
+channel = 0
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95
+
+[[event.sensors.channels]]
+channel = 1
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95
+
+[[event.sensors.channels]]
+channel = 2
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95
+
+[[event.sensors.channels]]
+channel = 3
+pulse_start = 600
+pulse_end = 600
+stwin = 0.025
+ltwin = 5.0
+threshold = 3.0
+distance = 0.95

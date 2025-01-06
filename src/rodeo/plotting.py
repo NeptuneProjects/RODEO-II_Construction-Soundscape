@@ -379,13 +379,13 @@ def plot_detection_diagnostic(
         )
 
         fig, axs = plt.subplots(
-            nrows=2, ncols=1, figsize=figsize, gridspec_kw={"hspace": 0.25}
+            nrows=2, ncols=1, figsize=figsize, gridspec_kw={"hspace": 0.25}, sharex=True
         )
         fig.suptitle(title)
 
         ax = axs[0]
         ax.plot(time, data)
-        ax.set_xticklabels([])
+        # ax.set_xticklabels([])
         ax.set_ylabel(f"Pressure [{ds.stats.units}]")
 
         # ax = axs[1]
@@ -397,6 +397,8 @@ def plot_detection_diagnostic(
         ax.plot(time, chf)
         ax.plot(time[peaks], chf[peaks], "rx")
         ax.axhline(threshold[i], color="r", linestyle="--")
+        # ax.xaxis.set_tick_params(labelbottom=True, )
+        ax.tick_params(axis="x", which="both", bottom=True, top=False, labelbottom=True)
         ax.set_xlabel("Time")
         ax.set_ylabel("Characteristic\nFunction")
 

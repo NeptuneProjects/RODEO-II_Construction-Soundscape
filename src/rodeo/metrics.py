@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -17,6 +16,7 @@ REF_PRESSURE = 1.0  # in uPa
 
 @dataclass
 class Metrics:
+    index: int
     uid: str
     station: str
     channel: int
@@ -124,7 +124,7 @@ def rl_pkpk(x: np.ndarray) -> float:
     return rl(x.max() - x.min())
 
 
-def compute_pulse_metrics(detection: Detection, running_sel_cum: float) -> Metrics:
+def compute_pulse_metrics(index: int, detection: Detection, running_sel_cum: float) -> Metrics:
     x = detection.waveform.squeeze()
     t = detection.time_vector
 
@@ -132,6 +132,7 @@ def compute_pulse_metrics(detection: Detection, running_sel_cum: float) -> Metri
     sound_exp_level = sel(x)
     running_sel_cum = sel_cum(np.array([running_sel_cum, sound_exp_level]))
     return Metrics(
+        index=index,
         uid=detection.uid,
         station=detection.station,
         channel=detection.channel,
@@ -155,10 +156,10 @@ def compute_metrics(dbpath: Path) -> list[Metrics]:
         all_metrics = []
         for chan in fr.keys():
             running_sel_cum = 0.0
-            for k in fr[chan].keys():
+            for idx, k in enumerate(fr[chan].keys()):
                 det = fr[chan][k]
                 detection = build_detection(det)
-                metrics = compute_pulse_metrics(detection, running_sel_cum)
+                metrics = compute_pulse_metrics(idx, detection, running_sel_cum)
                 running_sel_cum = metrics.SEL_cum
                 all_metrics.append(metrics)
 

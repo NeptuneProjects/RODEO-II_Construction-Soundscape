@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import logging
 import os
 from pathlib import Path
 import tomllib
@@ -16,9 +15,7 @@ from tritonoa.data.time import TIME_PRECISION
 
 from rodeo import plotting
 
-
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
 
 def load_data(
@@ -65,7 +62,7 @@ def plot_detector(
 
 
 def main(args: argparse.Namespace) -> None:
-    with open(args.invpath, "rb") as f:
+    with open(args.inv, "rb") as f:
         data = tomllib.load(f)
 
     event_data = (

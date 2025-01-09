@@ -50,7 +50,7 @@ def apply_linear_taper(time_series: np.ndarray, taper_length: int) -> np.ndarray
 
 
 def characteristic_function(y: np.ndarray, stwin: int, ltwin: int) -> np.ndarray:
-    y_rms = rms(y, stwin)
+    y_rms = np.sqrt(signal.convolve(y**2, np.ones(stwin) / stwin, mode="same"))
     y_long = signal.convolve(y_rms, np.ones(ltwin) / ltwin, mode="same")
     return y_rms / y_long
 
@@ -77,10 +77,6 @@ def detect_pulses(
 
 def station_from_catalogue_name(fname: Path) -> str:
     return fname.stem.split("FileInfo")[0].rstrip("_")
-
-
-def rms(y: np.ndarray, win: int) -> np.ndarray:
-    return np.sqrt(signal.convolve(y**2, np.ones(win) / win, mode="same"))
 
 
 def save_detections_to_hdf5(

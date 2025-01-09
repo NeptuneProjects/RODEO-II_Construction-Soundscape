@@ -172,3 +172,4 @@ results/
 *.npy
 *.npz
 /old
+/products

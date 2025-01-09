@@ -83,7 +83,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--savepath",
         type=Path,
-        default=Path("products/pulse_detector_table.md"),
+        default=Path("products/hdr_report/pulse_detector_table.md"),
         help="Path to directory containing detector configuration files",
     )
     args = parser.parse_args()

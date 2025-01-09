@@ -5,7 +5,9 @@ import re
 import bathyreq
 import cmasher as cmr
 import cmocean as cmo
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from mpl_toolkits.basemap import Basemap
 import numpy as np
@@ -367,9 +369,10 @@ def plot_detection_diagnostic(
     threshold: float | list[float] = 2.25,
     distance: float | list[float] = 0.75,
     taper: float = 5.0,
-    figsize: tuple[float] = (24, 6),
     sensor: str = "UnkSta",
     channel: int | None = None,
+    figsize: tuple[float] = (24, 6),
+    title: str | None = None,
 ) -> list[plt.Figure]:
     fs = ds.stats.sampling_rate
     time = ds.time_vector
@@ -402,10 +405,11 @@ def plot_detection_diagnostic(
             chf, height=threshold[i], distance=distance[i] * fs
         )
 
-        title = (
-            f"{sensor} | Channel {chan} | STWIN: {stwin[i]} | LTWIN: {ltwin[i]} | "
-            f"THRESHOLD: {threshold[i]} | DISTANCE: {distance[i]} | N_PEAKS: {len(peaks)}"
-        )
+        if title is None:
+            title = (
+                f"{sensor} | Channel {chan} | STWIN: {stwin[i]} | LTWIN: {ltwin[i]} | "
+                f"THRESHOLD: {threshold[i]} | DISTANCE: {distance[i]} | N_PEAKS: {len(peaks)}"
+            )
 
         fig, axs = plt.subplots(
             nrows=2, ncols=1, figsize=figsize, gridspec_kw={"hspace": 0.25}, sharex=True
@@ -436,6 +440,92 @@ def plot_detection_diagnostic(
         print(f"Channel {chan} complete.")
 
     return fig_list
+
+
+def plot_detector_output(
+    ds: DataStream,
+    stwin: float | list[float] = 0.025,
+    ltwin: float | list[float] = 5.0,
+    threshold: float | list[float] = 2.25,
+    distance: float | list[float] = 0.75,
+    taper: float = 5.0,
+    sensor: str = "UnkSta",
+    channel: int | None = None,
+    zoom_start: int = 0,
+    zoom_end: int = 1000,
+    figsize: tuple[float] = (8, 3),
+    title: str | None = None,
+) -> list[plt.Figure]:
+    fs = ds.stats.sampling_rate
+    time = ds.time_vector
+
+    data = detect.apply_linear_taper(ds.data[channel], int(fs * taper))
+    chf = detect.characteristic_function(
+        data, stwin=int(fs * stwin), ltwin=int(fs * ltwin)
+    )
+    peaks, _ = signal.find_peaks(chf, height=threshold, distance=distance * fs)
+    xlim = (time.min(), time.max())
+
+
+    # Compute zoomed section:
+    data_zoom = data[zoom_start:zoom_end]
+    time_zoom = time[zoom_start:zoom_end]
+    chf_zoom = chf[zoom_start:zoom_end]
+    peaks_zoom = peaks[(peaks > zoom_start) & (peaks < zoom_end)] - zoom_start
+
+    if title is None:
+        title = (
+            f"{sensor} | Channel {channel} | STWIN: {stwin} | LTWIN: {ltwin} | "
+            f"THRESHOLD: {threshold} | DISTANCE: {distance} | N_PEAKS: {len(peaks)}"
+        )
+
+    fig, axs = plt.subplots(
+        nrows=2,
+        ncols=2,
+        figsize=figsize,
+        gridspec_kw={"hspace": 0.08, "wspace": 0.12, "width_ratios": [3, 2]},
+    )
+    fig.suptitle(title)
+
+    # Time series, full
+    ax = axs[0, 0]
+    ax.plot(time, data, c="k")
+    ax.axvspan(time[zoom_start], time[zoom_end], facecolor="gray", alpha=0.5, edgecolor="none")
+    ax.set_xlim(xlim)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    ax.set_xticklabels([])
+    ax.set_ylabel(f"Pressure [{ds.stats.units}]")
+
+    # Time series, zoomed
+    ax = axs[0, 1]
+    ax.plot(time_zoom, data_zoom, c="k")
+    locator = mdates.AutoDateLocator(minticks=4, maxticks=6)
+    ax.xaxis.set_major_locator(locator)
+    ax.set_xticklabels([])
+
+    # Characteristic function, full
+    ax = axs[1, 0]
+    ax.plot(time, chf, c="k")
+    ax.plot(time[peaks], chf[peaks], "rx")
+    ax.axhline(threshold, color="r", linestyle="--")
+    ax.axvspan(time[zoom_start], time[zoom_end], facecolor="gray", alpha=0.5, edgecolor="none")
+    ax.set_xlim(xlim)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    ax.set_ylim(0, chf.max() * 1.1)
+    ax.tick_params(axis="x", which="both", bottom=True, top=False, labelbottom=True)
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Characteristic\nFunction")
+
+    # Characteristic function, zoomed
+    ax = axs[1, 1]
+    ax.plot(time_zoom, chf_zoom, c="k")
+    ax.plot(time_zoom[peaks_zoom], chf_zoom[peaks_zoom], "rx")
+    ax.axhline(threshold, color="r", linestyle="--")
+    locator = mdates.AutoDateLocator(minticks=4, maxticks=6)
+    ax.xaxis.set_major_locator(locator)
+    ax.set_ylim(0, chf_zoom.max() * 1.1)
+
+    return fig
 
 
 def plot_study_area(

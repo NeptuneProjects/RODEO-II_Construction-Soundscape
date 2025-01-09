@@ -54,7 +54,6 @@ def parse_data(data: dict) -> pd.DataFrame:
                     "$M_1$ (s)": channel.get("stwin"),
                     "$M_2$ (s)": channel.get("ltwin"),
                     "Threshold": channel.get("threshold"),
-                    "Distance": channel.get("distance"),
                 }
                 flat_table.append(channel_row)
     return pd.DataFrame(flat_table)
@@ -64,7 +63,7 @@ def format_markdown(df: pd.DataFrame) -> str:
 
     PREPEND = "---\n" "font-size: 10pt\n" "geometry: margin=1in\n" "---\n" "\\tiny\n"
 
-    table = df.to_markdown(tablefmt="grid", index=False)
+    table = df.to_markdown(tablefmt="github", index=False)
     return f"{PREPEND}\n{table}"
 
 

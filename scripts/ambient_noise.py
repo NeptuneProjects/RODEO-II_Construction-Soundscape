@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from itertools import product
 import logging
 import os
 from pathlib import Path
@@ -27,34 +28,35 @@ def start_end_time(event: pd.Series) -> tuple[np.datetime64, np.datetime64]:
     return start, end
 
 
-
-
 def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
-    for i, event in df.iterrows():
+    skip_events = {"Z01-A", "Z01-B", "Z01-C", "Z01-D", "A04"}
+    skip_sensors = {
+        "A14": {"SHRU921_Tetra"},
+        "A11": {"SHRU921_Tetra"},
+        "A02": {"SHRU921_Tetra"},
+        "A15": {"SHRU921_Tetra"},
+        "A13": {"SHRU921_Tetra"},
+        "A01": {"SHRU921_Tetra"},
+        "A07": {"SHRU921_Tetra", "SHRU905_VLA1"},
+    }
+
+    # Create a single loop using itertools.product
+    for (i, event), (sensor_name, sensor_config) in product(df.iterrows(), inv_config.items()):
+        if event["Event"] in skip_events:
+            continue
+
+        if sensor_name in skip_sensors.get(event["Event"], set()):
+            continue
+
         start, end = start_end_time(event)
 
-        for sensor_name in inv_config.keys():
-            sensor_channels = inv_config[sensor_name]["channels"]
-            ds = read_inventory(
-                file_path=Path(inv_config[sensor_name]["data"]["destination"]),
-                time_start=start,
-                time_end=end,
-                channels=[i["channel"] for i in sensor_channels],
-            )
-            print(ds)
-
-
-
-
-
-        # ds = read_inventory(
-        #     file_path=Path(inv_config[sensor_name]["data"]["destination"]),
-        #     time_start=np.datetime64(event["start"], TIME_PRECISION),
-        #     time_end=np.datetime64(event["end"], TIME_PRECISION),
-        #     channels=[i["channel"] for i in sensor_channels],
-        # )
-
-
+        ds = read_inventory(
+            file_path=Path(sensor_config["data"]["destination"]),
+            time_start=start,
+            time_end=end,
+        )
+        print(ds)
+        return
 
 
 def main(args: argparse.Namespace) -> None:

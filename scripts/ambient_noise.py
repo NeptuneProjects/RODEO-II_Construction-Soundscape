@@ -9,15 +9,21 @@ from pathlib import Path
 import tomllib
 
 from dotenv import load_dotenv
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.signal import welch
 from tritonoa.data.reader import read_inventory
+from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
+
+from rodeo.metrics import REF_PRESSURE
 
 load_dotenv()
 
 TIME_BEFORE_MINUTES = 11
 DURATION_MINUTES = 10
+STEP_MINUTES = 1
 
 
 def start_end_time(event: pd.Series) -> tuple[np.datetime64, np.datetime64]:
@@ -26,6 +32,27 @@ def start_end_time(event: pd.Series) -> tuple[np.datetime64, np.datetime64]:
     )
     end = start + np.timedelta64(DURATION_MINUTES, "m")
     return start, end
+
+
+def compute_psd(
+    ds: DataStream,
+    segment_dur: float = 10.0,
+    filter: str | None = None,
+    filt_freq: float | tuple[float, float] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    # Filter data
+    if filter is not None:
+        ds.filter(filter, freq=filt_freq)
+    fs = ds.stats.sampling_rate
+
+    # Compute nfft length based on segment_dur and fs:
+    nperseg = int(segment_dur * fs)
+
+    # Compute PSD using Welch's method
+    freqs, psd = welch(
+        ds.data, fs=fs, window="hann", nperseg=nperseg, noverlap=nperseg // 2, nfft=nperseg, scaling="density"
+    )
+    return freqs, psd
 
 
 def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
@@ -41,10 +68,11 @@ def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
     }
 
     # Create a single loop using itertools.product
-    for (i, event), (sensor_name, sensor_config) in product(df.iterrows(), inv_config.items()):
+    for (i, event), (sensor_name, sensor_config) in product(
+        df.iterrows(), inv_config.items()
+    ):
         if event["Event"] in skip_events:
             continue
-
         if sensor_name in skip_sensors.get(event["Event"], set()):
             continue
 
@@ -55,7 +83,24 @@ def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
             time_start=start,
             time_end=end,
         )
-        print(ds)
+        print("Data loaded")
+        freqs, psd = compute_psd(
+            ds,
+            segment_dur=5.0,
+            filter="highpass",
+            filt_freq=10.0,
+        )
+        psd_db = 10 * np.log10(psd / (REF_PRESSURE ** 2))
+        fig = plt.figure()
+        [plt.plot(freqs, psd_db[j]) for j in range(ds.num_channels)]
+        plt.xscale("log")
+        plt.xlim(10, 10000)
+        plt.ylim(60, 110)
+        plt.grid(which="both", linestyle="--")
+        plt.xlabel("Frequency (Hz)")
+        plt.ylabel("Power Spectral Density (dB re 1 $\\mu Pa^2$/Hz)")
+        fig.savefig("spectrum.png")
+
         return
 
 

@@ -107,11 +107,11 @@ def rl(x: np.ndarray) -> np.ndarray:
     return 20 * np.log10(np.abs(x) / REF_PRESSURE)
 
 
-def rl_rms(x: np.ndarray) -> float:
+def rl_rms(x: np.ndarray, axis: int = -1) -> float:
     """Returns root mean square (RMS) received level (RL) of the
     time series in dB re 1 uPa.
     """
-    return rl(np.sqrt(np.mean(x**2)))
+    return rl(np.sqrt(np.mean(x**2, axis=axis)))
 
 
 def rl_pk(x: np.ndarray) -> float:

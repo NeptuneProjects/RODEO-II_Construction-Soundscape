@@ -40,35 +40,17 @@ def compute_rlrms_segment(
     fs = ds.stats.sampling_rate
     duration = np.timedelta64(duration, unit)
 
-    rlrms = []
+    rl = []
 
-    # fig = plt.figure()
-    # plt.plot(ds.time_vector[-1000:], ds.data[0, -1000:])
-    # plt.grid(which="both", linestyle="--")
-    # plt.savefig(f"waveform_full.png")
-    # plt.close()
-
-    for i, time_start in enumerate(np.arange(
-        ds.stats.time_init, ds.stats.time_end - duration, duration
-    )):
+    for i, time_start in enumerate(
+        np.arange(ds.stats.time_init, ds.stats.time_end - duration, duration)
+    ):
         time_end = time_start + duration
         ds_interval = ds.copy()
         ds_interval.trim(time_start, time_end)
-        tmp = rl_rms(ds_interval.data)
-        print("")
-        print("Requested:", time_start, time_end)
-        print("Obtained:", ds_interval.stats.time_init, ds_interval.stats.time_end)
-        # rlrms.append(rl_rms(ds_interval.data))
-        # print(ds_interval.data.shape)
-        # print(tmp)
-        # print(tmp.shape)
+        rl.append(rl_rms(ds_interval.data))
 
-        # fig = plt.figure()
-        # plt.plot(ds_interval.time_vector, ds_interval.data[0])
-        # plt.savefig(f"waveform_{i}.png")
-        # plt.close()
-
-    return rlrms
+    return rl
 
 
 def compute_psd(
@@ -128,10 +110,11 @@ def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
             time_end=end,
         )
         print("Data loaded")
-        print(ds.stats.time_init, ds.stats.time_end)
-        print(ds.time_vector[-10:])
+        # print(ds.stats.time_init, ds.stats.time_end)
+        # print(ds.time_vector[-10:])
 
         RL_rms = compute_rlrms_segment(ds, duration=1, unit="m")
+        print(RL_rms)
 
         # freqs, psd = compute_psd(
         #     ds,

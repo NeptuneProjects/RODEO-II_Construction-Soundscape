@@ -23,9 +23,9 @@ class Metrics:
     time_init: np.datetime64
     time_end: np.datetime64
     unit: str
-    RL_rms: float
-    RL_pk: float
-    RL_pkpk: float
+    SPL_rms: float
+    SPL_pk: float
+    SPL_pkpk: float
     SEL: float
     t_rise: float
     t_decay: float
@@ -97,34 +97,58 @@ def rise_decay_times(x: np.ndarray, t: np.ndarray) -> tuple[float, float]:
     return rise_time.astype(float) / 1e6, decay_time.astype(float) / 1e6
 
 
+
+def p_msl(x: np.ndarray, axis: int = -1) -> float:
+    """Returns mean square sound pressure in uPa."""
+    return np.mean(x**2, axis=axis)
+
+
+def p_rms(x: np.ndarray, axis: int = -1) -> float:
+    """Returns root mean square (RMS) sound pressure in uPa."""
+    return np.sqrt(p_msl(x, axis=axis))
+
+
+
 def sel(x: np.ndarray) -> float:
     """Returns single-strike sound exposure level (SEL) in dB re 1 uPa."""
-    return 10 * np.log10(energy90(x) / REF_PRESSURE)
+    return 10 * np.log10(energy90(x) / (REF_PRESSURE ** 2))
 
 
-def rl(x: np.ndarray) -> np.ndarray:
-    """Returns received level (RL) of the time series in dB re 1 uPa."""
+def spl(x: np.ndarray) -> np.ndarray:
+    """Returns sound pressure level (SPL) of the time series in dB re 1 uPa."""
     return 20 * np.log10(np.abs(x) / REF_PRESSURE)
 
 
-def rl_rms(x: np.ndarray, axis: int = -1) -> float:
-    """Returns root mean square (RMS) received level (RL) of the
+def spl_rms(x: np.ndarray, axis: int = -1) -> float:
+    """Returns root mean square (RMS) sound pressure level (SPL) of the
     time series in dB re 1 uPa.
     """
-    return rl(np.sqrt(np.mean(x**2, axis=axis)))
+    return spl(p_rms(x, axis=axis))
 
 
-def rl_pk(x: np.ndarray) -> float:
-    """Returns zero-to-peak received level (RL) in dB re 1 uPa."""
-    return rl(np.abs(x).max())
+def p_pk(x: np.ndarray, axis: int = -1) -> float:
+    """Returns zero-to-peak (Pk) sound pressure in uPa."""
+    return np.abs(x).max(axis=axis)
 
 
-def rl_pkpk(x: np.ndarray) -> float:
-    """Returns peak-to-peak received level (RL) in dB re 1 uPa."""
-    return rl(x.max() - x.min())
+def L_pk(x: np.ndarray, axis: int = -1) -> float:
+    """Returns zero-to-peak sound pressure level (SPL) in dB re 1 uPa."""
+    return spl(p_pk(x, axis=axis))
 
 
-def compute_pulse_metrics(index: int, detection: Detection, running_sel_cum: float) -> Metrics:
+def p_pkpk(x: np.ndarray, axis: int = -1) -> float:
+    """Returns peak-to-peak sound pressure in uPa."""
+    return x.max(axis=axis) - x.min(axis=axis)
+
+
+def spl_pkpk(x: np.ndarray, axis: int = -1) -> float:
+    """Returns peak-to-peak sound pressure (SPL) in dB re 1 uPa."""
+    return spl(p_pkpk(x, axis=axis))
+
+
+def compute_pulse_metrics(
+    index: int, detection: Detection, running_sel_cum: float
+) -> Metrics:
     x = detection.waveform.squeeze()
     t = detection.time_vector
 
@@ -139,9 +163,9 @@ def compute_pulse_metrics(index: int, detection: Detection, running_sel_cum: flo
         time_init=detection.time_init,
         time_end=detection.time_end,
         unit=detection.unit,
-        RL_rms=rl_rms(x),
-        RL_pk=rl_pk(x),
-        RL_pkpk=rl_pkpk(x),
+        SPL_rms=spl_rms(x),
+        SPL_pk=L_pk(x),
+        SPL_pkpk=spl_pkpk(x),
         SEL=sound_exp_level,
         t_rise=rise_time,
         t_decay=decay_time,

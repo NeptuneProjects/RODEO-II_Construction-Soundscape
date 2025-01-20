@@ -3,7 +3,6 @@
 
 import argparse
 from itertools import product
-import logging
 import os
 from pathlib import Path
 import tomllib
@@ -17,7 +16,7 @@ from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
 
-from rodeo.metrics import REF_PRESSURE, rl_rms
+from rodeo.metrics import spl_rms
 
 load_dotenv()
 
@@ -34,13 +33,13 @@ def start_end_time(event: pd.Series) -> tuple[np.datetime64, np.datetime64]:
     return start, end
 
 
-def compute_rlrms_segment(
+def compute_splrms_segment(
     ds: DataStream, duration: int = 1, unit: str = "s"
 ) -> np.ndarray:
     fs = ds.stats.sampling_rate
     duration = np.timedelta64(duration, unit)
 
-    rl = []
+    spl = []
 
     for i, time_start in enumerate(
         np.arange(ds.stats.time_init, ds.stats.time_end - duration, duration)
@@ -48,9 +47,9 @@ def compute_rlrms_segment(
         time_end = time_start + duration
         ds_interval = ds.copy()
         ds_interval.trim(time_start, time_end)
-        rl.append(rl_rms(ds_interval.data))
+        spl.append(spl_rms(ds_interval.data))
 
-    return rl
+    return spl
 
 
 def compute_psd(
@@ -113,8 +112,8 @@ def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
         # print(ds.stats.time_init, ds.stats.time_end)
         # print(ds.time_vector[-10:])
 
-        RL_rms = compute_rlrms_segment(ds, duration=1, unit="m")
-        print(RL_rms)
+        SPL_rms = compute_splrms_segment(ds, duration=1, unit="m")
+        print(SPL_rms)
 
         # freqs, psd = compute_psd(
         #     ds,

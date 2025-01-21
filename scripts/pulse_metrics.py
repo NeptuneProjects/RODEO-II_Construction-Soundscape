@@ -24,7 +24,7 @@ def compute_metrics(
 
     logging.info(f"[{event_name}] Computing metrics for event.")
 
-    savepath = Path(os.getenv("METRICSPATH")) / event_dir
+    savepath = Path(os.getenv("DBPATH")) / event_dir
     savepath.mkdir(parents=True, exist_ok=True)
 
     for sensor in event["sensors"]:

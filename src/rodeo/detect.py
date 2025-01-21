@@ -203,6 +203,6 @@ def process_stream(
                     metadata=metadata,
                 )
             )
-        # save_detections_to_hdf5(chan, detections, dbpath)
+        save_detections_to_hdf5(chan, detections, dbpath)
         logging.info(f"--Detections saved to {dbpath}.")
         logging.info(f"--Completed channel {chan}.")

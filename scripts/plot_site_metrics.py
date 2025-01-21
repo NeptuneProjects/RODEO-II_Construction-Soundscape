@@ -114,11 +114,12 @@ def plot_event_metrics(df: pl.DataFrame) -> None:
 
                 # Control x-axis ticks and labels
                 if i == len(METRICS) - 1:
-                    ax.set_xlabel("Strike Index")
-                    # ax.xaxis.set_major_locator(mdates.DayLocator(interval=7))
+                    ax.set_xlabel("Time")
                 else:
                     ax.set_xticklabels([])
                 ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+                locator = mdates.AutoDateLocator(minticks=2, maxticks=5)  # Min 4, max 8 ticks
+                ax.xaxis.set_major_locator(locator)
 
             # Controlx x-axis limits:
             xlim_margin = 0.02 * (time.max() - time.min())
@@ -146,6 +147,7 @@ def plot_event_metrics(df: pl.DataFrame) -> None:
         #     return
         fig.savefig(savepath, dpi=600, bbox_inches="tight", facecolor="white")
         plt.close()
+
 
 
 def main(args: argparse.Namespace) -> None:

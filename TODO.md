@@ -1,4 +1,9 @@
 # To-do list for project
 
-- [x] Update `.env` file on server.
+## Open
 
+
+## Completed
+
+- [x] Update `.env` file on server.
+- [x] Fix xtick spacing in metrics figures.

@@ -32,7 +32,7 @@ def compute_metrics(
         logging.info(f"[{event_name}][{sensor_name}] Computing metrics for sensor.")
 
         dbpath = (
-            Path(os.getenv("DBPATH")) / event_dir / f"detections_{sensor_name}.hdf5"
+            savepath / f"detections_{sensor_name}.hdf5"
         )
 
         all_metrics = metrics.compute_metrics(dbpath)

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from datetime import datetime
 import logging
 import os
 from pathlib import Path
@@ -18,6 +19,9 @@ logging.basicConfig(level=logging.INFO)
 
 def compute_psd(files: list[Path], output: Path, nperseg: int, noverlap: int) -> None:
     logging.info(f"Creating PSD file at {output.resolve()}")
+    if output.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output = output.with_name(f"{output.stem}_{timestamp}{output.suffix}")
     with h5py.File(output, "w") as fw:
         db_attrs_set = False
 
@@ -135,13 +139,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nperseg",
         type=int,
-        default=4096,
+        default=2**14,
         help="Length of each segment for Welch's method.",
     )
     parser.add_argument(
         "--noverlap",
         type=int,
-        default=int(0.5 * 4096),
+        default=int(0.5 * 2**14),
         help="Number of points to overlap between segments.",
     )
     args = parser.parse_args()

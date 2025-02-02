@@ -19,9 +19,6 @@ logging.basicConfig(level=logging.INFO)
 
 def compute_psd(files: list[Path], output: Path, nperseg: int, noverlap: int) -> None:
     logging.info(f"Creating PSD file at {output.resolve()}")
-    if output.exists():
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output = output.with_name(f"{output.stem}_{timestamp}{output.suffix}")
     with h5py.File(output, "w") as fw:
         db_attrs_set = False
 
@@ -117,7 +114,11 @@ def retrieve_data(f: h5py.File, chankey: str, detkey: str) -> dict:
 
 def main(args: argparse.Namespace) -> None:
     files = list(Path.rglob(args.dbpath, "*.hdf5"))
-    compute_psd(files, args.psdfile, args.nperseg, args.noverlap)
+    output = args.psdfile
+    if output.exists():
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        output = output.with_name(f"{output.stem}_{timestamp}{output.suffix}")
+    compute_psd(files, output, args.nperseg, args.noverlap)
 
 
 if __name__ == "__main__":
@@ -139,13 +140,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nperseg",
         type=int,
-        default=2**14,
+        default=2**13,
         help="Length of each segment for Welch's method.",
     )
     parser.add_argument(
         "--noverlap",
         type=int,
-        default=int(0.5 * 2**14),
+        default=int(0.5 * 2**13),
         help="Number of points to overlap between segments.",
     )
     args = parser.parse_args()

@@ -22,6 +22,7 @@ def compute_psd(files: list[Path], output: Path, nperseg: int, noverlap: int) ->
         db_attrs_set = False
 
         for i, file in enumerate(files):
+            sta_attrs_set = False
             event_name = file.parent.name.split("_")[0]
             station_name = "_".join(file.stem.split("_")[1:])
 
@@ -62,8 +63,9 @@ def compute_psd(files: list[Path], output: Path, nperseg: int, noverlap: int) ->
                                     "f": f,
                                 }
                             )
-                            grp_sta.attrs.update({"range": data["range"]})
                             db_attrs_set = True
+                        if not sta_attrs_set:
+                            grp_sta.attrs.update({"range": data["range"]})
 
                         # Assign event-specific metadata
                         grp_event.attrs.update(

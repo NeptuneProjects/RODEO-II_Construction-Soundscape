@@ -3,22 +3,26 @@
 
 import argparse
 from itertools import product
+import logging
 import os
 from pathlib import Path
 import tomllib
+import time
 
 from dotenv import load_dotenv
-import matplotlib.pyplot as plt
+import h5py
 import numpy as np
 import pandas as pd
-from scipy.signal import welch
 from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
 
 from rodeo.metrics import spl_rms
+from rodeo.utils import get_welch
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
+welch, cuda_enabled = get_welch()
 
 TIME_BEFORE_MINUTES = 11
 DURATION_MINUTES = 10
@@ -36,50 +40,71 @@ def start_end_time(event: pd.Series) -> tuple[np.datetime64, np.datetime64]:
 def compute_splrms_segment(
     ds: DataStream, duration: int = 1, unit: str = "s"
 ) -> np.ndarray:
-    fs = ds.stats.sampling_rate
+    """Compute the RMS SPL of a data stream in segments of duration `duration`
+    and unit `unit`.
+    """
     duration = np.timedelta64(duration, unit)
 
     spl = []
 
-    for i, time_start in enumerate(
-        np.arange(ds.stats.time_init, ds.stats.time_end - duration, duration)
+    for time_start in np.arange(
+        ds.stats.time_init, ds.stats.time_end - duration, duration
     ):
         time_end = time_start + duration
         ds_interval = ds.copy()
         ds_interval.trim(time_start, time_end)
         spl.append(spl_rms(ds_interval.data))
 
-    return spl
+    return np.array(spl).T
 
 
 def compute_psd(
     ds: DataStream,
     segment_dur: float = 10.0,
-    filter: str | None = None,
-    filt_freq: float | tuple[float, float] | None = None,
+    pcoverlap: float = 0.5,
 ) -> tuple[np.ndarray, np.ndarray]:
-    # Filter data
-    if filter is not None:
-        ds.filter(filter, freq=filt_freq)
+    """Compute the Power Spectral Density (PSD) of a data stream using Welch's
+    method.
+
+    Args:
+        ds: DataStream object.
+        segment_dur: Duration of the segment in seconds. Defaults to 10.0.
+
+    Returns:
+        freqs: Array of frequencies.
+        psd: Array of PSD values.
+    """
     fs = ds.stats.sampling_rate
 
     # Compute nfft length based on segment_dur and fs:
     nperseg = int(segment_dur * fs)
+    noverlap = int(nperseg * pcoverlap)
 
     # Compute PSD using Welch's method
     freqs, psd = welch(
         ds.data,
-        fs=fs,
+        fs=ds.stats.sampling_rate,
         window="hann",
         nperseg=nperseg,
-        noverlap=nperseg // 2,
+        noverlap=noverlap,
         nfft=nperseg,
         scaling="density",
     )
+    if cuda_enabled:
+        freqs = freqs.get()
+        psd = psd.get()
     return freqs, psd
 
 
-def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
+def loop_over(
+    df: pd.DataFrame,
+    inv_config: dict,
+    output: Path,
+    filt: str | None = None,
+    filt_freq: float | None = 10.0,
+    segment_dur: float = 5.0,
+    pcoverlap: float = 0.9,
+) -> None:
     skip_events = {"Z01-A", "Z01-B", "Z01-C", "Z01-D", "A04"}
     skip_sensors = {
         "A14": {"SHRU921_Tetra"},
@@ -91,56 +116,76 @@ def loop_over(df: pd.DataFrame, inv_config: dict) -> None:
         "A07": {"SHRU921_Tetra", "SHRU905_VLA1"},
     }
 
-    # Create a single loop using itertools.product
-    for (i, event), (sensor_name, sensor_config) in product(
+    for (_, event), (sensor_name, sensor_config) in product(
         df.iterrows(), inv_config.items()
     ):
-        if event["Event"] in skip_events:
+        event_name = event["Event"]
+        if event_name in skip_events:
             continue
-        if sensor_name in skip_sensors.get(event["Event"], set()):
+        if sensor_name in skip_sensors.get(event_name, set()):
             continue
 
         start, end = start_end_time(event)
-        print(start, end)
-        print("Reading inventory")
+        logging.info(f"Reading inventory: {start} - {end}")
         ds = read_inventory(
             file_path=Path(sensor_config["data"]["destination"]),
             time_start=start,
             time_end=end,
         )
-        print("Data loaded")
-        # print(ds.stats.time_init, ds.stats.time_end)
-        # print(ds.time_vector[-10:])
+        logging.info("Data loaded.")
 
+        # Filter data
+        if filt is not None:
+            logging.info("Filtering data.")
+            ds.filter(filt, freq=filt_freq)
+            logging.info("Filtering complete.")
+
+        # Compute RMS SPL over segments
         SPL_rms = compute_splrms_segment(ds, duration=1, unit="m")
-        print(SPL_rms)
 
-        # freqs, psd = compute_psd(
-        #     ds,
-        #     segment_dur=5.0,
-        #     filter="highpass",
-        #     filt_freq=10.0,
-        # )
-        # psd_db = 10 * np.log10(psd / (REF_PRESSURE ** 2))
-        # fig = plt.figure()
-        # [plt.plot(freqs, psd_db[j]) for j in range(ds.num_channels)]
-        # plt.xscale("log")
-        # plt.xlim(10, 10000)
-        # plt.ylim(60, 110)
-        # plt.grid(which="both", linestyle="--")
-        # plt.xlabel("Frequency (Hz)")
-        # plt.ylabel("Power Spectral Density (dB re 1 $\\mu Pa^2$/Hz)")
-        # fig.savefig("spectrum.png")
+        # Compute PSD
+        logging.info("Computing PSD.")
+        t0 = time.time()
+        freqs, psd = compute_psd(
+            ds,
+            segment_dur=segment_dur,
+            pcoverlap=pcoverlap,
+        )
+        logging.info(f"PSD computed: {time.time() - t0} s elapsed.")
+        save_hdf5(event_name, sensor_name, SPL_rms, freqs, psd, output)
 
-        return
+
+def save_hdf5(
+    event: str,
+    sensor_name: str,
+    SPL_rms: np.ndarray,
+    freqs: np.ndarray,
+    psd: np.ndarray,
+    output: Path,
+) -> None:
+    with h5py.File(output, "a") as f:
+        if event not in f:
+            f.create_group(event)
+        if sensor_name not in f[event]:
+            f[event].create_group(sensor_name)
+        f[event][sensor_name].create_dataset("SPL_rms", data=SPL_rms)
+        f[event][sensor_name].create_dataset("freqs", data=freqs)
+        f[event][sensor_name].create_dataset("psd", data=psd)
 
 
 def main(args: argparse.Namespace) -> None:
     df_events = pd.read_csv(os.getenv("EVENTCONFIG"))
     with open(args.inv, "rb") as f:
         inv_config = tomllib.load(f)
-    loop_over(df_events, inv_config)
-    return
+    loop_over(
+        df_events,
+        inv_config,
+        args.output,
+        filt=args.filt,
+        filt_freq=args.filt_freq,
+        segment_dur=args.segment_dur,
+        pcoverlap=args.pcoverlap,
+    )
 
 
 if __name__ == "__main__":
@@ -151,8 +196,10 @@ if __name__ == "__main__":
         help="Path to the configuration file",
         default=Path(os.getenv("INVCONFIG")),
     )
-    parser.add_argument("--event", type=Path, default=Path("config/events/A08.toml"))
-    parser.add_argument("--filter", type=str, default="highpass")
+    parser.add_argument("--filt", type=str, default="highpass")
     parser.add_argument("--filt_freq", type=float, default=10.0)
+    parser.add_argument("--segment_dur", type=float, default=5.0)
+    parser.add_argument("--pcoverlap", type=float, default=0.9)
+    parser.add_argument("--output", type=Path, default=Path(os.getenv("AMBFILE")))
     args = parser.parse_args()
     main(args)

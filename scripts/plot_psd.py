@@ -19,14 +19,22 @@ plt.style.use(Path("config/jasa_fig_style.mplstyle"))
 def plot_psd_pdf(
     freq: np.ndarray,
     data: np.ndarray,
-    event_name: str = None,
-    distance: list[float] = None,
+    freq_amb: np.ndarray,
+    data_amb: np.ndarray,
+    event_name: str,
+    distance: np.ndarray,
 ) -> plt.Figure:
-
-    # (3 channels, 4 stations, # detections, 4096 freq bins)
+    # Data shape: (3 stations, 4 channels, # detections, freq bins)
+    # Ambient noise shape: (3 stations, 4 channels, freq bins)
 
     channels = [0, 1, 2, 3]
     stations = ["SHRU921/Tetra", "SHRU905/VLA1", "SHRU920/VLA2"]
+    # Reorder `data` and `data_amb` according to distance:
+    data = data[np.argsort(distance)]
+    data_amb = data_amb[np.argsort(distance)]
+    # Reorder `distance` array from low to high:
+    distance = distance[np.argsort(distance)]
+
 
     fig, axs = plt.subplots(
         nrows=4, ncols=3, figsize=(8, 9), gridspec_kw={"hspace": 0.05, "wspace": 0.05}
@@ -36,6 +44,7 @@ def plot_psd_pdf(
         for j, station in enumerate(stations):
             ax = axs[i][j]
 
+            view_amb = data_amb[j, i]
             view = data[j, i]
 
             if np.isnan(view).all():
@@ -49,15 +58,24 @@ def plot_psd_pdf(
                 )
             else:
                 # Convert to dB
+                view_amb = 10 * np.log10(view_amb)
                 view = 10 * np.log10(view)
                 mean = np.mean(view, axis=0)
                 std = np.std(view, axis=0)
                 ucb = mean + 2 * std
                 lcb = mean - 2 * std
 
-                ax.plot(freq, mean, c="tab:red", lw=2, label="Mean")
+                ax.plot(freq, mean, c="tab:red", lw=2, label="Mean", zorder=20)
                 ax.fill_between(
                     freq, ucb, lcb, color="tab:red", alpha=0.25, label="95% CI"
+                )
+                ax.plot(
+                    freq_amb,
+                    view_amb,
+                    c="tab:blue",
+                    lw=1,
+                    label="Ambient noise",
+                    zorder=10,
                 )
 
             ax.set_xscale("log")
@@ -95,6 +113,21 @@ def plot_psd_pdf(
             else:
                 ax.set_xticklabels([])
 
+    lines = [
+        plt.Line2D([0], [0], color="tab:red", lw=2),
+        plt.Rectangle((0, 0), 1, 1, color="tab:red", alpha=0.25),
+        plt.Line2D([0], [0], color="tab:blue", lw=1),
+    ]
+    labels = ["Strikes (mean)", "Strikes (CI)", "Ambient"]
+    fig.legend(
+        lines,
+        labels,
+        loc="lower center",
+        ncol=3,
+        bbox_to_anchor=(0.5, 0.04),
+        bbox_transform=fig.transFigure,
+    )
+
     fig.suptitle(
         f"Event {event_name} | Total strikes: {view.shape[0]:,}",
         y=0.925,
@@ -129,31 +162,45 @@ def retrieve_data(
             for k, grp_det in enumerate(grp_chan.values()):
                 data[i, j, k, :] = grp_det["Pxx"][:]
 
-    return event_name, distances, data
+    return event_name, np.array(distances), data
+
+
+def retrieve_ambient_noise(grp: h5py.Group) -> np.ndarray:
+    data = []
+    for i, grp_sta in enumerate(grp.values()):
+        if i == 0:
+            freq = grp_sta["freqs"][:]
+        data.append(grp_sta["psd"][:])
+
+    return freq, np.array(data)
 
 
 def main(args: argparse.Namespace) -> None:
-    # Load ambient SPL:
-    pass
     # Load PSD:
-    with h5py.File(args.psddb, "r") as f:
-        freq = f["f"][:]
-        for grp in f.values():
+    with h5py.File(args.psddb, "r") as fpsd, h5py.File(args.ambdb, "r") as famb:
+        freq = fpsd["f"][:]
+        for grp in fpsd.values():
             logging.info(f"Processing {grp.name}")
             if grp.name == "/f":
                 continue
             event, distances, data = retrieve_data(grp)
+
+            # Extract ambient noise data
+            freq_amb, data_amb = retrieve_ambient_noise(famb[event])
+
             if data.shape[0] < 3:
                 nan_array = np.full(
                     (1, data.shape[1], data.shape[2], data.shape[3]), np.nan
                 )
                 data = np.concatenate((nan_array, data), axis=0)
-                distances = [None] + distances
+                distances = np.insert(distances, 0, 0.0)
+            if data_amb.shape[0] < 3:
+                nan_array = np.full((1, data_amb.shape[1], data_amb.shape[2]), np.nan)
+                data_amb = np.concatenate((nan_array, data_amb), axis=0)
 
-            fig = plot_psd_pdf(freq, data, event, distances)
+            fig = plot_psd_pdf(freq, data, freq_amb, data_amb, event, distances)
             savepath = Path(os.getenv("FIGPATH")) / "events" / f"{event}" / "psd.png"
             fig.savefig(savepath, dpi=600, bbox_inches="tight", facecolor="white")
-            plt.show()
 
 
 if __name__ == "__main__":
@@ -162,6 +209,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--psddb", type=Path, default=os.getenv("PSDFILE"), help="Path to the database."
+    )
+    parser.add_argument(
+        "--ambdb", type=Path, default=os.getenv("AMBFILE"), help="Path to the database."
     )
     args = parser.parse_args()
     main(args)

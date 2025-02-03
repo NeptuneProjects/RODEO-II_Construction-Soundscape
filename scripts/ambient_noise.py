@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import h5py
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
@@ -116,8 +117,8 @@ def loop_over(
         "A07": {"SHRU921_Tetra", "SHRU905_VLA1"},
     }
 
-    for (_, event), (sensor_name, sensor_config) in product(
-        df.iterrows(), inv_config.items()
+    for (_, event), (sensor_name, sensor_config) in tqdm(
+        product(df.iterrows(), inv_config.items()), total=len(df) * len(inv_config)
     ):
         event_name = event["Event"]
         if event_name in skip_events:

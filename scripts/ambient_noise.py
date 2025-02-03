@@ -126,12 +126,14 @@ def loop_over(
             continue
 
         start, end = start_end_time(event)
-        logging.info(f"Reading inventory: {start} - {end}")
+        logging.info(f"Reading inventory for {event_name}/{sensor_name}")
+        logging.info(f"{start} - {end}")
         ds = read_inventory(
             file_path=Path(sensor_config["data"]["destination"]),
             time_start=start,
             time_end=end,
         )
+        fs = ds.stats.sampling_rate
         logging.info("Data loaded.")
 
         # Filter data
@@ -152,7 +154,18 @@ def loop_over(
             pcoverlap=pcoverlap,
         )
         logging.info(f"PSD computed: {time.time() - t0} s elapsed.")
-        save_hdf5(event_name, sensor_name, SPL_rms, freqs, psd, output)
+        save_hdf5(
+            event_name,
+            sensor_name,
+            SPL_rms,
+            freqs,
+            psd,
+            output,
+            filter=filt,
+            filter_freq=filt_freq,
+            nperseg=int(segment_dur * fs),
+            noverlap=int(segment_dur * fs * pcoverlap),
+        )
 
 
 def save_hdf5(
@@ -162,8 +175,17 @@ def save_hdf5(
     freqs: np.ndarray,
     psd: np.ndarray,
     output: Path,
+    **kwargs,
 ) -> None:
     with h5py.File(output, "a") as f:
+        if "filter" not in f.attrs:
+            f.attrs.create("filter", kwargs.get("filter", None))
+        if "filter_freq" not in f.attrs:
+            f.attrs.create("filter_freq", kwargs.get("filter_freq", None))
+        if "nperseg" not in f.attrs:
+            f.attrs.create("nperseg", kwargs.get("nperseg", None))
+        if "noverlap" not in f.attrs:
+            f.attrs.create("noverlap", kwargs.get("noverlap", None))
         if event not in f:
             f.create_group(event)
         if sensor_name not in f[event]:

@@ -51,7 +51,6 @@ def compute_psd(files: list[Path], output: Path, nperseg: int, noverlap: int) ->
                             nperseg=nperseg,
                             noverlap=noverlap,
                         )
-
                         # Assign database-specific metadata
                         if not db_attrs_set:
                             fw.attrs.update(
@@ -61,10 +60,12 @@ def compute_psd(files: list[Path], output: Path, nperseg: int, noverlap: int) ->
                                     "filter": data["filter"],
                                     "filter_freq": data["filter_freq"],
                                     "nperseg": nperseg,
-                                    "f": f,
+                                    # "f": f,
                                 }
                             )
+                            fw.create_dataset("f", data=f)
                             db_attrs_set = True
+                            logging.info(f"Pxx shape: {Pxx.shape}")
                         if not sta_attrs_set:
                             grp_sta.attrs.update({"range": data["range"]})
 
@@ -118,7 +119,8 @@ def main(args: argparse.Namespace) -> None:
     if output.exists():
         timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
         output = output.with_name(f"{output.stem}_{timestamp}{output.suffix}")
-    compute_psd(files, output, args.nperseg, args.noverlap)
+    overlap = int(args.pcoverlap * args.nperseg)
+    compute_psd(files, output, args.nperseg, overlap)
 
 
 if __name__ == "__main__":
@@ -140,14 +142,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nperseg",
         type=int,
-        default=2**13,
+        default=2**14,
         help="Length of each segment for Welch's method.",
     )
     parser.add_argument(
-        "--noverlap",
-        type=int,
-        default=int(0.5 * 2**13),
-        help="Number of points to overlap between segments.",
+        "--pcoverlap",
+        type=float,
+        default=0.95,
+        help="Percent overlap between segments.",
     )
     args = parser.parse_args()
     main(args)

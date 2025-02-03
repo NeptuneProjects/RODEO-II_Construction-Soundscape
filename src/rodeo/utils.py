@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import h5py
 import pandas as pd
 import pyproj
 
@@ -94,3 +95,48 @@ def format_sensor_text(
         ]
     )
     return sensor_text + channel_text
+
+
+def h5_tree(grp: h5py.Group, prefix="", max_operations=None, current_operations=0):
+    if max_operations is not None and current_operations >= max_operations:
+        return current_operations
+
+    items = len(grp)
+    for key, grp in grp.items():
+        current_operations += 1
+        if max_operations is not None and current_operations >= max_operations:
+            return current_operations
+
+        items -= 1
+        if items == 0:
+            # the last item
+            if isinstance(grp, h5py.Group):
+                print(f"{prefix}└── {key} (Group)")
+                for attr_key, attr_value in grp.attrs.items():
+                    print(f"{prefix}    └── @{attr_key}: {attr_value}")
+                current_operations = h5_tree(grp, f"{prefix}    ", max_operations, current_operations)
+            else:
+                try:
+                    print(f"{prefix}└── {key} ({len(grp)})")
+                except TypeError:
+                    print(f"{prefix}└── {key} (scalar)")
+                for attr_key, attr_value in grp.attrs.items():
+                    print(f"{prefix}    └── @{attr_key}: {attr_value}")
+        else:
+            if isinstance(grp, h5py.Group):
+                print(f"{prefix}├── {key} (Group)")
+                for attr_key, attr_value in grp.attrs.items():
+                    print(f"{prefix}|   └── @{attr_key}: {attr_value}")
+                current_operations = h5_tree(grp, f"{prefix}|   ", max_operations, current_operations)
+            else:
+                try:
+                    print(f"{prefix}├── {key} ({len(grp)})")
+                except TypeError:
+                    print(f"{prefix}├── {key} (scalar)")
+                for attr_key, attr_value in grp.attrs.items():
+                    print(f"{prefix}|   └── @{attr_key}: {attr_value}")
+
+        if max_operations is not None and current_operations >= max_operations:
+            return current_operations
+
+    return current_operations

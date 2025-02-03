@@ -5,6 +5,25 @@ import pandas as pd
 import pyproj
 
 
+def get_welch() -> tuple[callable, bool]:
+    try:
+        import cupy
+
+        if cupy.cuda.runtime.getDeviceCount() == 0:
+            raise RuntimeError("No GPU found.")
+
+        from cupyx.scipy.signal import welch
+
+        cuda_enabled = True
+
+    except (ImportError, RuntimeError):
+        from scipy.signal import welch
+
+        cuda_enabled = False
+
+    return welch, cuda_enabled
+
+
 def clean_ctd_data(df: pd.DataFrame, min_depth: float = 1.0) -> pd.DataFrame:
     """Remove data points with depth less than 1.0 m.
 
@@ -114,7 +133,9 @@ def h5_tree(grp: h5py.Group, prefix="", max_operations=None, current_operations=
                 print(f"{prefix}└── {key} (Group)")
                 for attr_key, attr_value in grp.attrs.items():
                     print(f"{prefix}    └── @{attr_key}: {attr_value}")
-                current_operations = h5_tree(grp, f"{prefix}    ", max_operations, current_operations)
+                current_operations = h5_tree(
+                    grp, f"{prefix}    ", max_operations, current_operations
+                )
             else:
                 try:
                     print(f"{prefix}└── {key} ({len(grp)})")
@@ -127,7 +148,9 @@ def h5_tree(grp: h5py.Group, prefix="", max_operations=None, current_operations=
                 print(f"{prefix}├── {key} (Group)")
                 for attr_key, attr_value in grp.attrs.items():
                     print(f"{prefix}|   └── @{attr_key}: {attr_value}")
-                current_operations = h5_tree(grp, f"{prefix}|   ", max_operations, current_operations)
+                current_operations = h5_tree(
+                    grp, f"{prefix}|   ", max_operations, current_operations
+                )
             else:
                 try:
                     print(f"{prefix}├── {key} ({len(grp)})")

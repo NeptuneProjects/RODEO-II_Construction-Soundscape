@@ -54,7 +54,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--savepath",
         type=Path,
-        default=Path(os.getenv("FIGPATH")),
+        default=Path(os.getenv("RESULTS")),
         help="Path to save the plot",
     )
     args = parser.parse_args()

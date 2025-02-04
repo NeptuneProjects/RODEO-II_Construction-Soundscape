@@ -140,7 +140,7 @@ def plot_event_metrics(df: pl.DataFrame) -> None:
         )
 
         savepath = (
-            Path(os.getenv("FIGPATH")) / "events" / f"{event}" / "event_metrics.png"
+            Path(os.getenv("EVENTRESULTS")) / f"{event}" / "event_metrics.png"
         )
         # plt.draw()
         # if k > 0:

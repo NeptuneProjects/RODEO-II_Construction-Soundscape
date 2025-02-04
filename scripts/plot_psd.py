@@ -199,7 +199,7 @@ def main(args: argparse.Namespace) -> None:
                 data_amb = np.concatenate((nan_array, data_amb), axis=0)
 
             fig = plot_psd_pdf(freq, data, freq_amb, data_amb, event, distances)
-            savepath = Path(os.getenv("FIGPATH")) / "events" / f"{event}" / "psd.png"
+            savepath = Path(os.getenv("EVENTRESULTS")) / f"{event}" / "psd.png"
             fig.savefig(savepath, dpi=600, bbox_inches="tight", facecolor="white")
 
 

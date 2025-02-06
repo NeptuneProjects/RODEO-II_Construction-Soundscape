@@ -77,7 +77,12 @@ def main(args: argparse.Namespace):
         )
         ds.decimate(int(ds.stats.sampling_rate // FS_DEC))
         ds.filter(filt_type="highpass", freq=10.0)
-        ds.write(args.output / f"disp_{station}.npz")
+    
+        fname = args.output / f"disp_{station}.npz"
+        ds.write(fname)
+        logging.info(f"Extracted data saved to {fname}")
+    
+    logging.info("Data extraction complete.")
 
 
 if __name__ == "__main__":

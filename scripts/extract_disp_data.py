@@ -30,7 +30,9 @@ def load_metrics(metrics_file: Path, **kwargs) -> pl.DataFrame:
     return df.filter(filters)
 
 
-def parse_data(df: pl.DataFrame, buffer: int, units: str) -> tuple[list, list, list]:
+def parse_data(
+    df: pl.DataFrame, buffer: int, units: str
+) -> tuple[list[str], list[np.datetime64], list[np.datetime64]]:
     # Sort columns of interest by range
     stations = sorted(
         df["station"].unique().to_list(),
@@ -60,10 +62,9 @@ def parse_data(df: pl.DataFrame, buffer: int, units: str) -> tuple[list, list, l
 
 
 def main(args: argparse.Namespace):
+    args.output.mkdir(parents=True, exist_ok=True)
     logging.info(f"Extracting data from event {args.event} for strike {args.strike}.")
-    df = load_metrics(
-        args.metrics, event_name=args.event, channel=0, index=args.strike
-    )
+    df = load_metrics(args.metrics, event_name=args.event, channel=0, index=args.strike)
     stations, time_inits, time_ends = parse_data(df, args.tbuffer, args.tbuffer_units)
     inv_config = load_inventory(args.inventory)
 
@@ -77,11 +78,11 @@ def main(args: argparse.Namespace):
         )
         ds.decimate(int(ds.stats.sampling_rate // FS_DEC))
         ds.filter(filt_type="highpass", freq=10.0)
-    
+
         fname = args.output / f"disp_{station}.npz"
         ds.write(fname)
         logging.info(f"Extracted data saved to {fname}")
-    
+
     logging.info("Data extraction complete.")
 
 
@@ -113,7 +114,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(os.getenv("RESULTS")),
+        default=Path(os.getenv("DISPDATA")),
         help="Output directory.",
     )
     args = parser.parse_args()

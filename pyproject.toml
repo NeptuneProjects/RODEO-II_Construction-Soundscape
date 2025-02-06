@@ -7,7 +7,7 @@ name = "rodeo"  # Replace with your desired project name
 version = "0.0.1"
 description = "A local Python package for project imports"
 authors = [
-    { name = "William Jenkins", email = "wfjenkins@ucsd.edu" }
+    { name = "William F. Jenkins", email = "wfjenkins@ucsd.edu" }
 ]
 dependencies = []  # Add any dependencies here
 requires-python = ">= 3.12"

@@ -22,4 +22,5 @@ dependencies:
     - cmocean
     - polars
     - python-dotenv
+    - -e .
     - git+ssh://git@github.com/TritonOA/TritonOA.git

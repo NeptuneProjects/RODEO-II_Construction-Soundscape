@@ -16,8 +16,6 @@ from tritonoa.data.time import TIME_PRECISION
 dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
-FS_DEC = 500
-
 
 def load_inventory(inventory_file: Path) -> dict:
     with open(inventory_file, "rb") as f:
@@ -49,12 +47,12 @@ def parse_data(
     # Convert to numpy datetime64
     time_inits = [
         np.datetime64(x.replace(tzinfo=None), TIME_PRECISION)
-        - np.timedelta64(args.tbuffer, args.tbuffer_units)
+        - np.timedelta64(buffer, units)
         for x in time_inits
     ]
     time_ends = [
         np.datetime64(x.replace(tzinfo=None), TIME_PRECISION)
-        + np.timedelta64(args.tbuffer, args.tbuffer_units)
+        + np.timedelta64(buffer, units)
         for x in time_ends
     ]
 
@@ -76,8 +74,6 @@ def main(args: argparse.Namespace):
             time_end=time_end,
             channels=[0, 1, 2, 3],
         )
-        ds.decimate(int(ds.stats.sampling_rate // FS_DEC))
-        ds.filter(filt_type="highpass", freq=10.0)
 
         fname = args.output / f"disp_{station}.npz"
         ds.write(fname)

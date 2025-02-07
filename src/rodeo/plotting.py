@@ -501,6 +501,40 @@ def plot_met_data(data: pl.DataFrame) -> plt.Figure:
     return fig
 
 
+def plot_mode_function(
+    environment: dict, phis: list[np.ndarray], freqs: list[float], zgrid: np.ndarray
+) -> plt.Figure:
+    fig, axs = plt.subplots(ncols=3, gridspec_kw={"wspace": 0.05}, figsize=(6, 4))
+    for i, (ax, phi, freq) in enumerate(zip(axs, phis, freqs)):
+        ax.plot(np.real(phi), zgrid, c="tab:blue", lw=1, label="$\\Phi_m$")
+        ax.plot(np.real(phi).sum(axis=1), zgrid, c="k", lw=2, label="$\\Sigma\\Phi_m$")
+        ax.axhline(environment["layerdata"][0]["z"].max(), color="k", linestyle="--")
+        ax.axvline(0.0, color="k")
+        ax.set_xlim(-0.6, 0.6)
+        ax.set_ylim(-0.1, zgrid.max() + 0.1)
+        ax.invert_yaxis()
+        if i == 0:
+            ax.set_xlabel("Amplitude")
+            ax.set_ylabel("Depth (m)")
+        if i != 0:
+            ax.set_yticklabels([])
+
+        num_modes = phi.shape[1]
+        modes_display = f"{num_modes} modes" if num_modes > 1 else "1 mode"
+        ax.set_title(f"$f$ = {freq:.0f} Hz\n{modes_display}")
+
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=3,
+        bbox_to_anchor=(0.5, -0.02),
+        bbox_transform=fig.transFigure,
+    )
+    return fig
+
+
 def plot_psd_pdf(
     freq: np.ndarray,
     data: np.ndarray,

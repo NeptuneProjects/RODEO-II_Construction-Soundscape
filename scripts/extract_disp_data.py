@@ -85,7 +85,7 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract data for dispersion example.")
     parser.add_argument("--event", type=str, default="A10-B", help="Event name.")
-    parser.add_argument("--strike", type=int, default=1974, help="Strike index.")
+    parser.add_argument("--strike", type=int, default=320, help="Strike index.")
     parser.add_argument(
         "--tbuffer",
         type=int,

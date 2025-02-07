@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import h5py
+import numpy as np
 import pandas as pd
 import pyproj
 
@@ -163,3 +164,12 @@ def h5_tree(grp: h5py.Group, prefix="", max_operations=None, current_operations=
             return current_operations
 
     return current_operations
+
+
+def spectrogram_args(
+    window_func: callable, tperseg: float, fs: float, pcoverlap: float = 0.0
+) -> tuple[int, np.ndarray, int]:
+    nperseg = int(tperseg * fs)
+    win = window_func(nperseg)
+    hop = max(int(nperseg * (1 - pcoverlap)), 1)
+    return nperseg, win, hop

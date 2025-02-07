@@ -1,21 +1,72 @@
 # -*- coding: utf-8 -*-
 
+from pathlib import Path
 import re
+from typing import Sequence
 
 import bathyreq
 import cmasher as cmr
 import cmocean as cmo
 import matplotlib.dates as mdates
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from mpl_toolkits.basemap import Basemap
 import numpy as np
 import pandas as pd
+import polars as pl
 from scipy import signal
 from tritonoa.data.stream import DataStream
+from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
-from rodeo import detect
+from rodeo import detect, utils
+
+
+def plot_avg_power_timehist(
+    mean_hist: np.ndarray,
+    bins: np.ndarray,
+    events: list[dict],
+    title: str | None = None,
+    power_range: tuple[float] = (100, 160),
+    channels=None,
+    figsize: tuple[float] = (8, 10),
+) -> plt.Figure:
+
+    LINE_STYLES = {
+        "Ambient": "-",
+        "Soft Start": "--",
+        "Full Power": ":",
+    }
+
+    fig, axs = plt.subplots(nrows=len(channels), ncols=1, figsize=figsize)
+
+    for i in range(len(channels)):
+        for j, event in enumerate(events):
+            ax = axs[i]
+            base_name = re.sub(r" \d+$", "", event["name"])
+            ls = LINE_STYLES.get(base_name, "-")
+            ax.plot(bins[0:-1], mean_hist[j, i, :], linestyle=ls, label=event["name"])
+            ax.set_xlim(power_range)
+            ax.text(
+                0.0,
+                1.02,
+                f"Channel {channels[i]}",
+                fontsize=10,
+                ha="left",
+                va="bottom",
+                transform=ax.transAxes,
+            )
+            if i < len(channels) - 1:
+                ax.set_xticklabels([])
+
+            if i == 0:
+                ax.set_title(title)
+                ax.legend()
+
+    ax.set_xlabel("Power [dB re 1 uPa$^2$]")
+    ax.set_ylabel("PDF")
+
+    return fig
 
 
 def plot_bathy(
@@ -75,290 +126,6 @@ def plot_ctd_profiles(
     ax2.grid()
     ax2.set_yticklabels([])
     ax2.set_xlabel("Sound speed (m/s)")
-    return fig
-
-
-def plot_avg_power_timehist(
-    mean_hist: np.ndarray,
-    bins: np.ndarray,
-    events: list[dict],
-    title: str | None = None,
-    power_range: tuple[float] = (100, 160),
-    channels=None,
-    figsize: tuple[float] = (8, 10),
-) -> plt.Figure:
-
-    LINE_STYLES = {
-        "Ambient": "-",
-        "Soft Start": "--",
-        "Full Power": ":",
-    }
-
-    fig, axs = plt.subplots(nrows=len(channels), ncols=1, figsize=figsize)
-
-    for i in range(len(channels)):
-        for j, event in enumerate(events):
-            ax = axs[i]
-            base_name = re.sub(r" \d+$", "", event["name"])
-            ls = LINE_STYLES.get(base_name, "-")
-            ax.plot(bins[0:-1], mean_hist[j, i, :], linestyle=ls, label=event["name"])
-            ax.set_xlim(power_range)
-            ax.text(
-                0.0,
-                1.02,
-                f"Channel {channels[i]}",
-                fontsize=10,
-                ha="left",
-                va="bottom",
-                transform=ax.transAxes,
-            )
-            if i < len(channels) - 1:
-                ax.set_xticklabels([])
-
-            if i == 0:
-                ax.set_title(title)
-                ax.legend()
-
-    ax.set_xlabel("Power [dB re 1 uPa$^2$]")
-    ax.set_ylabel("PDF")
-
-    return fig
-
-
-def plot_pulse_coherence(
-    time_matrix: np.ndarray,
-    corr_matrix: np.ndarray,
-    n_traces: int | None = None,
-    title: str | None = None,
-    channel: int | None = None,
-) -> plt.Figure:
-    fig = plt.figure(figsize=(6, 4))
-    ax = plt.gca()
-    n_traces = corr_matrix.shape[0] if n_traces is None else n_traces
-    [ax.plot(time_matrix[k], corr_matrix[k], "k-", alpha=0.5) for k in range(n_traces)]
-    ax.set_xlim(0, 33)
-    ax.set_ylim(0.6, 1.01)
-    ax.set_xlabel("Time elapsed from pulse [s]")
-    ax.set_ylabel("Normalized Correlation")
-    ax.grid(True)
-    ax.set_title(f"{n_traces} pulses from {title} Channel {channel}")
-    return fig
-
-
-def plot_pulse_stack(
-    sig_matrix: np.ndarray,
-    corr_matrix: np.ndarray,
-    fs: float,
-    title: str | None = None,
-    channel: int | None = None,
-):
-    fig, axs = plt.subplots(
-        nrows=20, ncols=1, figsize=(10, 10), gridspec_kw={"hspace": 0.0}
-    )
-
-    tvec = np.arange(0, sig_matrix.shape[1]) / fs
-    for i, ax in enumerate(axs):
-        sig = sig_matrix[i]
-        ax.plot(tvec, sig / max(abs(sig)), "k")
-
-        ax.spines["top"].set_visible(False)
-        ax.spines["bottom"].set_visible(False)
-        ax.spines["left"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.tick_params(axis="x", which="both", bottom=False, top=False)
-        ax.tick_params(axis="y", which="both", left=False, right=False)
-        ax.set_yticklabels([])
-        ax.grid(True)
-        ax.set_xlim(0, max(tvec))
-        ax.set_ylim(-1, 1)
-        ax.set_ylabel(f"{corr_matrix[0, i]:.2f}", rotation=0, ha="right", va="center")
-        if i == len(axs) - 1:
-            ax.set_xlabel("Time [s]")
-        else:
-            ax.set_xticklabels([])
-        if i == 0:
-            ax.set_title(f"{title} Channel {channel}")
-
-    return fig
-
-
-def plot_summed_pulses(sig_matrix: np.ndarray, fs: float):
-    fig = plt.figure(figsize=(15, 5))
-    ax = plt.gca()
-
-    summed = sig_matrix.mean(axis=0)
-    tvec = np.arange(0, sig_matrix.shape[1]) / fs
-    [ax.plot(tvec, sig_matrix[i], "k", alpha=0.5) for i in range(10)]
-    ax.plot(tvec, summed, "r", linewidth=2, zorder=50)
-    ax.set_xlim(0, max(tvec))
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Normalized Amplitude")
-    ax.grid(True)
-    return fig, summed
-
-
-def plot_inst_power_timehist(
-    hist_data: np.ndarray,
-    title: str | None = None,
-    power_range: tuple[float] = (100, 160),
-    channels=None,
-    fig_size: tuple[float] = (8, 10),
-) -> plt.Figure:
-
-    num_channels = hist_data.shape[0]
-    num_intervals = hist_data.shape[1]
-    vmax = hist_data.max()
-
-    fig, axs = plt.subplots(
-        hist_data.shape[0], 1, figsize=fig_size, gridspec_kw={"hspace": 0.3}
-    )
-    fig.suptitle(title)
-
-    enumerator = enumerate(channels) if channels else enumerate(range(num_channels))
-
-    for i, channel in enumerator:
-        ax = axs[i]
-        im = ax.imshow(
-            hist_data[i].T,
-            aspect="auto",
-            origin="lower",
-            cmap="jet",
-            extent=[0, num_intervals, power_range[0], power_range[1]],
-            interpolation="none",
-            vmin=0,
-            vmax=vmax,
-        )
-
-        ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
-        if channel == channels[-1]:
-            ax.set_xlabel("Time Interval")
-            ax.set_ylabel("Power [dB re 1 uPa$^2$]")
-        else:
-            ax.set_xticklabels([])
-            ax.set_xlabel("")
-            ax.set_yticklabels([])
-            ax.set_ylabel("")
-
-    cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
-    cbar = fig.colorbar(im, cax=cax)
-    cbar.set_label("Frequency")
-
-    return fig
-
-
-def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
-    if ax is None:
-        ax = plt.gca()
-    # return ax.pcolormesh(t, f, 10 * np.log10(Sxx), cmap="inferno", vmin=vmin, vmax=vmax)
-    extent = (t[0], t[-1], f[0], f[-1])
-    return ax.imshow(
-        10 * np.log10(Sxx),
-        extent=extent,
-        cmap="inferno",
-        vmin=vmin,
-        vmax=vmax,
-        aspect="auto",
-        origin="lower",
-        interpolation="none",
-    )
-
-
-def plot_spectrograms(
-    ds: DataStream,
-    title: str | None = None,
-    tperseg: int = 1,
-    overlap: float = 0.75,
-    nfft: int | None = None,
-    fmin: float | None = None,
-    fmax: float | None = None,
-    vmin: float = None,
-    vmax: float = None,
-    fig_size: tuple[float] = (8, 6),
-) -> plt.Figure:
-    fs = ds.stats.sampling_rate
-
-    nperseg = int(tperseg * fs)
-    overlap_size = int(overlap * nperseg)
-    if nfft is None:
-        nfft = nperseg
-
-    fig, axs = plt.subplots(
-        ds.num_channels, 1, figsize=fig_size, gridspec_kw={"hspace": 0.3}
-    )
-    fig.suptitle(title)
-
-    for i, channel in enumerate(ds.stats.channels):
-        f, t, Sxx = signal.spectrogram(
-            ds.data[i],
-            fs=fs,
-            nperseg=nperseg,
-            noverlap=overlap_size,
-            nfft=nfft,
-        )
-
-        if fmin and fmax:
-            Sxx = Sxx[(f >= fmin) & (f <= fmax), :]
-            f = f[(f >= fmin) & (f <= fmax)]
-        elif fmin:
-            Sxx = Sxx[f >= fmin, :]
-            f = f[f >= fmin]
-        elif fmax:
-            Sxx = Sxx[f <= fmax, :]
-            f = f[f <= fmax]
-
-        if vmin is None:
-            vmin = Sxx.min()
-        if vmax is None:
-            vmax = Sxx.max()
-
-        ax = axs[i]
-        im = plot_spectrogram(f, t, Sxx, ax=ax, vmin=vmin, vmax=vmax)
-
-        ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
-        if channel == ds.stats.channels[-1]:
-            ax.set_xlabel("Time [s]")
-            ax.set_ylabel("Frequency [Hz]")
-        else:
-            ax.set_xticklabels([])
-            ax.set_xlabel("")
-
-        cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
-        cbar = fig.colorbar(im, cax=cax)
-        cbar.set_label(f"PSD [$\\mathrm{{{ds.stats.units}}} / \\mathrm{{Hz}}^2$]")
-
-    return fig
-
-
-def plot_time_series(
-    ds: DataStream,
-    ymin: float | None = None,
-    ymax: float | None = None,
-    fig_size: tuple[float] = (12, 6),
-    title: str | None = None,
-):
-    fig, axs = plt.subplots(
-        ds.num_channels, 1, figsize=fig_size, gridspec_kw={"hspace": 0.25}
-    )
-    fig.suptitle(title)
-
-    for i, channel in enumerate(ds.stats.channels):
-        ax = axs[i]
-        ax.plot(ds.time_vector, ds.data[i])
-        ax.set_xlim(ds.time_vector[0], ds.time_vector[-1])
-
-        ax.set_ylabel(f"Channel {channel}")
-        if channel == ds.stats.channels[-1]:
-            ax.set_xlabel("Time")
-        else:
-            ax.set_xticklabels([])
-            ax.set_xlabel("")
-
-    if ymin is None:
-        ymin = ds.data.min()
-    if ymax is None:
-        ymax = ds.data.max()
-    [ax.set_ylim(ymin, ymax) for ax in axs]
-
     return fig
 
 
@@ -466,7 +233,6 @@ def plot_detector_output(
     peaks, _ = signal.find_peaks(chf, height=threshold, distance=distance * fs)
     xlim = (time.min(), time.max())
 
-
     # Compute zoomed section:
     data_zoom = data[zoom_start:zoom_end]
     time_zoom = time[zoom_start:zoom_end]
@@ -490,7 +256,9 @@ def plot_detector_output(
     # Time series, full
     ax = axs[0, 0]
     ax.plot(time, data, c="k")
-    ax.axvspan(time[zoom_start], time[zoom_end], facecolor="gray", alpha=0.5, edgecolor="none")
+    ax.axvspan(
+        time[zoom_start], time[zoom_end], facecolor="gray", alpha=0.5, edgecolor="none"
+    )
     ax.set_xlim(xlim)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
     ax.set_xticklabels([])
@@ -508,7 +276,9 @@ def plot_detector_output(
     ax.plot(time, chf, c="k")
     ax.plot(time[peaks], chf[peaks], "rx")
     ax.axhline(threshold, color="r", linestyle="--")
-    ax.axvspan(time[zoom_start], time[zoom_end], facecolor="gray", alpha=0.5, edgecolor="none")
+    ax.axvspan(
+        time[zoom_start], time[zoom_end], facecolor="gray", alpha=0.5, edgecolor="none"
+    )
     ax.set_xlim(xlim)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
     ax.set_ylim(0, chf.max() * 1.1)
@@ -524,6 +294,551 @@ def plot_detector_output(
     locator = mdates.AutoDateLocator(minticks=4, maxticks=6)
     ax.xaxis.set_major_locator(locator)
     ax.set_ylim(0, chf_zoom.max() * 1.1)
+
+    return fig
+
+
+def plot_event_metrics(df: pl.DataFrame, savepath: Path) -> None:
+    METRICS = {
+        "SPL_rms": "$L_{p,\\text{rms}}$\n(dB re 1 $\\mathrm{\\mu Pa}$)",
+        "SPL_pk": "$L_{p,\\text{pk}}$\n(dB re 1 $\\mathrm{\\mu Pa}$)",
+        "SPL_pkpk": "$L_{p,\\text{pk-pk}}$\n(dB re 1 $\\mathrm{\\mu Pa}$)",
+        "SEL": "$L_{E,p}$\n(dB re 1 $\\mathrm{\\mu Pa^2 s}$)",
+        "SEL_cum": "cSEL\n(dB re 1 $\\mathrm{\\mu Pa^2 s}$)",
+        "t_rise": "$t_\\mathrm{r}$ (s)",
+        "t_decay": "$t_\\mathrm{d}$ (s)",
+        "kurtosis": "$\\beta_2$",
+    }
+    events = sorted(df["event_name"].unique().to_list())
+    stations = sorted(df["station"].unique().to_list(), key=lambda x: x.split("_")[-1])
+
+    for event in events:
+        print(f"Plotting event: {event}")
+
+        total_strikes = None
+
+        fig, axs = plt.subplots(
+            nrows=len(METRICS),
+            ncols=len(stations),
+            figsize=(8, 10),
+            gridspec_kw={"hspace": 0.1, "wspace": 0.05},
+        )
+
+        event_start = (
+            df.filter(pl.col("event_name") == event)["time_init"].unique().min()
+        )
+        event_end = df.filter(pl.col("event_name") == event)["time_end"].unique().max()
+
+        for i, (metric_key, metric_name) in enumerate(METRICS.items()):
+
+            min_val = np.inf
+            max_val = 0.0
+
+            for j, station in enumerate(stations):
+
+                station_name = station.replace("_", "/")
+
+                df_sta = df.filter(
+                    (pl.col("event_name") == event) & (pl.col("station") == station)
+                )
+                if df_sta.is_empty():
+                    ax = axs[i, j]
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No data",
+                        transform=ax.transAxes,
+                        ha="center",
+                        va="center",
+                    )
+                else:
+                    distance = df_sta["range"].unique().item()
+                    data = df_sta.select(["channel", "index", metric_key])
+
+                    for l, ch in enumerate(sorted(data["channel"].unique().to_list())):
+                        df_ch = df_sta.filter(pl.col("channel") == ch)
+                        time = df_ch["time_init"].to_numpy()
+                        data = df_ch[metric_key].to_numpy()
+                        if not total_strikes:
+                            total_strikes = len(time)
+
+                        if max_val < max(data):
+                            max_val = max(data)
+                        if min_val > min(data):
+                            min_val = min(data)
+
+                        ax = axs[i, j]
+
+                        ax.scatter(
+                            time,
+                            data,
+                            alpha=0.5,
+                            s=1.0,
+                            color="k",
+                            zorder=10 + l,
+                            label=f"CH {ch}",
+                        )
+
+                ax.grid()
+
+                # Control column titles
+                if i == 0:
+                    if df_sta.is_empty():
+                        ax.set_title(station_name)
+                    else:
+                        ax.set_title(f"{station_name}, R={distance / 1000:.1f} km")
+
+                # Control row titles & ytick labels
+                if j == 0:
+                    ax.set_ylabel(metric_name)
+                else:
+                    ax.set_yticklabels([])
+
+                # Control x-axis ticks and labels
+                if i == len(METRICS) - 1:
+                    ax.set_xlabel("Time")
+                else:
+                    ax.set_xticklabels([])
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+                locator = mdates.AutoDateLocator(
+                    minticks=2, maxticks=5
+                )  # Min 4, max 8 ticks
+                ax.xaxis.set_major_locator(locator)
+
+            # Controlx x-axis limits:
+            xlim_margin = 0.02 * (time.max() - time.min())
+            xlim = (time.min() - xlim_margin, time.max() + xlim_margin)
+
+            for j in range(len(stations)):
+                axs[i, j].set_xlim(xlim)
+
+            # Control y-axis limits
+            for j in range(len(stations)):
+                ylim_margin = 0.1 * (max_val - min_val)
+                axs[i, j].set_ylim(min_val - ylim_margin, max_val + ylim_margin)
+
+        fig.suptitle(
+            f"Event {event} (all channels) | Total strikes: {total_strikes:,}\n{event_start.strftime("%d-%b-%Y %H:%M")} - "
+            f"{event_end.strftime("%d-%b-%Y %H:%M %Z")}",
+            y=0.935,
+        )
+        fig.savefig(
+            savepath / f"{event}" / "event_metrics.png",
+            dpi=600,
+            bbox_inches="tight",
+            facecolor="white",
+        )
+        plt.close()
+
+
+def plot_inst_power_timehist(
+    hist_data: np.ndarray,
+    title: str | None = None,
+    power_range: tuple[float] = (100, 160),
+    channels=None,
+    fig_size: tuple[float] = (8, 10),
+) -> plt.Figure:
+
+    num_channels = hist_data.shape[0]
+    num_intervals = hist_data.shape[1]
+    vmax = hist_data.max()
+
+    fig, axs = plt.subplots(
+        hist_data.shape[0], 1, figsize=fig_size, gridspec_kw={"hspace": 0.3}
+    )
+    fig.suptitle(title)
+
+    enumerator = enumerate(channels) if channels else enumerate(range(num_channels))
+
+    for i, channel in enumerator:
+        ax = axs[i]
+        im = ax.imshow(
+            hist_data[i].T,
+            aspect="auto",
+            origin="lower",
+            cmap="jet",
+            extent=[0, num_intervals, power_range[0], power_range[1]],
+            interpolation="none",
+            vmin=0,
+            vmax=vmax,
+        )
+
+        ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
+        if channel == channels[-1]:
+            ax.set_xlabel("Time Interval")
+            ax.set_ylabel("Power [dB re 1 uPa$^2$]")
+        else:
+            ax.set_xticklabels([])
+            ax.set_xlabel("")
+            ax.set_yticklabels([])
+            ax.set_ylabel("")
+
+    cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    cbar = fig.colorbar(im, cax=cax)
+    cbar.set_label("Frequency")
+
+    return fig
+
+
+def plot_met_data(data: pl.DataFrame) -> plt.Figure:
+    fig, axs = plt.subplots(
+        2, 1, figsize=(6, 3), sharex=True, gridspec_kw={"hspace": 0.1}
+    )
+
+    ax = axs[0]
+    ax.plot(data["datetime"], data["WVHT"], label="Wave Height (m)")
+    ax.grid(True)
+    ax.set_ylabel("Wave Height (m)")
+
+    ax = axs[1]
+    ax.plot(data["datetime"], data["WSPD"], label="Wind Speed (m/s)")
+    ax.grid(True)
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=7))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b %y"))
+    ax.set_ylabel("Wind Speed (m/s)")
+    ax.set_xlabel("Date")
+
+    return fig
+
+
+def plot_psd_pdf(
+    freq: np.ndarray,
+    data: np.ndarray,
+    freq_amb: np.ndarray,
+    data_amb: np.ndarray,
+    event_name: str,
+    distance: np.ndarray,
+) -> plt.Figure:
+    # Data shape: (3 stations, 4 channels, # detections, freq bins)
+    # Ambient noise shape: (3 stations, 4 channels, freq bins)
+
+    channels = [0, 1, 2, 3]
+    stations = ["SHRU921/Tetra", "SHRU905/VLA1", "SHRU920/VLA2"]
+    # Reorder `data` and `data_amb` according to distance:
+    data = data[np.argsort(distance)]
+    data_amb = data_amb[np.argsort(distance)]
+    # Reorder `distance` array from low to high:
+    distance = distance[np.argsort(distance)]
+
+    fig, axs = plt.subplots(
+        nrows=4, ncols=3, figsize=(8, 9), gridspec_kw={"hspace": 0.05, "wspace": 0.05}
+    )
+
+    for i, channel in enumerate(channels):
+        for j, station in enumerate(stations):
+            ax = axs[i][j]
+
+            view_amb = data_amb[j, i]
+            view = data[j, i]
+
+            if np.isnan(view).all():
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No data",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                )
+            else:
+                # Convert to dB
+                view_amb = 10 * np.log10(view_amb)
+                view = 10 * np.log10(view)
+                mean = np.mean(view, axis=0)
+                std = np.std(view, axis=0)
+                ucb = mean + 2 * std
+                lcb = mean - 2 * std
+
+                ax.plot(freq, mean, c="tab:red", lw=2, label="Mean", zorder=20)
+                ax.fill_between(
+                    freq, ucb, lcb, color="tab:red", alpha=0.25, label="95% CI"
+                )
+                ax.plot(
+                    freq_amb,
+                    view_amb,
+                    c="tab:blue",
+                    lw=1,
+                    label="Ambient noise",
+                    zorder=10,
+                )
+
+            ax.set_xscale("log")
+            ax.set_xticks(
+                [10, 100, 1000, 10000], ["$10^1$", "$10^2$", "$10^3$", "$10^4$"]
+            )
+            for ticklabel in ax.get_xticklabels():
+                if ticklabel.get_text() == "$10^1$":
+                    ticklabel.set_horizontalalignment("left")
+                if ticklabel.get_text() == "$10^4$":
+                    ticklabel.set_horizontalalignment("right")
+            ax.set_xlim(10, 10000)
+            ax.set_ylim(50, 150)
+            ax.grid(True, which="both", ls="--", alpha=0.5)
+
+            # Control column titles
+            if i == 0:
+                if distance[j] is None:
+                    title = f"{station}"
+                else:
+                    title = f"{station} (R = {distance[j] / 1e3:.1f} km)"
+                ax.set_title(title)
+
+            # Control row titles
+            if j == 0:
+                ax.set_ylabel(
+                    f"Channel {channel}\n PSD (dB re 1 $\\mathrm{{\\mu Pa^2/Hz}}$)"
+                )
+            else:
+                ax.set_yticklabels([])
+
+            # Control x-axis ticks and labels
+            if i == len(channels) - 1:
+                ax.set_xlabel("Frequency (Hz)")
+            else:
+                ax.set_xticklabels([])
+
+    lines = [
+        plt.Line2D([0], [0], color="tab:red", lw=2),
+        plt.Rectangle((0, 0), 1, 1, color="tab:red", alpha=0.25),
+        plt.Line2D([0], [0], color="tab:blue", lw=1),
+    ]
+    labels = ["Strikes (mean)", "Strikes (CI)", "Ambient"]
+    fig.legend(
+        lines,
+        labels,
+        loc="lower center",
+        ncol=3,
+        bbox_to_anchor=(0.5, 0.04),
+        bbox_transform=fig.transFigure,
+    )
+
+    fig.suptitle(
+        f"Event {event_name} | Total strikes: {view.shape[0]:,}",
+        y=0.925,
+    )
+    return fig
+
+
+def plot_pulse_coherence(
+    time_matrix: np.ndarray,
+    corr_matrix: np.ndarray,
+    n_traces: int | None = None,
+    title: str | None = None,
+    channel: int | None = None,
+) -> plt.Figure:
+    fig = plt.figure(figsize=(6, 4))
+    ax = plt.gca()
+    n_traces = corr_matrix.shape[0] if n_traces is None else n_traces
+    [ax.plot(time_matrix[k], corr_matrix[k], "k-", alpha=0.5) for k in range(n_traces)]
+    ax.set_xlim(0, 33)
+    ax.set_ylim(0.6, 1.01)
+    ax.set_xlabel("Time elapsed from pulse [s]")
+    ax.set_ylabel("Normalized Correlation")
+    ax.grid(True)
+    ax.set_title(f"{n_traces} pulses from {title} Channel {channel}")
+    return fig
+
+
+def plot_pulse_dispersion(
+    streams: list[DataStream],
+    stations: list[str],
+    window_func: callable,
+    channel: int = 0,
+    tperseg: int = 0.05,
+    pcoverlap: float = 0.90,
+    nfft_factor: float = 2,
+    vmin: float = 80.0,
+    vmax: float = 130.0,
+    plot_freqs_between: Sequence[float] | None = (0.0, 500.0),
+    filt: str = "highpass",
+    filt_freq: float = 10.0,
+) -> plt.Figure:
+    fig = plt.figure(figsize=(4.5, 6))
+    outer_gs = gridspec.GridSpec(3, 1, hspace=0.1)
+
+    for i, ds in enumerate(streams):
+        if filt is not None:
+            ds.filter(filt, freq=filt_freq)
+        data = ds.data[channel]
+        if i == 0:
+            fs = ds.stats.sampling_rate
+            t_series = (ds.time_vector - ds.time_vector[0]).astype(
+                float
+            ) / TIME_CONVERSION_FACTOR
+            xlim = (t_series.min(), t_series.max())
+
+            nperseg, win, hop = utils.spectrogram_args(
+                window_func, tperseg, fs, pcoverlap
+            )
+            nfft = int(nperseg * nfft_factor)
+
+        STFT = signal.ShortTimeFFT(win, hop, fs, mfft=nfft, scale_to="psd")
+        S = STFT.stft(data)
+        SdB = 20 * np.log10(np.abs(S))
+        f = STFT.f
+        t_spec = STFT.t(len(data))
+
+        # Plot only specified frequencies:
+        if plot_freqs_between is not None:
+            mask = (f >= plot_freqs_between[0]) & (f <= plot_freqs_between[1])
+            f = f[mask]
+            SdB = SdB[mask, :]
+
+        inner_gs = outer_gs[i].subgridspec(2, 1, height_ratios=[1, 2], hspace=0.0)
+
+        # Time series
+        ax = fig.add_subplot(inner_gs[0])
+        ax.plot(t_series, data / 1e6, zorder=20)
+        ax.text(
+            0.005,
+            0.96,
+            stations[i],
+            transform=ax.transAxes,
+            va="top",
+            bbox=dict(facecolor="white", edgecolor="black", pad=1),
+        )
+        ax.set_xlim(xlim)
+        ax.grid(True)
+        ax.set_xticklabels([])
+
+        if i == 2:
+            ax.set_ylabel("Pressure\n(Pa)")
+
+        # Spectrogram
+        ax = fig.add_subplot(inner_gs[1])
+        ax.pcolormesh(t_spec, f, SdB, shading="auto", vmin=vmin, vmax=vmax, cmap="jet")
+        ax.set_xlim(xlim)
+
+        if i == 2:
+            ax.set_xlabel("Reduced time (s)")
+            ax.set_ylabel("Frequency\n(Hz)")
+        else:
+            ax.set_xticklabels([])
+
+    # Add a colorbar to the bottom of the figure:
+    cax = fig.add_axes([0.92, 0.25, 0.03, 0.5])
+    cbar = fig.colorbar(ax.collections[0], cax=cax, orientation="vertical")
+    cbar.set_label("PSD (dB re 1 $\\mu$Pa$^2$/Hz)")
+
+    return fig
+
+
+def plot_pulse_stack(
+    sig_matrix: np.ndarray,
+    corr_matrix: np.ndarray,
+    fs: float,
+    title: str | None = None,
+    channel: int | None = None,
+):
+    fig, axs = plt.subplots(
+        nrows=20, ncols=1, figsize=(10, 10), gridspec_kw={"hspace": 0.0}
+    )
+
+    tvec = np.arange(0, sig_matrix.shape[1]) / fs
+    for i, ax in enumerate(axs):
+        sig = sig_matrix[i]
+        ax.plot(tvec, sig / max(abs(sig)), "k")
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["bottom"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.tick_params(axis="x", which="both", bottom=False, top=False)
+        ax.tick_params(axis="y", which="both", left=False, right=False)
+        ax.set_yticklabels([])
+        ax.grid(True)
+        ax.set_xlim(0, max(tvec))
+        ax.set_ylim(-1, 1)
+        ax.set_ylabel(f"{corr_matrix[0, i]:.2f}", rotation=0, ha="right", va="center")
+        if i == len(axs) - 1:
+            ax.set_xlabel("Time [s]")
+        else:
+            ax.set_xticklabels([])
+        if i == 0:
+            ax.set_title(f"{title} Channel {channel}")
+
+    return fig
+
+
+def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
+    if ax is None:
+        ax = plt.gca()
+    # return ax.pcolormesh(t, f, 10 * np.log10(Sxx), cmap="inferno", vmin=vmin, vmax=vmax)
+    extent = (t[0], t[-1], f[0], f[-1])
+    return ax.imshow(
+        10 * np.log10(Sxx),
+        extent=extent,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        aspect="auto",
+        origin="lower",
+        interpolation="none",
+    )
+
+
+def plot_spectrograms(
+    ds: DataStream,
+    title: str | None = None,
+    tperseg: int = 1,
+    overlap: float = 0.75,
+    nfft: int | None = None,
+    fmin: float | None = None,
+    fmax: float | None = None,
+    vmin: float = None,
+    vmax: float = None,
+    fig_size: tuple[float] = (8, 6),
+) -> plt.Figure:
+    fs = ds.stats.sampling_rate
+
+    nperseg = int(tperseg * fs)
+    overlap_size = int(overlap * nperseg)
+    if nfft is None:
+        nfft = nperseg
+
+    fig, axs = plt.subplots(
+        ds.num_channels, 1, figsize=fig_size, gridspec_kw={"hspace": 0.3}
+    )
+    fig.suptitle(title)
+
+    for i, channel in enumerate(ds.stats.channels):
+        f, t, Sxx = signal.spectrogram(
+            ds.data[i],
+            fs=fs,
+            nperseg=nperseg,
+            noverlap=overlap_size,
+            nfft=nfft,
+        )
+
+        if fmin and fmax:
+            Sxx = Sxx[(f >= fmin) & (f <= fmax), :]
+            f = f[(f >= fmin) & (f <= fmax)]
+        elif fmin:
+            Sxx = Sxx[f >= fmin, :]
+            f = f[f >= fmin]
+        elif fmax:
+            Sxx = Sxx[f <= fmax, :]
+            f = f[f <= fmax]
+
+        if vmin is None:
+            vmin = Sxx.min()
+        if vmax is None:
+            vmax = Sxx.max()
+
+        ax = axs[i]
+        im = plot_spectrogram(f, t, Sxx, ax=ax, vmin=vmin, vmax=vmax)
+
+        ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
+        if channel == ds.stats.channels[-1]:
+            ax.set_xlabel("Time [s]")
+            ax.set_ylabel("Frequency [Hz]")
+        else:
+            ax.set_xticklabels([])
+            ax.set_xlabel("")
+
+        cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+        cbar = fig.colorbar(im, cax=cax)
+        cbar.set_label(f"PSD [$\\mathrm{{{ds.stats.units}}} / \\mathrm{{Hz}}^2$]")
 
     return fig
 
@@ -653,5 +968,53 @@ def plot_study_area(
         size_vertical=200,
     )
     ax.add_artist(scalebar)
+
+    return fig
+
+
+def plot_summed_pulses(sig_matrix: np.ndarray, fs: float):
+    fig = plt.figure(figsize=(15, 5))
+    ax = plt.gca()
+
+    summed = sig_matrix.mean(axis=0)
+    tvec = np.arange(0, sig_matrix.shape[1]) / fs
+    [ax.plot(tvec, sig_matrix[i], "k", alpha=0.5) for i in range(10)]
+    ax.plot(tvec, summed, "r", linewidth=2, zorder=50)
+    ax.set_xlim(0, max(tvec))
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Normalized Amplitude")
+    ax.grid(True)
+    return fig, summed
+
+
+def plot_time_series(
+    ds: DataStream,
+    ymin: float | None = None,
+    ymax: float | None = None,
+    fig_size: tuple[float] = (12, 6),
+    title: str | None = None,
+):
+    fig, axs = plt.subplots(
+        ds.num_channels, 1, figsize=fig_size, gridspec_kw={"hspace": 0.25}
+    )
+    fig.suptitle(title)
+
+    for i, channel in enumerate(ds.stats.channels):
+        ax = axs[i]
+        ax.plot(ds.time_vector, ds.data[i])
+        ax.set_xlim(ds.time_vector[0], ds.time_vector[-1])
+
+        ax.set_ylabel(f"Channel {channel}")
+        if channel == ds.stats.channels[-1]:
+            ax.set_xlabel("Time")
+        else:
+            ax.set_xticklabels([])
+            ax.set_xlabel("")
+
+    if ymin is None:
+        ymin = ds.data.min()
+    if ymax is None:
+        ymax = ds.data.max()
+    [ax.set_ylim(ymin, ymax) for ax in axs]
 
     return fig

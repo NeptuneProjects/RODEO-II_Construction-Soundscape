@@ -19,6 +19,7 @@ from rodeo import plotting
 load_dotenv()
 plt.style.use(Path("config/jasa_fig_style.mplstyle"))
 
+
 def load_data(
     inv_config: dict,
     event_data: dict,

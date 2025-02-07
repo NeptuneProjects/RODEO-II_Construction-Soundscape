@@ -4,6 +4,7 @@
 import argparse
 import os
 from pathlib import Path
+from typing import Sequence
 
 import dotenv
 import matplotlib.gridspec as gridspec
@@ -31,7 +32,6 @@ def spectrogram_args(
     nperseg = int(tperseg * fs)
     win = hann(nperseg)
     hop = max(int(nperseg * (1 - pcoverlap)), 1)
-    print(hop)
     return nperseg, win, hop
 
 
@@ -40,10 +40,11 @@ def plot_dispersion(
     stations: list[str],
     channel: int = 0,
     tperseg: int = 0.05,
-    pcoverlap: float = 0.99,
-    nfft_factor: float = 16,
+    pcoverlap: float = 0.90,
+    nfft_factor: float = 2,
     vmin: float = 80.0,
     vmax: float = 130.0,
+    plot_freqs_between: Sequence[float] | None = (0.0, 500.0),
 ) -> plt.Figure:
     fig = plt.figure(figsize=(6.5, 8))
     outer_gs = gridspec.GridSpec(3, 1, hspace=0.1)
@@ -61,9 +62,14 @@ def plot_dispersion(
         STFT = ShortTimeFFT(win, hop, fs, mfft=nfft, scale_to="psd")
         S = STFT.stft(data)
         SdB = 20 * np.log10(np.abs(S))
-        print(SdB.min(), SdB.max())
         f = STFT.f
         t_spec = STFT.t(len(data))
+
+        # Plot only specified frequencies:
+        if plot_freqs_between is not None:
+            mask = (f >= plot_freqs_between[0]) & (f <= plot_freqs_between[1])
+            f = f[mask]
+            SdB = SdB[mask, :]
 
 
         inner_gs = outer_gs[i].subgridspec(2, 1, height_ratios=[1, 2], hspace=0.0)

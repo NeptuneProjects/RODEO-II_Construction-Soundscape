@@ -535,6 +535,24 @@ def plot_mode_function(
     return fig
 
 
+def plot_pressure_fields(
+    pressures: list[np.ndarray], z: np.ndarray, seabed: float, labels: list[str] | None = None
+) -> plt.Figure:
+    max_pressure = 1.1 * np.abs(np.concatenate(pressures)).max()
+    fig, ax = plt.subplots(figsize=(2, 3))
+    for i, pressure in enumerate(pressures):
+        label = labels[i] if labels else f"Field {i}"
+        ax.plot(np.abs(pressure), z, label=label)
+    ax.axhline(seabed, color="k", linestyle="--")
+    ax.invert_yaxis()
+    ax.set_xlim(0, max_pressure)
+    ax.set_ylim(z.max(), 0)
+    ax.set_xlabel("Pressure amplitude")
+    ax.set_ylabel("Depth (m)")
+    ax.legend()
+    return fig
+
+
 def plot_psd_pdf(
     freq: np.ndarray,
     data: np.ndarray,

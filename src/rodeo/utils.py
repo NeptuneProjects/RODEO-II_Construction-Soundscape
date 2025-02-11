@@ -37,8 +37,8 @@ def clean_ctd_data(df: pd.DataFrame, min_depth: float = 1.0) -> pd.DataFrame:
     # Round `Depth` column to two decimal points (for AT environment file)
     df["Depth"] = df["Depth"].round(2)
     # De-depulicate data:
-    dedup_df = df.groupby("Depth", as_index=False).mean()
-    return dedup_df[dedup_df["Depth"] > min_depth]
+    df.drop_duplicates(subset="Depth", keep="last", inplace=True)
+    return df[df["Depth"] > min_depth]
 
 
 def compute_range(

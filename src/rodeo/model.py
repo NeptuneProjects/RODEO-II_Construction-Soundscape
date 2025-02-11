@@ -7,7 +7,7 @@ def construct_environment() -> dict:
     z = np.array([0, 35])
     return {
         # 1. General
-        "title": "Munk",
+        "title": "SouthFork",
         "model": "KRAKEN",
         # 2. Top medium (halfspace)
         "top_opt": "CVW    ",

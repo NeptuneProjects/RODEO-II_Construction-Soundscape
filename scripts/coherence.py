@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor as Executor
+from concurrent.futures import ProcessPoolExecutor as Executor
 from dataclasses import dataclass
 from itertools import product
 import logging

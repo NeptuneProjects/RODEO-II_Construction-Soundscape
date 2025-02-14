@@ -138,12 +138,12 @@ def main(args: argparse.Namespace) -> None:
                 )
 
                 with ProcessPoolExecutor(max_workers=4) as executor:
-                    logging.info(f"Submitting {len(det_pairs)} pairs.")
+                    logging.info(f"Submitting {len(det_pairs):,} pairs.")
                     futures = [
                         executor.submit(process_pair, pair, args.target_fs, dbfile)
                         for pair in det_pairs
                     ]
-                    logging.info(f"{len(det_pairs)} pairs submitted.")
+                    logging.info(f"{len(det_pairs):,} pairs submitted.")
 
                     for future in tqdm(futures, leave=True, total=len(futures)):
                         i, j, dt, cf, lags, coh, freq = future.result()

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor as Executor
 from dataclasses import dataclass
 from itertools import product
 import logging
@@ -16,7 +17,6 @@ import scipy.signal as signal
 from tqdm import tqdm
 from tritonoa.data.stream import DataStream, DataStreamStats
 from tritonoa.data.time import TIME_PRECISION
-from concurrent.futures import ProcessPoolExecutor
 
 dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -116,7 +116,7 @@ def main(args: argparse.Namespace) -> None:
                         None,
                     )
 
-                    with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
+                    with Executor(max_workers=args.max_workers) as executor:
                         results = list(tqdm(executor.map(process_pair, detection_pairs), total=len(detection_pairs)))
 
                     for i, j, dt, cf, lags, coh, freq in results:

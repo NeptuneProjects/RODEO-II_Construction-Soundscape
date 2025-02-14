@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from itertools import product
 import logging
@@ -51,23 +52,48 @@ def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
     return ds
 
 
-def process_pair(pair, target_fs):
-    (i, det_group1), (j, det_group2) = pair
+def form_pairs(grp: h5py.Group) -> list[tuple[tuple[int, str], tuple[int, str]]]:
+    return list(product(enumerate([v.name for v in grp.values()]), repeat=2))
 
-    ds1 = condition_signal(
-        DataStream(
-            stats=parse_metadata(det_group1),
-            data=det_group1["waveform"][:],
-        ),
-        target_fs=target_fs,
-    )
-    ds2 = condition_signal(
-        DataStream(
-            stats=parse_metadata(det_group2),
-            data=det_group2["waveform"][:],
-        ),
-        target_fs=target_fs,
-    )
+
+def data_shape(
+    dbfile: Path,
+) -> tuple[list[tuple[tuple[int, str], tuple[int, str]]], list[int], list[int]]:
+    detection_pairs = []
+    channels = []
+    num_detections = []
+    with h5py.File(dbfile, "r") as file:
+        logging.info(f"Loaded {dbfile}")
+        for chan_group in file.values():
+            detection_pairs.append(form_pairs(chan_group))
+            channels.append(int(chan_group.name[-1]))
+            num_detections.append(len(chan_group))
+
+    return detection_pairs, channels, num_detections
+
+
+def process_pair(pair: tuple, target_fs: float, dbpath: Path):
+    (i, key1), (j, key2) = pair
+
+
+    with h5py.File(dbpath, "r") as file:
+        det_group1 = file[key1]
+        det_group2 = file[key2]
+
+        ds1 = condition_signal(
+            DataStream(
+                stats=parse_metadata(det_group1),
+                data=det_group1["waveform"][:],
+            ),
+            target_fs=target_fs,
+        )
+        ds2 = condition_signal(
+            DataStream(
+                stats=parse_metadata(det_group2),
+                data=det_group2["waveform"][:],
+            ),
+            target_fs=target_fs,
+        )
 
     sig1 = ds1.data.squeeze()
     sig2 = ds2.data.squeeze()
@@ -95,38 +121,39 @@ def main(args: argparse.Namespace) -> None:
         dbfiles = event_dir.glob("*.hdf5")
 
         for dbfile in dbfiles:
-            logging.info(f"Loaded {dbfile}")
-            with h5py.File(dbfile, "r") as file:
-                for chan_group in file.values():
-                    detection_pairs = list(
-                        product(enumerate(chan_group.values()), repeat=2)
-                    )
-                    num_detections = len(chan_group)
-                    time_diff, corr_func, corr_lags, coherence, coh_freq = (
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
+            
+            detection_pairs, channels, num_detections = data_shape(dbfile)
 
-                    for pair in tqdm(detection_pairs, leave=True, total=len(detection_pairs)):
-                        i, j, dt, cf, lags, coh, freq = process_pair(pair, args.target_fs)
+            for det_pairs, channel, num_det in zip(
+                detection_pairs, channels, num_detections
+            ):
+                logging.info(f"Processing channel {channel}.")
+
+                time_diff, corr_func, corr_lags, coherence, coh_freq = (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+
+                with ProcessPoolExecutor(max_workers=4) as executor:
+                    futures = [
+                        executor.submit(process_pair, pair, args.target_fs, dbfile)
+                        for pair in det_pairs
+                    ]
+
+                    for future in tqdm(futures, leave=True, total=len(futures)):
+                        i, j, dt, cf, lags, coh, freq = future.result()
 
                         if time_diff is None:
-                            time_diff = np.zeros((num_detections, num_detections))
+                            time_diff = np.zeros((num_det, num_det))
                         if corr_func is None:
-                            corr_func = np.zeros(
-                                (num_detections, num_detections, len(cf))
-                            )
+                            corr_func = np.zeros((num_det, num_det, len(cf)))
                         if corr_lags is None:
-                            corr_lags = np.zeros(
-                                (num_detections, num_detections, len(lags))
-                            )
+                            corr_lags = np.zeros((num_det, num_det, len(lags)))
                         if coherence is None:
-                            coherence = np.zeros(
-                                (num_detections, num_detections, len(coh))
-                            )
+                            coherence = np.zeros((num_det, num_det, len(coh)))
                         if coh_freq is None:
                             coh_freq = freq
 
@@ -134,6 +161,10 @@ def main(args: argparse.Namespace) -> None:
                         corr_func[i, j] = cf
                         corr_lags[i, j] = lags
                         coherence[i, j] = coh
+
+            return
+
+
 
 
 if __name__ == "__main__":

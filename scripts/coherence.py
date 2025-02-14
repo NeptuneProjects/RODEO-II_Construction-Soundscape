@@ -185,5 +185,11 @@ if __name__ == "__main__":
         help="Target sampling rate for the signals.",
         default=1000.0,
     )
+    parser.add_argument(
+        "--max_workers",
+        type=int,
+        help="Number of workers to use for parallel processing.",
+        default=4,
+    )
     args = parser.parse_args()
     main(args)

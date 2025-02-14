@@ -116,7 +116,7 @@ def main(args: argparse.Namespace) -> None:
                         None,
                     )
 
-                    with ProcessPoolExecutor(max_workers=8) as executor:
+                    with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
                         results = list(tqdm(executor.map(process_pair, detection_pairs), total=len(detection_pairs)))
 
                     for i, j, dt, cf, lags, coh, freq in results:
@@ -168,6 +168,12 @@ if __name__ == "__main__":
         type=float,
         help="Target sampling rate for the signals.",
         default=1000.0,
+    )
+    parser.add_argument(
+        "--max_workers",
+        type=int,
+        help="Number of parallel workers.",
+        default=8,
     )
     args = parser.parse_args()
     main(args)

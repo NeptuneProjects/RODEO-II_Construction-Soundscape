@@ -54,7 +54,7 @@ def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
 
 def process_pair(pair):
     (i, det_group1), (j, det_group2) = pair
-    logging.info(f"Processing pair {i}, {j}")
+    # logging.info(f"Processing pair {i}, {j}")
 
     ds1 = condition_signal(
         DataStream(
@@ -75,15 +75,11 @@ def process_pair(pair):
     sig2 = ds2.data.squeeze()
 
     # Compute time difference
-    dt = (
-        ds2.stats.time_init - ds1.stats.time_init
-    ) / np.timedelta64(1, "s")
+    dt = (ds2.stats.time_init - ds1.stats.time_init) / np.timedelta64(1, "s")
 
     # Compute cross-correlation:
     cf = signal.correlate(sig1, sig2, mode="full")
-    lags = signal.correlation_lags(
-        len(sig1), len(sig2), mode="full"
-    )
+    lags = signal.correlation_lags(len(sig1), len(sig2), mode="full")
 
     # Compute coherence:
     freq, coh = signal.coherence(sig1, sig2)
@@ -117,17 +113,29 @@ def main(args: argparse.Namespace) -> None:
                     )
 
                     with Executor(max_workers=args.max_workers) as executor:
-                        results = list(tqdm(executor.map(process_pair, detection_pairs), total=len(detection_pairs)))
+                        results = list(
+                            tqdm(
+                                executor.map(process_pair, detection_pairs),
+                                leave=True,
+                                total=len(detection_pairs),
+                            )
+                        )
 
                     for i, j, dt, cf, lags, coh, freq in results:
                         if time_diff is None:
                             time_diff = np.zeros((num_detections, num_detections))
                         if corr_func is None:
-                            corr_func = np.zeros((num_detections, num_detections, len(cf)))
+                            corr_func = np.zeros(
+                                (num_detections, num_detections, len(cf))
+                            )
                         if corr_lags is None:
-                            corr_lags = np.zeros((num_detections, num_detections, len(lags)))
+                            corr_lags = np.zeros(
+                                (num_detections, num_detections, len(lags))
+                            )
                         if coherence is None:
-                            coherence = np.zeros((num_detections, num_detections, len(coh)))
+                            coherence = np.zeros(
+                                (num_detections, num_detections, len(coh))
+                            )
                         if coh_freq is None:
                             coh_freq = freq
 
@@ -152,6 +160,7 @@ def main(args: argparse.Namespace) -> None:
                     #     coherence=coherence,
                     #     coh_freq=coh_freq,
                     # )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

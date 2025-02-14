@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor as Executor
 from dataclasses import dataclass
 from itertools import product
 import logging
@@ -52,23 +51,22 @@ def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
     return ds
 
 
-def process_pair(pair):
+def process_pair(pair, target_fs):
     (i, det_group1), (j, det_group2) = pair
-    # logging.info(f"Processing pair {i}, {j}")
 
     ds1 = condition_signal(
         DataStream(
             stats=parse_metadata(det_group1),
             data=det_group1["waveform"][:],
         ),
-        target_fs=args.target_fs,
+        target_fs=target_fs,
     )
     ds2 = condition_signal(
         DataStream(
             stats=parse_metadata(det_group2),
             data=det_group2["waveform"][:],
         ),
-        target_fs=args.target_fs,
+        target_fs=target_fs,
     )
 
     sig1 = ds1.data.squeeze()
@@ -112,16 +110,9 @@ def main(args: argparse.Namespace) -> None:
                         None,
                     )
 
-                    with Executor(max_workers=args.max_workers) as executor:
-                        results = list(
-                            tqdm(
-                                executor.map(process_pair, detection_pairs),
-                                leave=True,
-                                total=len(detection_pairs),
-                            )
-                        )
+                    for pair in tqdm(detection_pairs, leave=True, total=len(detection_pairs)):
+                        i, j, dt, cf, lags, coh, freq = process_pair(pair, args.target_fs)
 
-                    for i, j, dt, cf, lags, coh, freq in results:
                         if time_diff is None:
                             time_diff = np.zeros((num_detections, num_detections))
                         if corr_func is None:
@@ -144,23 +135,6 @@ def main(args: argparse.Namespace) -> None:
                         corr_lags[i, j] = lags
                         coherence[i, j] = coh
 
-                        # if j == 100:
-                        #     plt.figure(figsize=(10, 6))
-                        #     plt.subplot(311)
-                        #     plt.plot(ds1.time_vector, ds1.data.squeeze())
-                        #     plt.show()
-                        #     return
-                    # record = Record(
-                    #     event=event_name,
-                    #     station=ds1.stats.channel,
-                    #     channel=ds1.stats.channel,
-                    #     time_diff=time_diff,
-                    #     corr_func=corr_func,
-                    #     corr_lags=corr_lags,
-                    #     coherence=coherence,
-                    #     coh_freq=coh_freq,
-                    # )
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -177,12 +151,6 @@ if __name__ == "__main__":
         type=float,
         help="Target sampling rate for the signals.",
         default=1000.0,
-    )
-    parser.add_argument(
-        "--max_workers",
-        type=int,
-        help="Number of parallel workers.",
-        default=8,
     )
     args = parser.parse_args()
     main(args)

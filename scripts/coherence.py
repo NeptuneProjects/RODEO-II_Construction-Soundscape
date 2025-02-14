@@ -137,16 +137,23 @@ def main(args: argparse.Namespace) -> None:
                     None,
                 )
 
-                with ProcessPoolExecutor(max_workers=4) as executor:
-                    logging.info(f"Submitting {len(det_pairs):,} pairs.")
-                    futures = [
-                        executor.submit(process_pair, pair, args.target_fs, dbfile)
-                        for pair in det_pairs
-                    ]
-                    logging.info(f"{len(det_pairs):,} pairs submitted.")
+                with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
+                    logging.info(f"Processing {len(det_pairs):,} pairs.")
+                    results = list(
+                        tqdm(
+                            executor.map(
+                                process_pair,
+                                det_pairs,
+                                [args.target_fs] * len(det_pairs),
+                                [dbfile] * len(det_pairs),
+                            ),
+                            leave=True,
+                            total=len(det_pairs),
+                        )
+                    )
 
-                    for future in tqdm(futures, leave=True, total=len(futures)):
-                        i, j, dt, cf, lags, coh, freq = future.result()
+                    for result in results:
+                        i, j, dt, cf, lags, coh, freq = result
 
                         if time_diff is None:
                             time_diff = np.zeros((num_det, num_det))

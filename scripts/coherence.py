@@ -26,23 +26,33 @@ logging.basicConfig(level=logging.INFO)
 class Record:
     event: str
     station: str
-    channel: int
+    sampling_rate: float
     time_diff: np.ndarray
-    corr_func: np.ndarray
-    corr_lags: np.ndarray
-    coherence: np.ndarray
-    coh_freq: np.ndarray
+    corr: np.ndarray
+    lags: np.ndarray
+
+    def save_h5(self, path: Path) -> None:
+        with h5py.File(path, "a") as file:
+            # Set "event" attr if not already set:
+            if "event" not in file.attrs:
+                file.attrs["event"] = self.event
+
+            # Create a new group for the station if it doesn't exist:
+            if self.station not in file:
+                file.create_group(self.station)
+
+            # Save the data:
+            grp = file[f"{self.station}"]
+            grp.attrs["event"] = self.event
+            grp.attrs["station"] = self.station
+            grp.attrs["sampling_rate"] = self.sampling_rate
+            grp.create_dataset("time_diff", data=self.time_diff)
+            grp.create_dataset("corr", data=self.corr)
+            grp.create_dataset("lags", data=self.lags)
 
 
-def parse_metadata(grp: h5py.Group) -> DataStreamStats:
-    attrs = grp.attrs
-    return DataStreamStats(
-        channels=attrs.get("channel"),
-        time_init=np.datetime64(attrs.get("time_init")[:-1], TIME_PRECISION),
-        time_end=np.datetime64(attrs.get("time_end")[:-1], TIME_PRECISION),
-        sampling_rate=attrs.get("sampling_rate"),
-        units=attrs.get("unit"),
-    )
+def compute_array_size(arrays: list[np.ndarray]) -> int:
+    return sum([a.nbytes for a in arrays])
 
 
 def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
@@ -50,10 +60,6 @@ def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
     ds = stream.decimate(dec_factor)
     ds.filter("highpass", freq=10.0)
     return ds
-
-
-def form_pairs(grp: h5py.Group) -> list[tuple[tuple[int, str], tuple[int, str]]]:
-    return list(product(enumerate([v.name for v in grp.values()]), repeat=2))
 
 
 def data_shape(
@@ -69,49 +75,72 @@ def data_shape(
             channels.append(int(chan_group.name[-1]))
             num_detections.append(len(chan_group))
 
+    print(num_detections)
     return detection_pairs, channels, num_detections
 
 
-def process_pair(pair: tuple, target_fs: float, dbpath: Path):
-    (i, key1), (j, key2) = pair
+def form_pairs(grp: h5py.Group) -> list[tuple[tuple[int, str], tuple[int, str]]]:
+    return list(product(enumerate([v.name for v in grp.values()]), repeat=2))[0:100]
 
 
+def parse_metadata(grp: h5py.Group) -> DataStreamStats:
+    attrs = grp.attrs
+    return DataStreamStats(
+        channels=attrs.get("channel"),
+        time_init=np.datetime64(attrs.get("time_init")[:-1], TIME_PRECISION),
+        time_end=np.datetime64(attrs.get("time_end")[:-1], TIME_PRECISION),
+        sampling_rate=attrs.get("sampling_rate"),
+        units=attrs.get("unit"),
+    )
+
+
+def load_signals(
+    dbpath: Path, keys: list[str], target_fs: float
+) -> tuple[DataStream, DataStream]:
+    streams = []
     with h5py.File(dbpath, "r") as file:
-        det_group1 = file[key1]
-        det_group2 = file[key2]
+        for key in keys:
+            grp = file[key]
+            streams.append(
+                condition_signal(
+                    DataStream(
+                        stats=parse_metadata(grp),
+                        data=grp["waveform"][:],
+                    ),
+                    target_fs=target_fs,
+                )
+            )
+    return tuple(streams)
 
-        ds1 = condition_signal(
-            DataStream(
-                stats=parse_metadata(det_group1),
-                data=det_group1["waveform"][:],
-            ),
-            target_fs=target_fs,
-        )
-        ds2 = condition_signal(
-            DataStream(
-                stats=parse_metadata(det_group2),
-                data=det_group2["waveform"][:],
-            ),
-            target_fs=target_fs,
-        )
 
+def process_pair(
+    pair: tuple, target_fs: float, dbpath: Path
+) -> tuple[int, int, float, float, float, float]:
+    (j, key1), (k, key2) = pair
+
+    ds1, ds2 = load_signals(dbpath, [key1, key2], target_fs)
     sig1 = ds1.data.squeeze()
     sig2 = ds2.data.squeeze()
+
+    x1 = (sig1 - np.mean(sig1)) / np.std(sig1)
+    x2 = (sig2 - np.mean(sig2)) / np.std(sig2)
+    norm_factor = np.sqrt(np.sum(x1**2) * np.sum(x2**2))
 
     # Compute time difference
     dt = (ds2.stats.time_init - ds1.stats.time_init) / np.timedelta64(1, "s")
 
-    # Compute cross-correlation:
-    cf = signal.correlate(sig1, sig2, mode="full")
-    lags = signal.correlation_lags(len(sig1), len(sig2), mode="full")
+    # Compute max cross-correlation & lag:
+    ccf = signal.correlate(x1, x2, mode="full") / norm_factor
+    lags = signal.correlation_lags(len(x1), len(x2), mode="full")
+    max_idx = np.argmax(ccf)
+    corr = ccf[max_idx]
+    lag = lags[max_idx]
 
-    # Compute coherence:
-    freq, coh = signal.coherence(sig1, sig2)
-
-    return i, j, dt, cf, lags, coh, freq
+    return j, k, dt, corr, lag, ds1.stats.sampling_rate
 
 
 def main(args: argparse.Namespace) -> None:
+    args.output.mkdir(parents=True, exist_ok=True)
     event_dirs = args.input.iterdir()
 
     for event_dir in event_dirs:
@@ -121,21 +150,19 @@ def main(args: argparse.Namespace) -> None:
         dbfiles = event_dir.glob("*.hdf5")
 
         for dbfile in dbfiles:
-            
+            station_name = "-".join(dbfile.stem.split("_")[1:])
+            logging.info(f"Processing station {station_name}.")
+
             detection_pairs, channels, num_detections = data_shape(dbfile)
 
-            for det_pairs, channel, num_det in zip(
-                detection_pairs, channels, num_detections
-            ):
-                logging.info(f"Processing channel {channel}.")
+            num_ch = len(channels)
+            num_det = max(num_detections)
+            time_diff = np.full((num_ch, num_det, num_det), np.nan)
+            corr = np.full((num_ch, num_det, num_det), np.nan)
+            lags = np.full((num_ch, num_det, num_det), np.nan)
 
-                time_diff, corr_func, corr_lags, coherence, coh_freq = (
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
+            for i, (det_pairs, channel) in enumerate(zip(detection_pairs, channels)):
+                logging.info(f"Processing channel {channel}.")
 
                 with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
                     logging.info(f"Processing {len(det_pairs):,} pairs.")
@@ -153,27 +180,27 @@ def main(args: argparse.Namespace) -> None:
                     )
 
                     for result in results:
-                        i, j, dt, cf, lags, coh, freq = result
+                        j, k, dt, cf, lag, target_fs = result
+                        time_diff[i, j, k] = dt
+                        corr[i, j, k] = cf
+                        lags[i, j, k] = lag
 
-                        if time_diff is None:
-                            time_diff = np.zeros((num_det, num_det))
-                        if corr_func is None:
-                            corr_func = np.zeros((num_det, num_det, len(cf)))
-                        if corr_lags is None:
-                            corr_lags = np.zeros((num_det, num_det, len(lags)))
-                        if coherence is None:
-                            coherence = np.zeros((num_det, num_det, len(coh)))
-                        if coh_freq is None:
-                            coh_freq = freq
+                nbytes = compute_array_size([time_diff, corr, lags])
+                logging.info(f"Total size of arrays: {nbytes / (1024 ** 3):,} GB.")
 
-                        time_diff[i, j] = dt
-                        corr_func[i, j] = cf
-                        corr_lags[i, j] = lags
-                        coherence[i, j] = coh
+            record = Record(
+                event=event_name,
+                station=station_name,
+                sampling_rate=target_fs,
+                time_diff=time_diff,
+                corr=corr,
+                lags=lags,
+            )
 
-            return
-
-
+            record.save_h5(args.output / f"maxcorr_{event_name}.h5")
+            logging.info(
+                f"Saved results to {args.output / f'maxcorr_{event_name}.h5'}."
+            )
 
 
 if __name__ == "__main__":
@@ -190,13 +217,19 @@ if __name__ == "__main__":
         "--target_fs",
         type=float,
         help="Target sampling rate for the signals.",
-        default=1000.0,
+        default=500.0,
     )
     parser.add_argument(
         "--max_workers",
         type=int,
         help="Number of workers to use for parallel processing.",
         default=4,
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Path to the output HDF5 file to save the results.",
+        default=Path(os.getenv("MAXCORRPATH")),
     )
     args = parser.parse_args()
     main(args)

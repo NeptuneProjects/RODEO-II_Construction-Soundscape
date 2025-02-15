@@ -75,7 +75,6 @@ def data_shape(
             channels.append(int(chan_group.name[-1]))
             num_detections.append(len(chan_group))
 
-    print(num_detections)
     return detection_pairs, channels, num_detections
 
 

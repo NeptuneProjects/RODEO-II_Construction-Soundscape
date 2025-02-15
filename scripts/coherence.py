@@ -80,7 +80,7 @@ def data_shape(
 
 
 def form_pairs(grp: h5py.Group) -> list[tuple[tuple[int, str], tuple[int, str]]]:
-    return list(product(enumerate([v.name for v in grp.values()]), repeat=2))[0:100]
+    return list(product(enumerate([v.name for v in grp.values()]), repeat=2))
 
 
 def parse_metadata(grp: h5py.Group) -> DataStreamStats:

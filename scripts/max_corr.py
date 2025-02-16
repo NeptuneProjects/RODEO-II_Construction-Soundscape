@@ -16,6 +16,7 @@ from tritonoa.data.stream import DataStream, DataStreamStats
 from tritonoa.data.time import TIME_PRECISION
 
 import rodeo
+from rodeo.utils import compute_array_size
 
 dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
@@ -144,13 +145,19 @@ def main(args: argparse.Namespace) -> None:
 
         for dbfile in dbfiles:
             station_name = "-".join(dbfile.stem.split("_")[1:])
+            logging.info(f"Processing station {station_name}.")
 
             data, t0, target_fs = retrieve_data(dbfile, args.target_fs)
-
             num_channels = data.shape[0]
             num_detections = data.shape[1]
             max_corr = np.full((num_channels, num_detections, num_detections), np.nan)
             time_diff = np.full((num_channels, num_detections, num_detections), np.nan)
+            logging.info(
+                f"Data shape: {num_channels} channels; {num_detections} detections."
+            )
+            logging.info(
+                f"Size of arrays: {compute_array_size([max_corr, time_diff]) / (1024 ** 3):.2f} GB."
+            )
 
             threads = jl.seval("Threads.nthreads()")
             logging.info(f"Number of Julia threads: {threads}.")
@@ -182,8 +189,6 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    os.environ["JULIA_NUM_THREADS"] = "12"
-    os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
     parser = argparse.ArgumentParser(
         description="Compute the coherence between two signals."
     )
@@ -195,7 +200,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--event",
-        type="str",
+        type=str,
         help="Name of the event to process.",
         default=None,
     )
@@ -218,4 +223,6 @@ if __name__ == "__main__":
         default=Path(os.getenv("MAXCORRPATH")),
     )
     args = parser.parse_args()
+    os.environ["JULIA_NUM_THREADS"] = str(args.max_workers)
+    os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
     main(args)

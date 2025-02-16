@@ -1,9 +1,21 @@
 # -*- coding: utf-8 -*-
+"""
+Constructors for environment models.
 
+William F. Jenkins, Ph.D.
+Scripps Institution of Oceanography
+University of California San Diego
+February 2025
+"""
 import numpy as np
 
 
 def construct_environment() -> dict:
+    """Construct a simple environment model.
+
+    Returns:
+        Dictionary containing the environment model.
+    """
     z = np.array([0, 35])
     return {
         # 1. General

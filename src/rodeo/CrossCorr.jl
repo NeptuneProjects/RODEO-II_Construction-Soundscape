@@ -1,3 +1,15 @@
+"""
+    CrossCorr
+
+Computes cross-correlation functions and time differences between signals.
+This module is part of the `rodeo` Python package.
+
+William F. Jenkins, Ph.D.
+Scripps Institution of Oceanography
+University of California San Diego
+February 2025
+"""
+
 module CrossCorr
 
 using DSP
@@ -6,7 +18,11 @@ using ProgressBars
 using Statistics
 
 
-# Function to compute max cross-correlation between two signals
+"""
+    cross_corr(sig1::Vector{Float64}, sig2::Vector{Float64})::Float64
+
+Compute the maximum value of the cross-correlation function between two signals.
+"""
 function cross_corr(sig1::Vector{Float64}, sig2::Vector{Float64})
     x1 = (sig1 .- mean(sig1)) ./ std(sig1)
     x2 = (sig2 .- mean(sig2)) ./ std(sig2)
@@ -15,7 +31,12 @@ function cross_corr(sig1::Vector{Float64}, sig2::Vector{Float64})
     return maximum(ccf)
 end
 
-# Function to compute cross-correlation matrix
+"""
+    corr_matrix(data::Matrix{Float64})::Matrix{Float64}
+
+Compute the matrix containing maximum values of the cross-correlation functions
+between pairs of signals.
+"""
 function corr_matrix(data::Matrix{Float64})::Matrix{Float64}
     rows = size(data, 1)
     corr = Matrix{Float64}(undef, rows, rows)
@@ -32,7 +53,11 @@ function corr_matrix(data::Matrix{Float64})::Matrix{Float64}
     return corr
 end
 
-# Compute the time difference between signals
+"""
+    dt_matrix(times::Vector{Float64})::Matrix{Float64}
+
+Compute the matrix containing time differences between pairs of time points.
+"""
 function dt_matrix(times::Vector{Float64})::Matrix{Float64}
     rows = length(times)
     dt = Matrix{Float64}(undef, rows, rows)
@@ -46,7 +71,6 @@ function dt_matrix(times::Vector{Float64})::Matrix{Float64}
     return dt
 end
 
-# Export primary function for Python access
 export corr_matrix, dt_matrix
 
-end # module
+end

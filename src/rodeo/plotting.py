@@ -1,4 +1,12 @@
 # -*- coding: utf-8 -*-
+"""Helper functions for plotting data.
+
+William F. Jenkins, Ph.D.
+Scripps Institution of Oceanography
+University of California San Diego
+February 2025
+"""
+
 
 from pathlib import Path
 import re
@@ -536,7 +544,10 @@ def plot_mode_function(
 
 
 def plot_pressure_fields(
-    pressures: list[np.ndarray], z: np.ndarray, seabed: float, labels: list[str] | None = None
+    pressures: list[np.ndarray],
+    z: np.ndarray,
+    seabed: float,
+    labels: list[str] | None = None,
 ) -> plt.Figure:
     max_pressure = 1.1 * np.abs(np.concatenate(pressures)).max()
     fig, ax = plt.subplots(figsize=(2, 3))

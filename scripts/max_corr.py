@@ -163,6 +163,8 @@ def main(args: argparse.Namespace) -> None:
 
         if args.event is not None and event_name != args.event:
             continue
+        if args.omit is not None and event_name in args.omit:
+            continue
 
         logging.info(f"Processing event {event_name}.")
 
@@ -225,8 +227,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--event",
-        type=str,
+        type=list[str],
+        nargs="+",
         help="Name of the event to process.",
+        default=None,
+    )
+    parser.add_argument(
+        "--omit",
+        type=list[str],
+        nargs="+",
+        help="Name of the event(s) to omit.",
         default=None,
     )
     parser.add_argument(

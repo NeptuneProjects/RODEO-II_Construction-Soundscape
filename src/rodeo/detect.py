@@ -8,6 +8,7 @@ about each detection.
 
 William F. Jenkins, Ph.D.
 Scripps Institution of Oceanography
+University of California San Diego
 February 2025
 """
 

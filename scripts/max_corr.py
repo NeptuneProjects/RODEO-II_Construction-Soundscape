@@ -3,7 +3,6 @@
 
 import argparse
 from dataclasses import dataclass
-import importlib.resources as pkg_resources
 import logging
 import os
 from pathlib import Path
@@ -12,14 +11,18 @@ import dotenv
 import h5py
 import numpy as np
 from tqdm import tqdm
-from tritonoa.data.stream import DataStream, DataStreamStats
-from tritonoa.data.time import TIME_PRECISION
+from tritonoa.data.stream import DataStream
 
-import rodeo
-from rodeo.utils import compute_array_size
+from rodeo.detect import parse_detection
+from rodeo.utils import (
+    compute_array_size,
+    decimation_factor,
+    initialize_julia,
+    logging_kwargs,
+)
 
 dotenv.load_dotenv()
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
+logging.basicConfig(**logging_kwargs)
 
 
 @dataclass
@@ -31,6 +34,20 @@ class Record:
     corr: np.ndarray
 
     def save_h5(self, path: Path) -> None:
+        """Save the record to an HDF5 file.
+
+        The record is saved to the output file in the following format:
+        ```
+        /station
+            /time_diff
+            /corr
+        ```
+        `time_diff` and `corr` are 3D arrays with the shape
+        `(num_channels, num_detections, num_detections)`.
+
+        Args:
+            path: Path to the output HDF5 file.
+        """
         with h5py.File(path, "a") as file:
             # Set "event" attr if not already set:
             if "event" not in file.attrs:
@@ -49,16 +66,34 @@ class Record:
             grp.create_dataset("corr", data=self.corr)
 
 
-def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
+def condition_signal(stream: DataStream, target_fs: float) -> tuple[DataStream, int]:
+    """Condition the signal by decimating and filtering it.
+
+    Args:
+        stream: Data stream.
+        target_fs: Target sampling rate for the signal.
+
+    Returns:
+        Decimated and filtered data stream.
+        Decimation factor.
+    """
     dec_factor = decimation_factor(stream.stats.sampling_rate, target_fs)
     ds = stream.decimate(dec_factor)
     ds.filter("highpass", freq=10.0)
-    return ds
+    return ds, dec_factor
 
 
 def data_shape(
     dbfile: Path,
 ) -> tuple[int, int]:
+    """Return shape of data within the HDF file.
+
+    Args:
+        dbfile: Path to the HDF5 file.
+
+    Returns:
+        Number of channels and number of detections.
+    """
     channels = []
     num_detections = []
     num_samples = None
@@ -73,22 +108,20 @@ def data_shape(
     return len(channels), max(num_detections)
 
 
-def decimation_factor(fs: float, target_fs: float) -> int:
-    return int(fs // target_fs)
-
-
-def parse_metadata(grp: h5py.Group) -> DataStreamStats:
-    attrs = grp.attrs
-    return DataStreamStats(
-        channels=attrs.get("channel"),
-        time_init=np.datetime64(attrs.get("time_init")[:-1], TIME_PRECISION),
-        time_end=np.datetime64(attrs.get("time_end")[:-1], TIME_PRECISION),
-        sampling_rate=attrs.get("sampling_rate"),
-        units=attrs.get("unit"),
-    )
-
-
 def retrieve_data(dbpath: Path, target_fs: float) -> np.ndarray:
+    """Retrieve data from the HDF5 file.
+
+    Recursively loads data from the HDF5 file into a NumPy array.
+
+    Args:
+        dbpath: Path to the HDF5 file.
+        target_fs: Target sampling rate for the signals.
+
+    Returns:
+        Array containing the signals.
+        Array containing the initial times of the signals.
+        Sampling rate of the signals.
+    """
     num_channels, num_detections = data_shape(dbpath)
 
     data = None
@@ -100,9 +133,9 @@ def retrieve_data(dbpath: Path, target_fs: float) -> np.ndarray:
             for j, det_group in tqdm(
                 enumerate(chan_group.values()), total=num_detections
             ):
-                ds = condition_signal(
+                ds, _ = condition_signal(
                     DataStream(
-                        stats=parse_metadata(det_group),
+                        stats=parse_detection(det_group),
                         data=det_group["waveform"][:],
                     ),
                     target_fs=target_fs,
@@ -119,16 +152,8 @@ def retrieve_data(dbpath: Path, target_fs: float) -> np.ndarray:
     return data, t0, ds.stats.sampling_rate
 
 
-def initialize_julia() -> object:
-    from juliacall import Main as jl
-
-    julia_path = pkg_resources.files(rodeo).joinpath("CrossCorr.jl")
-    jl.include(str(julia_path))
-    return jl
-
-
 def main(args: argparse.Namespace) -> None:
-    jl = initialize_julia()
+    jl = initialize_julia("CrossCorr")
 
     args.output.mkdir(parents=True, exist_ok=True)
     event_dirs = args.input.iterdir()

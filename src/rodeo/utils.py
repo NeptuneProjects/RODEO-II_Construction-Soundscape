@@ -41,6 +41,10 @@ def clean_ctd_data(df: pd.DataFrame, min_depth: float = 1.0) -> pd.DataFrame:
     return df[df["Depth"] > min_depth]
 
 
+def compute_array_size(arrays: list[np.ndarray]) -> int:
+    return sum([a.nbytes for a in arrays])
+
+
 def compute_range(
     point1_lon: float, point1_lat: float, point2_lon: float, point2_lat: float
 ) -> float:

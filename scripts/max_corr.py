@@ -2,9 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from itertools import product
+import importlib.resources as pkg_resources
 import logging
 import os
 from pathlib import Path
@@ -12,13 +11,14 @@ from pathlib import Path
 import dotenv
 import h5py
 import numpy as np
-import scipy.signal as signal
 from tqdm import tqdm
 from tritonoa.data.stream import DataStream, DataStreamStats
 from tritonoa.data.time import TIME_PRECISION
 
+import rodeo
+
 dotenv.load_dotenv()
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
 
 
 @dataclass
@@ -28,7 +28,6 @@ class Record:
     sampling_rate: float
     time_diff: np.ndarray
     corr: np.ndarray
-    lags: np.ndarray
 
     def save_h5(self, path: Path) -> None:
         with h5py.File(path, "a") as file:
@@ -47,15 +46,10 @@ class Record:
             grp.attrs["sampling_rate"] = self.sampling_rate
             grp.create_dataset("time_diff", data=self.time_diff)
             grp.create_dataset("corr", data=self.corr)
-            grp.create_dataset("lags", data=self.lags)
-
-
-def compute_array_size(arrays: list[np.ndarray]) -> int:
-    return sum([a.nbytes for a in arrays])
 
 
 def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
-    dec_factor = int(stream.stats.sampling_rate // target_fs)
+    dec_factor = decimation_factor(stream.stats.sampling_rate, target_fs)
     ds = stream.decimate(dec_factor)
     ds.filter("highpass", freq=10.0)
     return ds
@@ -63,22 +57,23 @@ def condition_signal(stream: DataStream, target_fs: float) -> DataStream:
 
 def data_shape(
     dbfile: Path,
-) -> tuple[list[tuple[tuple[int, str], tuple[int, str]]], list[int], list[int]]:
-    detection_pairs = []
+) -> tuple[int, int]:
     channels = []
     num_detections = []
+    num_samples = None
     with h5py.File(dbfile, "r") as file:
         logging.info(f"Loaded {dbfile}")
         for chan_group in file.values():
-            detection_pairs.append(form_pairs(chan_group))
             channels.append(int(chan_group.name[-1]))
             num_detections.append(len(chan_group))
+            if num_samples is None:
+                num_samples = next(iter(chan_group.values()))["waveform"].shape[1]
 
-    return detection_pairs, channels, num_detections
+    return len(channels), max(num_detections)
 
 
-def form_pairs(grp: h5py.Group) -> list[tuple[tuple[int, str], tuple[int, str]]]:
-    return list(product(enumerate([v.name for v in grp.values()]), repeat=2))
+def decimation_factor(fs: float, target_fs: float) -> int:
+    return int(fs // target_fs)
 
 
 def parse_metadata(grp: h5py.Group) -> DataStreamStats:
@@ -92,52 +87,49 @@ def parse_metadata(grp: h5py.Group) -> DataStreamStats:
     )
 
 
-def load_signals(
-    dbpath: Path, keys: list[str], target_fs: float
-) -> tuple[DataStream, DataStream]:
-    streams = []
+def retrieve_data(dbpath: Path, target_fs: float) -> np.ndarray:
+    num_channels, num_detections = data_shape(dbpath)
+
+    data = None
+    t0 = np.full((num_channels, num_detections), np.nan)
+
     with h5py.File(dbpath, "r") as file:
-        for key in keys:
-            grp = file[key]
-            streams.append(
-                condition_signal(
+        for i, chan_group in enumerate(file.values()):
+            logging.info(f"Loading channel {i}.")
+            for j, det_group in tqdm(
+                enumerate(chan_group.values()), total=num_detections
+            ):
+                ds = condition_signal(
                     DataStream(
-                        stats=parse_metadata(grp),
-                        data=grp["waveform"][:],
+                        stats=parse_metadata(det_group),
+                        data=det_group["waveform"][:],
                     ),
                     target_fs=target_fs,
                 )
-            )
-    return tuple(streams)
+                if data is None:
+                    # Initialize within loop since num_samples depends on target_fs.
+                    data = np.full(
+                        (num_channels, num_detections, ds.num_samples), np.nan
+                    )
+
+                data[i, j] = ds.data.squeeze()
+                t0[i, j] = ds.stats.time_init
+
+    return data, t0, ds.stats.sampling_rate
 
 
-def process_pair(
-    pair: tuple, target_fs: float, dbpath: Path
-) -> tuple[int, int, float, float, float, float]:
-    (j, key1), (k, key2) = pair
+def initialize_julia() -> object:
+    from juliacall import Main as jl
 
-    ds1, ds2 = load_signals(dbpath, [key1, key2], target_fs)
-    sig1 = ds1.data.squeeze()
-    sig2 = ds2.data.squeeze()
-
-    x1 = (sig1 - np.mean(sig1)) / np.std(sig1)
-    x2 = (sig2 - np.mean(sig2)) / np.std(sig2)
-    norm_factor = np.sqrt(np.sum(x1**2) * np.sum(x2**2))
-
-    # Compute time difference
-    dt = (ds2.stats.time_init - ds1.stats.time_init) / np.timedelta64(1, "s")
-
-    # Compute max cross-correlation & lag:
-    ccf = signal.correlate(x1, x2, mode="full") / norm_factor
-    lags = signal.correlation_lags(len(x1), len(x2), mode="full")
-    max_idx = np.argmax(ccf)
-    corr = ccf[max_idx]
-    lag = lags[max_idx]
-
-    return j, k, dt, corr, lag, ds1.stats.sampling_rate
+    julia_path = pkg_resources.files(rodeo).joinpath("CrossCorr.jl")
+    jl.include(str(julia_path))
+    return jl
 
 
 def main(args: argparse.Namespace) -> None:
+    # Initialize Julia
+    jl = initialize_julia()
+
     args.output.mkdir(parents=True, exist_ok=True)
     event_dirs = args.input.iterdir()
 
@@ -149,50 +141,35 @@ def main(args: argparse.Namespace) -> None:
 
         for dbfile in dbfiles:
             station_name = "-".join(dbfile.stem.split("_")[1:])
-            logging.info(f"Processing station {station_name}.")
 
-            detection_pairs, channels, num_detections = data_shape(dbfile)
+            data, t0, target_fs = retrieve_data(dbfile, args.target_fs)
 
-            num_ch = len(channels)
-            num_det = max(num_detections)
-            time_diff = np.full((num_ch, num_det, num_det), np.nan)
-            corr = np.full((num_ch, num_det, num_det), np.nan)
-            lags = np.full((num_ch, num_det, num_det), np.nan)
+            num_channels = data.shape[0]
+            num_detections = data.shape[1]
+            max_corr = np.full((num_channels, num_detections, num_detections), np.nan)
+            time_diff = np.full((num_channels, num_detections, num_detections), np.nan)
 
-            for i, (det_pairs, channel) in enumerate(zip(detection_pairs, channels)):
-                logging.info(f"Processing channel {channel}.")
+            threads = jl.seval("Threads.nthreads()")
+            logging.info(f"Number of Julia threads: {threads}.")
 
-                with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
-                    logging.info(f"Processing {len(det_pairs):,} pairs.")
-                    results = list(
-                        tqdm(
-                            executor.map(
-                                process_pair,
-                                det_pairs,
-                                [args.target_fs] * len(det_pairs),
-                                [dbfile] * len(det_pairs),
-                            ),
-                            leave=True,
-                            total=len(det_pairs),
-                        )
-                    )
-
-                    for result in results:
-                        j, k, dt, cf, lag, target_fs = result
-                        time_diff[i, j, k] = dt
-                        corr[i, j, k] = cf
-                        lags[i, j, k] = lag
-
-                nbytes = compute_array_size([time_diff, corr, lags])
-                logging.info(f"Total size of arrays: {nbytes / (1024 ** 3):,} GB.")
+            for i in range(num_channels):
+                jl_data = jl.seval("x -> Matrix{Float64}(x)")(data[i])
+                jl_time = jl.seval("x -> Vector{Float64}(x)")(t0[i])
+                
+                logging.info(f"Computing corr for channel {i}.")
+                max_corr[i] = np.array(jl.CrossCorr.corr_matrix(jl_data))
+                logging.info(f"Computed corr for channel {i}.")
+                
+                logging.info(f"Computing dt for channel {i}.")
+                time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
+                logging.info(f"Computed dt for channel {i}.")
 
             record = Record(
                 event=event_name,
                 station=station_name,
                 sampling_rate=target_fs,
                 time_diff=time_diff,
-                corr=corr,
-                lags=lags,
+                corr=max_corr,
             )
 
             record.save_h5(args.output / f"maxcorr_{event_name}.h5")
@@ -202,6 +179,8 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
+    os.environ["JULIA_NUM_THREADS"] = "12"
+    os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
     parser = argparse.ArgumentParser(
         description="Compute the coherence between two signals."
     )
@@ -215,7 +194,7 @@ if __name__ == "__main__":
         "--target_fs",
         type=float,
         help="Target sampling rate for the signals.",
-        default=500.0,
+        default=1000.0,
     )
     parser.add_argument(
         "--max_workers",

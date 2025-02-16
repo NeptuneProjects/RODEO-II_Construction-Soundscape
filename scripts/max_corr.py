@@ -127,7 +127,6 @@ def initialize_julia() -> object:
 
 
 def main(args: argparse.Namespace) -> None:
-    # Initialize Julia
     jl = initialize_julia()
 
     args.output.mkdir(parents=True, exist_ok=True)
@@ -135,6 +134,10 @@ def main(args: argparse.Namespace) -> None:
 
     for event_dir in event_dirs:
         event_name = event_dir.name.split("_")[0]
+
+        if args.event is not None and event_name != args.event:
+            continue
+
         logging.info(f"Processing event {event_name}.")
 
         dbfiles = event_dir.glob("*.hdf5")
@@ -155,11 +158,11 @@ def main(args: argparse.Namespace) -> None:
             for i in range(num_channels):
                 jl_data = jl.seval("x -> Matrix{Float64}(x)")(data[i])
                 jl_time = jl.seval("x -> Vector{Float64}(x)")(t0[i])
-                
+
                 logging.info(f"Computing corr for channel {i}.")
                 max_corr[i] = np.array(jl.CrossCorr.corr_matrix(jl_data))
                 logging.info(f"Computed corr for channel {i}.")
-                
+
                 logging.info(f"Computing dt for channel {i}.")
                 time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
                 logging.info(f"Computed dt for channel {i}.")
@@ -189,6 +192,12 @@ if __name__ == "__main__":
         type=Path,
         help="Path to the input HDF5 file containing the signals.",
         default=Path(os.getenv("DBPATH")),
+    )
+    parser.add_argument(
+        "--event",
+        type="str",
+        help="Name of the event to process.",
+        default=None,
     )
     parser.add_argument(
         "--target_fs",

@@ -234,7 +234,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--omit",
-        type=list[str],
+        type=str,
         nargs="+",
         help="Name of the event(s) to omit.",
         default=None,

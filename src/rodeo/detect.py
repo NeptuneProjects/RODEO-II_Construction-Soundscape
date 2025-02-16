@@ -1,4 +1,15 @@
 # -*- coding: utf-8 -*-
+"""Detection module for acoustic data processing.
+
+This module provides functions to detect acoustic pulses in time series data. The
+`process_stream` function processes a `DataStream` object and saves the detected
+pulses to an HDF5 file. The `Detection` data class is used to store information
+about each detection.
+
+William F. Jenkins, Ph.D.
+Scripps Institution of Oceanography
+February 2025
+"""
 
 from dataclasses import dataclass
 import logging
@@ -9,12 +20,27 @@ import h5py
 import numpy as np
 from scipy import signal
 from tqdm import tqdm
-from tritonoa.data.stream import DataStream
+from tritonoa.data.stream import DataStream, DataStreamStats
 from tritonoa.data.time import TIME_PRECISION
 
 
 @dataclass
 class Detection:
+    """Data class for a single detection.
+
+    Attributes:
+        uid: Unique identifier (typically unused).
+        station: Station name.
+        waveform: Time series data.
+        time_vector: Time vector.
+        channel: Channel number.
+        time_init: Start time of the detection time series.
+        time_end: End time of the detection time series.
+        sampling_rate: Sampling rate of the time series.
+        unit: Amplitude unit of the time series.
+        metadata: Metadata dictionary.
+    """
+
     uid: str
     station: str
     waveform: np.ndarray
@@ -31,12 +57,12 @@ def apply_linear_taper(time_series: np.ndarray, taper_length: int) -> np.ndarray
     """
     Apply a linear taper to the beginning and end of a time series.
 
-    Parameters:
-    - time_series: numpy array, the original time series data
-    - taper_length: int, length of the taper in data points
+    Args:
+      time_series: the original time series data
+      taper_length: length of the taper in data points
 
     Returns:
-    - tapered_series: numpy array, the tapered time series data
+      Tapered time series data
     """
     series_length = len(time_series)
     taper = np.ones(series_length)
@@ -50,6 +76,16 @@ def apply_linear_taper(time_series: np.ndarray, taper_length: int) -> np.ndarray
 
 
 def characteristic_function(y: np.ndarray, stwin: int, ltwin: int) -> np.ndarray:
+    """Compute the characteristic function of a time series.
+
+    Args:
+        y: Time series data.
+        stwin: Short-time window (samples)
+        ltwin: Long-time window (samples)
+
+    Returns:
+        Characteristic function of the time series.
+    """
     y_rms = np.sqrt(signal.convolve(y**2, np.ones(stwin) / stwin, mode="same"))
     y_long = signal.convolve(y_rms, np.ones(ltwin) / ltwin, mode="same")
     return y_rms / y_long
@@ -63,6 +99,19 @@ def detect_pulses(
     distance: float = 0.75,
     taper: float = 5.0,
 ) -> np.ndarray:
+    """Detect pulses in a time series.
+
+    Args:
+        ds: DataStream object.
+        stwin: Short-time window (seconds).
+        ltwin: Long-time window (seconds).
+        threshold: Threshold for peak detection.
+        distance: Minimum distance between peaks (seconds).
+        taper: Taper length (seconds).
+
+    Returns:
+        Array of pulse times.
+    """
     fs = ds.stats.sampling_rate
     time = ds.time_vector
 
@@ -75,47 +124,23 @@ def detect_pulses(
     return time[peaks]
 
 
-def station_from_catalogue_name(fname: Path) -> str:
-    return fname.stem.split("FileInfo")[0].rstrip("_")
+def parse_detection(grp: h5py.Group) -> DataStreamStats:
+    """Return `DataStreamStats` object from HDF5 group attributes.
 
+    Args:
+        grp: HDF5 group object.
 
-def save_detections_to_hdf5(
-    channel: int | str, detections: list[Detection], file_path: str
-) -> None:
-    with h5py.File(file_path, "a") as f:
-        for i, detection in enumerate(detections):
-            main_group = f"chan={str(channel)}"
-            # grp = f.create_group(f"chan={str(channel)}_det={i:04d}")
-            if main_group in f.keys():
-                grp = f[main_group]
-            else:
-                main_grp = f.create_group(main_group)
-            grp = main_grp.create_group(f"det={i:04d}")
-
-            # Save string attributes
-            grp.attrs["uid"] = detection.uid
-            grp.attrs["station"] = detection.station
-            grp.attrs["unit"] = detection.unit
-
-            # Save numpy arrays
-            grp.create_dataset("waveform", data=detection.waveform)
-            grp.create_dataset(
-                "time_vector", data=detection.time_vector.astype("int64")
-            )
-
-            # Save scalar attributes
-            grp.attrs["channel"] = detection.channel
-            grp.attrs["time_init"] = np.datetime_as_string(
-                detection.time_init, timezone="UTC", unit=TIME_PRECISION
-            ).encode("utf-8")
-            grp.attrs["time_end"] = np.datetime_as_string(
-                detection.time_end, timezone="UTC", unit=TIME_PRECISION
-            ).encode("utf-8")
-            grp.attrs["sampling_rate"] = detection.sampling_rate
-            if detection.metadata:
-                grp.create_group("metadata")
-                for key, value in detection.metadata.items():
-                    grp["metadata"].attrs[key] = value
+    Returns:
+        `DataStreamStats` object.
+    """
+    attrs = grp.attrs
+    return DataStreamStats(
+        channels=attrs.get("channel"),
+        time_init=np.datetime64(attrs.get("time_init")[:-1], TIME_PRECISION),
+        time_end=np.datetime64(attrs.get("time_end")[:-1], TIME_PRECISION),
+        sampling_rate=attrs.get("sampling_rate"),
+        units=attrs.get("unit"),
+    )
 
 
 def process_stream(
@@ -136,6 +161,27 @@ def process_stream(
     dbpath: Path = Path.cwd() / "detections.h5",
     metadata: dict | None = None,
 ) -> None:
+    """Process a `DataStream` object and save detected pulses to an HDF5 file.
+
+    Args:
+        ds: DataStream object.
+        pulse_start: Time before pulse to include in detection (ms).
+        pulse_end: Time after pulse to include in detection (ms).
+        stwin: Short-time window for characteristic function (s).
+        ltwin: Long-time window for characteristic function (s).
+        threshold: Threshold for peak detection.
+        distance: Minimum distance between peaks (s).
+        taper: Taper length (s).
+        pulse_filter_type: Filter type for pulse data.
+        pulse_filter_freq: Filter frequency for pulse data (Hz).
+        detector_filter_type: Filter type for detector data.
+        detector_filter_freq: Filter frequency for detector data (Hz).
+        detector_decimate_factor: Decimation factor for detector data.
+        station: Station name.
+        dbpath: Path to the HDF5 file.
+        metadata: Metadata dictionary
+    """
+    # Ensure that all parameters are lists
     if not isinstance(pulse_start, list):
         pulse_start = [pulse_start] * ds.num_channels
     if not isinstance(pulse_end, list):
@@ -206,3 +252,61 @@ def process_stream(
         save_detections_to_hdf5(chan, detections, dbpath)
         logging.info(f"--Detections saved to {dbpath}.")
         logging.info(f"--Completed channel {chan}.")
+
+
+def station_from_catalogue_name(fname: Path) -> str:
+    """Return station name from catalogue file name.
+
+    Args:
+        fname: Path to the catalogue file.
+
+    Returns:
+        Station name.
+    """
+    return fname.stem.split("FileInfo")[0].rstrip("_")
+
+
+def save_detections_to_hdf5(
+    channel: int | str, detections: list[Detection], file_path: str
+) -> None:
+    """Save detections to an HDF5 file.
+
+    Args:
+        channel: Channel number.
+        detections: List of `Detection` objects.
+        file_path: Path to the HDF5 file.
+    """
+    with h5py.File(file_path, "a") as f:
+        for i, detection in enumerate(detections):
+            main_group = f"chan={str(channel)}"
+            # grp = f.create_group(f"chan={str(channel)}_det={i:04d}")
+            if main_group in f.keys():
+                grp = f[main_group]
+            else:
+                main_grp = f.create_group(main_group)
+            grp = main_grp.create_group(f"det={i:04d}")
+
+            # Save string attributes
+            grp.attrs["uid"] = detection.uid
+            grp.attrs["station"] = detection.station
+            grp.attrs["unit"] = detection.unit
+
+            # Save numpy arrays
+            grp.create_dataset("waveform", data=detection.waveform)
+            grp.create_dataset(
+                "time_vector", data=detection.time_vector.astype("int64")
+            )
+
+            # Save scalar attributes
+            grp.attrs["channel"] = detection.channel
+            grp.attrs["time_init"] = np.datetime_as_string(
+                detection.time_init, timezone="UTC", unit=TIME_PRECISION
+            ).encode("utf-8")
+            grp.attrs["time_end"] = np.datetime_as_string(
+                detection.time_end, timezone="UTC", unit=TIME_PRECISION
+            ).encode("utf-8")
+            grp.attrs["sampling_rate"] = detection.sampling_rate
+            if detection.metadata:
+                grp.create_group("metadata")
+                for key, value in detection.metadata.items():
+                    grp["metadata"].attrs[key] = value

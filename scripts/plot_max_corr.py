@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
-from rodeo import plotting, utils
+from rodeo import plotting
 
 dotenv.load_dotenv()
 plt.style.use(Path("config/jasa_fig_style.mplstyle"))

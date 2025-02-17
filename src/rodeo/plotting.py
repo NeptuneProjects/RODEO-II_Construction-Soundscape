@@ -343,14 +343,13 @@ def plot_event_metrics(df: pl.DataFrame, savepath: Path) -> None:
             max_val = 0.0
 
             for j, station in enumerate(stations):
-
+                ax = axs[i, j]
                 station_name = station.replace("_", "/")
 
                 df_sta = df.filter(
                     (pl.col("event_name") == event) & (pl.col("station") == station)
                 )
                 if df_sta.is_empty():
-                    ax = axs[i, j]
                     ax.text(
                         0.5,
                         0.5,
@@ -374,8 +373,6 @@ def plot_event_metrics(df: pl.DataFrame, savepath: Path) -> None:
                             max_val = max(data)
                         if min_val > min(data):
                             min_val = min(data)
-
-                        ax = axs[i, j]
 
                         ax.scatter(
                             time,
@@ -485,6 +482,69 @@ def plot_inst_power_timehist(
     cbar = fig.colorbar(im, cax=cax)
     cbar.set_label("Frequency")
 
+    return fig
+
+
+def plot_max_corr_mat(
+    stations: list[str], data: np.ndarray, dt: np.ndarray, title: str | None = None
+) -> plt.Figure:
+    fig, axs = plt.subplots(
+        nrows=4, ncols=3, figsize=(8, 10), gridspec_kw={"hspace": 0.15, "wspace": 0.15}
+    )
+    def drop_nans(arr: np.ndarray) -> np.ndarray:
+        rows_clean = arr[~np.isnan(arr).all(axis=1)]
+        cols_clean = rows_clean[:, ~np.isnan(rows_clean).any(axis=0)]
+        return cols_clean
+    
+    STATIONS = ["SHRU921/Tetra", "SHRU905/VLA1", "SHRU920/VLA2"]
+    j_d = 0
+    t_max = 0.0
+    for j, station in enumerate(STATIONS):
+
+        for i in range(4):
+            ax = axs[i, j]
+
+            if i == 0:
+                ax.set_title(station)
+            if j == 0:
+                ax.set_ylabel(f"Channel {i+1}\nTime ($10^3$ s)")
+            if i == 3:
+                ax.set_xlabel("Time ($10^3$ s)")
+
+            if j == 0 and STATIONS[0] != stations[0]:
+                j_d = j - 1
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No data",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                )
+            else:
+                corr = drop_nans(data[j_d, i])
+                dt_cl = drop_nans(dt[j_d, i])
+                
+
+                t = np.cumsum(np.insert(np.diff(dt_cl[0]), 0, 0.0))
+                t_max = max(t_max, t[-1])
+                X, Y = np.meshgrid(t, t)
+
+                im = ax.pcolormesh(
+                    X, Y, corr, cmap="magma", shading="auto", vmin=0.0, vmax=1.0
+                )
+
+        j_d += 1
+
+    for ax in axs.flatten():
+        ax.set_xlim(0, t_max)
+        ax.set_ylim(0, t_max)
+
+    cax = fig.add_axes([0.92, 0.25, 0.03, 0.5])
+    cbar = fig.colorbar(im, cax=cax, orientation="vertical")
+    cbar.set_label("Maximum normalized cross-correlation")
+
+    fig.suptitle(title, y=0.925)
     return fig
 
 

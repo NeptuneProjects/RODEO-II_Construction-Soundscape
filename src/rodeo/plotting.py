@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from scipy import signal
+from scipy.interpolate import interp1d
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
@@ -542,6 +543,163 @@ def plot_max_corr_mat(
 
     cax = fig.add_axes([0.92, 0.25, 0.03, 0.5])
     cbar = fig.colorbar(im, cax=cax, orientation="vertical")
+    cbar.set_label("Maximum normalized cross-correlation")
+
+    fig.suptitle(title, y=0.925)
+    return fig
+
+
+
+def plot_max_corr_stack(
+    stations: list[str],
+    data: np.ndarray,
+    dt: np.ndarray,
+    title: str | None = None,
+    window: float = 30.0,
+    nbins: int = 100,
+) -> plt.Figure:
+    fig, axs = plt.subplots(
+        nrows=4, ncols=3, figsize=(8, 10), gridspec_kw={"hspace": 0.15, "wspace": 0.15}
+    )
+
+    def drop_nans(arr: np.ndarray) -> np.ndarray:
+        rows_clean = arr[~np.isnan(arr).all(axis=1)]
+        cols_clean = rows_clean[:, ~np.isnan(rows_clean).any(axis=0)]
+        return cols_clean
+
+    def interpolate_nan_rows(arr: np.ndarray, x: np.ndarray) -> np.ndarray:
+        """
+        Linearly interpolates over NaN values along each row.
+
+        Parameters:
+        - arr (np.ndarray): 2D array with NaNs to interpolate.
+        - x (np.ndarray): 1D array of x-coordinates.
+
+        Returns:
+        - np.ndarray: Interpolated array.
+        """
+        interpolated = np.copy(arr)
+        for i in range(arr.shape[0]):
+            valid = ~np.isnan(arr[i])
+            if np.sum(valid) > 1:  # Only interpolate if there are at least 2 valid points
+                f = interp1d(
+                    x[valid],
+                    arr[i][valid],
+                    kind="linear",
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+                interpolated[i] = f(x)
+        return interpolated
+
+    def regularize_grid(
+        windows: list[np.ndarray], tvec: np.ndarray, window: float, nbins: int = 100
+    ) -> tuple[np.ndarray, np.ndarray]:
+        pulse_indices = []
+        time_points = []
+        correlations = []
+
+        for i, w in enumerate(windows):
+            if len(w) == 0:
+                continue
+            times = w["dt"]
+            corr = w["data"]
+
+            pulse_indices.append(np.full_like(times, i))
+            time_points.append(times)
+            correlations.append(corr)
+
+        # Convert to arrays:
+        pulse_indices = np.concatenate(pulse_indices).astype(int)
+        time_points = np.concatenate(time_points).astype(int)
+        correlations = np.concatenate(correlations)
+
+        # Create grid:
+        time_bins = np.linspace(-window, window, num=nbins)
+        pulse_bins = np.append(tvec, tvec[-1] + 1 / 1e3)
+        time_grid, pulse_grid = np.meshgrid(time_bins, pulse_bins)
+
+        corr_grid = np.full((len(windows), len(time_bins) - 1), np.nan)
+
+        for i, (t, c) in enumerate(zip(time_points, correlations)):
+            time_idx = np.argmin(np.abs(time_bins - t))
+            pulse_idx = pulse_indices[i]
+            corr_grid[pulse_idx, time_idx] = c
+
+        corr_grid = interpolate_nan_rows(corr_grid, time_bins[:-1])
+
+        return time_grid, pulse_grid, corr_grid
+
+
+    def stack_data(data: np.ndarray, dt: np.ndarray, window: float) -> list[np.ndarray]:
+        windows = []
+        for i in range(data.shape[0]):
+            mask = (dt[i] >= -window) & (dt[i] <= window)
+            data_window = data[i][mask]
+            dt_window = dt[i][mask]
+
+            structured = np.array(
+                list(zip(dt_window, data_window)), dtype=[("dt", float), ("data", float)]
+            )
+            windows.append(structured)
+
+        return windows
+
+    STATIONS = ["SHRU921/Tetra", "SHRU905/VLA1", "SHRU920/VLA2"]
+    j_d = 0
+    t_max = 0.0
+    for j, station in enumerate(STATIONS):
+
+        for i in range(4):
+            ax = axs[i, j]
+
+            if i == 0:
+                ax.set_title(station)
+            if j == 0:
+                ax.set_ylabel(f"Channel {i+1}\nTime ($10^3$ s)")
+            if i == 3:
+                ax.set_xlabel("Reduced time (s)")
+
+            if j == 0 and STATIONS[0] != stations[0]:
+                j_d = j - 1
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No data",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                )
+            else:
+                corr = drop_nans(data[j_d, i])
+                dt_cl = drop_nans(dt[j_d, i])
+                t = np.cumsum(np.insert(np.diff(dt_cl[0]), 0, 0.0)) / 1e3
+                t_max = max(t_max, t[-1])
+
+                windows = stack_data(corr, dt_cl, window=window)
+                time_grid, pulse_grid, corr_grid = regularize_grid(
+                    windows, t, window=window, nbins=nbins
+                )
+
+                mesh = ax.pcolormesh(
+                    time_grid,
+                    pulse_grid,
+                    corr_grid,
+                    cmap="magma",
+                    shading="auto",
+                    vmin=0.0,
+                    vmax=1.0,
+                )
+                ax.axvline(0, color="black", linestyle="--", linewidth=0.5)
+
+        j_d += 1
+
+    for ax in axs.flatten():
+        ax.set_xlim(-window, window)
+        ax.set_ylim(t_max, 0)
+
+    cax = fig.add_axes([0.92, 0.25, 0.03, 0.5])
+    cbar = fig.colorbar(mesh, cax=cax, orientation="vertical")
     cbar.set_label("Maximum normalized cross-correlation")
 
     fig.suptitle(title, y=0.925)

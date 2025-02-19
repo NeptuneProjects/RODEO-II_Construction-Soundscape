@@ -32,6 +32,7 @@ class Record:
     sampling_rate: float
     time_diff: np.ndarray
     corr: np.ndarray
+    etime: np.ndarray
 
     def save_h5(self, path: Path) -> None:
         """Save the record to an HDF5 file.
@@ -41,6 +42,7 @@ class Record:
         /station
             /time_diff
             /corr
+            /etime
         ```
         `time_diff` and `corr` are 3D arrays with the shape
         `(num_channels, num_detections, num_detections)`.
@@ -64,6 +66,7 @@ class Record:
             grp.attrs["sampling_rate"] = self.sampling_rate
             grp.create_dataset("time_diff", data=self.time_diff)
             grp.create_dataset("corr", data=self.corr)
+            grp.create_dataset("etime", data=self.etime)
 
 
 def condition_signal(stream: DataStream, target_fs: float) -> tuple[DataStream, int]:
@@ -177,13 +180,14 @@ def main(args: argparse.Namespace) -> None:
             data, t0, target_fs = retrieve_data(dbfile, args.target_fs)
             num_channels = data.shape[0]
             num_detections = data.shape[1]
-            max_corr = np.full((num_channels, num_detections, num_detections), np.nan)
             time_diff = np.full((num_channels, num_detections, num_detections), np.nan)
+            max_corr = np.full((num_channels, num_detections, num_detections), np.nan)
+            etime = np.full((num_channels, num_detections, num_detections), np.nan)
             logging.info(
                 f"Data shape: {num_channels} channels; {num_detections} detections."
             )
             logging.info(
-                f"Size of arrays: {compute_array_size([max_corr, time_diff]) / (1024 ** 3):.2f} GB."
+                f"Size of arrays: {compute_array_size([max_corr, etime, time_diff]) / (1024 ** 3):.2f} GB."
             )
 
             threads = jl.seval("Threads.nthreads()")
@@ -193,13 +197,15 @@ def main(args: argparse.Namespace) -> None:
                 jl_data = jl.seval("x -> Matrix{Float64}(x)")(data[i])
                 jl_time = jl.seval("x -> Vector{Float64}(x)")(t0[i])
 
-                logging.info(f"Computing corr for channel {i}.")
-                max_corr[i] = np.array(jl.CrossCorr.corr_matrix(jl_data))
-                logging.info(f"Computed corr for channel {i}.")
-
                 logging.info(f"Computing dt for channel {i}.")
                 time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
                 logging.info(f"Computed dt for channel {i}.")
+
+                logging.info(f"Computing corr & etime for channel {i}.")
+                max_corr_mat, etime_mat = jl.CrossCorr.corr_matrix(jl_data, target_fs)
+                max_corr[i] = np.array(max_corr_mat)
+                etime[i] = np.array(etime_mat)
+                logging.info(f"Computed corr & etime for channel {i}.")
 
             record = Record(
                 event=event_name,
@@ -207,6 +213,7 @@ def main(args: argparse.Namespace) -> None:
                 sampling_rate=target_fs,
                 time_diff=time_diff,
                 corr=max_corr,
+                etime=etime,
             )
 
             record.save_h5(args.output / f"maxcorr_{event_name}.h5")

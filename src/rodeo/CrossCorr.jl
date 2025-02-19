@@ -23,12 +23,13 @@ using Statistics
 
 Compute the maximum value of the cross-correlation function between two signals.
 """
-function cross_corr(sig1::Vector{Float64}, sig2::Vector{Float64})
+function cross_corr(sig1::Vector{Float64}, sig2::Vector{Float64}, fs::Float64)::Tuple{Float64,Float64}
     x1 = (sig1 .- mean(sig1)) ./ std(sig1)
     x2 = (sig2 .- mean(sig2)) ./ std(sig2)
-    norm_factor = sqrt(sum(x1.^2) * sum(x2.^2))
+    norm_factor = sqrt(sum(x1 .^ 2) * sum(x2 .^ 2))
     ccf = xcorr(x1, x2) ./ norm_factor
-    return maximum(ccf)
+    et = find_efolding_time(ccf, fs)
+    return maximum(ccf), et
 end
 
 """
@@ -37,20 +38,23 @@ end
 Compute the matrix containing maximum values of the cross-correlation functions
 between pairs of signals.
 """
-function corr_matrix(data::Matrix{Float64})::Matrix{Float64}
+function corr_matrix(data::Matrix{Float64}, fs::Float64)::Tuple{Matrix{Float64},Matrix{Float64}}
     rows = size(data, 1)
     corr = Matrix{Float64}(undef, rows, rows)
+    etmat = Matrix{Float64}(undef, rows, rows)
 
     Threads.@threads for i in ProgressBar(1:rows)
         sig1 = data[i, :]
         for j in i:rows
             sig2 = data[j, :]
-            ccf = cross_corr(sig1, sig2)
+            ccf, et = cross_corr(sig1, sig2, fs)
             corr[i, j] = ccf
             corr[j, i] = ccf
+            etmat[i, j] = et
+            etmat[j, i] = et
         end
     end
-    return corr
+    return corr, etmat
 end
 
 """
@@ -69,6 +73,38 @@ function dt_matrix(times::Vector{Float64})::Matrix{Float64}
         end
     end
     return dt
+end
+
+"""
+    find_efolding_time(ccf::Vector{Float64}, fs::Float64)::Float64
+
+Find the e-folding time of a cross-correlation function.
+"""
+function find_efolding_time(ccf::Vector{Float64}, fs::Float64)::Float64
+    # Find peak index and value
+    peak_idx = argmax(ccf)
+    peak_value = ccf[peak_idx]
+    efold_value = peak_value / exp(1)
+
+    # Find first index where signal falls below e-folding value after peak
+    below_idx = findfirst(x -> x <= efold_value, ccf[peak_idx:end])
+
+    if isnothing(below_idx)
+        return nothing
+    end
+
+    # Adjust index to absolute position
+    idx = peak_idx - 1 + below_idx
+
+    if idx > 1
+        # Linear interpolation
+        x1, x2 = (idx - 1) / fs, idx / fs
+        y1, y2 = ccf[idx-1], ccf[idx]
+        slope = (y2 - y1) / (x2 - x1)
+        return x1 + (efold_value - y1) / slope
+    else
+        return idx / fs
+    end
 end
 
 export corr_matrix, dt_matrix

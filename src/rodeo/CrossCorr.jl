@@ -24,8 +24,10 @@ using Statistics
 Compute the maximum value of the cross-correlation function between two signals.
 """
 function cross_corr(sig1::Vector{Float64}, sig2::Vector{Float64}, fs::Float64)::Tuple{Float64,Float64}
-    x1 = (sig1 .- mean(sig1)) ./ std(sig1)
-    x2 = (sig2 .- mean(sig2)) ./ std(sig2)
+    mean1, sigma1 = mean(sig1), std(sig1)
+    mean2, sigma2 = mean(sig2), std(sig2)
+    x1 = @. (sig1 - mean1) / sigma1
+    x2 = @. (sig2 - mean2) / sigma2
     norm_factor = sqrt(sum(x1 .^ 2) * sum(x2 .^ 2))
     ccf = xcorr(x1, x2) ./ norm_factor
     et = find_efolding_time(ccf, fs)
@@ -43,17 +45,31 @@ function corr_matrix(data::Matrix{Float64}, fs::Float64)::Tuple{Matrix{Float64},
     corr = Matrix{Float64}(undef, rows, rows)
     etmat = Matrix{Float64}(undef, rows, rows)
 
-    Threads.@threads for i in ProgressBar(1:rows)
+    results = Vector{Tuple{Int,Int,Float64,Float64}}()
+    
+    results_lock = ReentrantLock()
+    pb = ProgressBar(1:rows)
+
+    Threads.@threads for i in pb
+        local_results = Vector{Tuple{Int,Int,Float64,Float64}}()
         sig1 = data[i, :]
         for j in i:rows
             sig2 = data[j, :]
             ccf, et = cross_corr(sig1, sig2, fs)
-            corr[i, j] = ccf
-            corr[j, i] = ccf
-            etmat[i, j] = et
-            etmat[j, i] = et
+            push!(local_results, (i, j, ccf, et))
+        end
+        lock(results_lock) do
+            append!(results, local_results)
         end
     end
+
+    for (i, j, ccf, et) in local_results
+        corr[i, j] = ccf
+        corr[j, i] = ccf
+        etmat[i, j] = et
+        etmat[j, i] = et
+    end
+
     return corr, etmat
 end
 

@@ -63,7 +63,7 @@ function corr_matrix(data::Matrix{Float64}, fs::Float64)::Tuple{Matrix{Float64},
         end
     end
 
-    for (i, j, ccf, et) in local_results
+    for (i, j, ccf, et) in results
         corr[i, j] = ccf
         corr[j, i] = ccf
         etmat[i, j] = et

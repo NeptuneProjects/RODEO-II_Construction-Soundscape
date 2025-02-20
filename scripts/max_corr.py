@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path
+import time
 
 import dotenv
 import h5py
@@ -201,11 +202,14 @@ def main(args: argparse.Namespace) -> None:
                 time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
                 logging.info(f"Computed dt for channel {i}.")
 
+                t0 = time.time()
                 logging.info(f"Computing corr & etime for channel {i}.")
                 max_corr_mat, etime_mat = jl.CrossCorr.corr_matrix(jl_data, target_fs)
                 max_corr[i] = np.array(max_corr_mat)
                 etime[i] = np.array(etime_mat)
                 logging.info(f"Computed corr & etime for channel {i}.")
+                elapsed_time = time.time() - t0
+                logging.info(f"Elapsed time for channel {i}: {elapsed_time:.2f} seconds.")
 
             record = Record(
                 event=event_name,

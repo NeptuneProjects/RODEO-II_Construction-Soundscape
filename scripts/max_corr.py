@@ -197,9 +197,9 @@ def main(args: argparse.Namespace) -> None:
                 jl_data = jl.seval("x -> Matrix{Float64}(x)")(data[i])
                 jl_time = jl.seval("x -> Vector{Float64}(x)")(t0[i])
 
-                logging.info(f"Computing dt for channel {i}.")
-                time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
-                logging.info(f"Computed dt for channel {i}.")
+                # logging.info(f"Computing dt for channel {i}.")
+                # time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
+                # logging.info(f"Computed dt for channel {i}.")
 
                 logging.info(f"Computing corr & etime for channel {i}.")
                 max_corr_mat, etime_mat = jl.CrossCorr.corr_matrix(jl_data, target_fs)

@@ -14,7 +14,7 @@ module CrossCorr
 
 using DSP
 using LinearAlgebra
-using ProgressBars
+# using ProgressMeter
 using Statistics
 
 
@@ -24,15 +24,14 @@ using Statistics
 Compute the maximum value of the cross-correlation function between two signals.
 """
 function cross_corr(sig1::Vector{Float64}, sig2::Vector{Float64}, fs::Float64)::Tuple{Float64,Float64}
-    mean1, sigma1 = mean(sig1), std(sig1)
-    mean2, sigma2 = mean(sig2), std(sig2)
-    x1 = @. (sig1 - mean1) / sigma1
-    x2 = @. (sig2 - mean2) / sigma2
+    x1 = @. (sig1 - mean(sig1)) / std(sig1)
+    x2 = @. (sig2 - mean(sig2)) / std(sig2)
     norm_factor = sqrt(sum(x1 .^ 2) * sum(x2 .^ 2))
     ccf = xcorr(x1, x2) ./ norm_factor
     et = find_efolding_time(ccf, fs)
     return maximum(ccf), et
 end
+
 
 """
     corr_matrix(data::Matrix{Float64})::Matrix{Float64}
@@ -46,11 +45,14 @@ function corr_matrix(data::Matrix{Float64}, fs::Float64)::Tuple{Matrix{Float64},
     etmat = Matrix{Float64}(undef, rows, rows)
 
     results = Vector{Tuple{Int,Int,Float64,Float64}}()
-    
     results_lock = ReentrantLock()
-    pb = ProgressBar(1:rows)
 
-    Threads.@threads for i in pb
+    # num_calcs = num_computations(rows)
+    # pb = Progress(num_calcs)
+    # update!(pb, 0)
+    # pb = ProgressBar(1:rows)
+
+    Threads.@threads for i in 1:rows
         local_results = Vector{Tuple{Int,Int,Float64,Float64}}()
         sig1 = data[i, :]
         for j in i:rows
@@ -73,6 +75,7 @@ function corr_matrix(data::Matrix{Float64}, fs::Float64)::Tuple{Matrix{Float64},
     return corr, etmat
 end
 
+
 """
     dt_matrix(times::Vector{Float64})::Matrix{Float64}
 
@@ -90,6 +93,7 @@ function dt_matrix(times::Vector{Float64})::Matrix{Float64}
     end
     return dt
 end
+
 
 """
     find_efolding_time(ccf::Vector{Float64}, fs::Float64)::Float64
@@ -122,6 +126,12 @@ function find_efolding_time(ccf::Vector{Float64}, fs::Float64)::Float64
         return idx / fs
     end
 end
+
+
+function num_computations(n::Int)::Int
+    return n * (n - 1) ÷ 2
+end
+
 
 export corr_matrix, dt_matrix
 

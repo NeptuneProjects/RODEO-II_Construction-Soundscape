@@ -367,7 +367,7 @@ def plot_detector_output(
     ax.set_xlim(xlim)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
     ax.set_xticklabels([])
-    ax.set_ylabel(f"Pressure [{ds.stats.units}]")
+    ax.set_ylabel(f"Pressure [{ds.stats.units.replace("u", "μ")}]")
 
     # Time series, zoomed
     ax = axs[0, 1]

@@ -328,6 +328,9 @@ def plot_detector_output(
     peaks, _ = signal.find_peaks(chf, height=threshold, distance=distance * fs)
     xlim = (time.min(), time.max())
 
+    # Convert from uPa to Pa:
+    data /= 1e6
+
     # Compute zoomed section:
     data_zoom = data[zoom_start:zoom_end]
     time_zoom = time[zoom_start:zoom_end]
@@ -344,7 +347,7 @@ def plot_detector_output(
         nrows=2,
         ncols=2,
         figsize=figsize,
-        gridspec_kw={"hspace": 0.08, "wspace": 0.12, "width_ratios": [3, 2]},
+        gridspec_kw={"hspace": 0.08, "wspace": 0.14, "width_ratios": [3, 2]},
     )
     fig.suptitle(title)
 
@@ -357,7 +360,7 @@ def plot_detector_output(
     ax.set_xlim(xlim)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
     ax.set_xticklabels([])
-    ax.set_ylabel(f"Pressure [{ds.stats.units.replace("u", "μ")}]")
+    ax.set_ylabel(f"Pressure ({ds.stats.units[1:]})")
 
     # Time series, zoomed
     ax = axs[0, 1]

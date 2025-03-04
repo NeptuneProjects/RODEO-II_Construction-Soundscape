@@ -31,6 +31,92 @@ from tritonoa.data.time import TIME_CONVERSION_FACTOR
 from rodeo import detect, utils
 
 
+def drop_nans(arr: np.ndarray) -> np.ndarray:
+        rows_clean = arr[~np.isnan(arr).all(axis=1)]
+        cols_clean = rows_clean[:, ~np.isnan(rows_clean).any(axis=0)]
+        return cols_clean
+
+def interpolate_nan_rows(arr: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """
+    Linearly interpolates over NaN values along each row.
+
+    Parameters:
+    - arr (np.ndarray): 2D array with NaNs to interpolate.
+    - x (np.ndarray): 1D array of x-coordinates.
+
+    Returns:
+    - np.ndarray: Interpolated array.
+    """
+    interpolated = np.copy(arr)
+    for i in range(arr.shape[0]):
+        valid = ~np.isnan(arr[i])
+        if np.sum(valid) > 1:  # Only interpolate if there are at least 2 valid points
+            f = interp1d(
+                x[valid],
+                arr[i][valid],
+                kind="linear",
+                bounds_error=False,
+                fill_value=np.nan,
+            )
+            interpolated[i] = f(x)
+    return interpolated
+
+def regularize_grid(
+    windows: list[np.ndarray], tvec: np.ndarray, window: float, nbins: int = 100
+) -> tuple[np.ndarray, np.ndarray]:
+    pulse_indices = []
+    time_points = []
+    correlations = []
+
+    for i, w in enumerate(windows):
+        if len(w) == 0:
+            continue
+        times = w["dt"]
+        corr = w["data"]
+
+        pulse_indices.append(np.full_like(times, i))
+        time_points.append(times)
+        correlations.append(corr)
+
+    # Convert to arrays:
+    pulse_indices = np.concatenate(pulse_indices).astype(int)
+    time_points = np.concatenate(time_points).astype(int)
+    correlations = np.concatenate(correlations)
+
+    # Create grid:
+    time_bins = np.linspace(-window, window, num=nbins)
+    pulse_bins = np.append(tvec, tvec[-1] + 1 / 1e3)
+    time_grid, pulse_grid = np.meshgrid(time_bins, pulse_bins)
+
+    corr_grid = np.full((len(windows), len(time_bins) - 1), np.nan)
+
+    for i, (t, c) in enumerate(zip(time_points, correlations)):
+        time_idx = np.argmin(np.abs(time_bins - t))
+        pulse_idx = pulse_indices[i]
+        corr_grid[pulse_idx, time_idx] = c
+
+    corr_grid = interpolate_nan_rows(corr_grid, time_bins[:-1])
+
+    return time_grid, pulse_grid, corr_grid
+
+
+def stack_data(data: np.ndarray, dt: np.ndarray, window: float) -> list[np.ndarray]:
+    windows = []
+    for i in range(data.shape[0]):
+        mask = (dt[i] >= -window) & (dt[i] <= window)
+        data_window = data[i][mask]
+        dt_window = dt[i][mask]
+
+        structured = np.array(
+            list(zip(dt_window, data_window)), dtype=[("dt", float), ("data", float)]
+        )
+        windows.append(structured)
+
+    return windows
+
+
+
+
 def plot_avg_power_timehist(
     mean_hist: np.ndarray,
     bins: np.ndarray,
@@ -105,7 +191,7 @@ def plot_bathy(
 def plot_ctd_profiles(
     df: pd.DataFrame,
     figsize: tuple[float, float] = (4, 3),
-    gridspec_kw: dict = {"wspace": 0.1},
+    gridspec_kw: dict = {"wspace": 0.2},
     dpi: int = 150,
     **plot_kwargs,
 ) -> plt.Figure:
@@ -561,89 +647,6 @@ def plot_max_corr_stack(
     fig, axs = plt.subplots(
         nrows=4, ncols=3, figsize=(8, 10), gridspec_kw={"hspace": 0.15, "wspace": 0.15}
     )
-
-    def drop_nans(arr: np.ndarray) -> np.ndarray:
-        rows_clean = arr[~np.isnan(arr).all(axis=1)]
-        cols_clean = rows_clean[:, ~np.isnan(rows_clean).any(axis=0)]
-        return cols_clean
-
-    def interpolate_nan_rows(arr: np.ndarray, x: np.ndarray) -> np.ndarray:
-        """
-        Linearly interpolates over NaN values along each row.
-
-        Parameters:
-        - arr (np.ndarray): 2D array with NaNs to interpolate.
-        - x (np.ndarray): 1D array of x-coordinates.
-
-        Returns:
-        - np.ndarray: Interpolated array.
-        """
-        interpolated = np.copy(arr)
-        for i in range(arr.shape[0]):
-            valid = ~np.isnan(arr[i])
-            if np.sum(valid) > 1:  # Only interpolate if there are at least 2 valid points
-                f = interp1d(
-                    x[valid],
-                    arr[i][valid],
-                    kind="linear",
-                    bounds_error=False,
-                    fill_value=np.nan,
-                )
-                interpolated[i] = f(x)
-        return interpolated
-
-    def regularize_grid(
-        windows: list[np.ndarray], tvec: np.ndarray, window: float, nbins: int = 100
-    ) -> tuple[np.ndarray, np.ndarray]:
-        pulse_indices = []
-        time_points = []
-        correlations = []
-
-        for i, w in enumerate(windows):
-            if len(w) == 0:
-                continue
-            times = w["dt"]
-            corr = w["data"]
-
-            pulse_indices.append(np.full_like(times, i))
-            time_points.append(times)
-            correlations.append(corr)
-
-        # Convert to arrays:
-        pulse_indices = np.concatenate(pulse_indices).astype(int)
-        time_points = np.concatenate(time_points).astype(int)
-        correlations = np.concatenate(correlations)
-
-        # Create grid:
-        time_bins = np.linspace(-window, window, num=nbins)
-        pulse_bins = np.append(tvec, tvec[-1] + 1 / 1e3)
-        time_grid, pulse_grid = np.meshgrid(time_bins, pulse_bins)
-
-        corr_grid = np.full((len(windows), len(time_bins) - 1), np.nan)
-
-        for i, (t, c) in enumerate(zip(time_points, correlations)):
-            time_idx = np.argmin(np.abs(time_bins - t))
-            pulse_idx = pulse_indices[i]
-            corr_grid[pulse_idx, time_idx] = c
-
-        corr_grid = interpolate_nan_rows(corr_grid, time_bins[:-1])
-
-        return time_grid, pulse_grid, corr_grid
-
-
-    def stack_data(data: np.ndarray, dt: np.ndarray, window: float) -> list[np.ndarray]:
-        windows = []
-        for i in range(data.shape[0]):
-            mask = (dt[i] >= -window) & (dt[i] <= window)
-            data_window = data[i][mask]
-            dt_window = dt[i][mask]
-
-            structured = np.array(
-                list(zip(dt_window, data_window)), dtype=[("dt", float), ("data", float)]
-            )
-            windows.append(structured)
-
-        return windows
 
     STATIONS = ["SHRU921/Tetra", "SHRU905/VLA1", "SHRU920/VLA2"]
     j_d = 0

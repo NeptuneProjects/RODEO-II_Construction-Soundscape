@@ -108,7 +108,7 @@ def main(args: argparse.Namespace) -> None:
         ),
     )
     fig.savefig(
-        args.savedir / f"detector_example_{args.sensor}_chan{args.channel}.png",
+        args.savedir / f"detector_example_{args.sensor}_chan{args.channel + 1}.png",
         dpi=600,
         bbox_inches="tight",
         facecolor="w",

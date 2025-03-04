@@ -32,9 +32,10 @@ from rodeo import detect, utils
 
 
 def drop_nans(arr: np.ndarray) -> np.ndarray:
-        rows_clean = arr[~np.isnan(arr).all(axis=1)]
-        cols_clean = rows_clean[:, ~np.isnan(rows_clean).any(axis=0)]
-        return cols_clean
+    rows_clean = arr[~np.isnan(arr).all(axis=1)]
+    cols_clean = rows_clean[:, ~np.isnan(rows_clean).any(axis=0)]
+    return cols_clean
+
 
 def interpolate_nan_rows(arr: np.ndarray, x: np.ndarray) -> np.ndarray:
     """
@@ -61,8 +62,13 @@ def interpolate_nan_rows(arr: np.ndarray, x: np.ndarray) -> np.ndarray:
             interpolated[i] = f(x)
     return interpolated
 
+
 def regularize_grid(
-    windows: list[np.ndarray], tvec: np.ndarray, window: float, nbins: int = 100
+    windows: list[np.ndarray],
+    tvec: np.ndarray,
+    window: float,
+    nbins: int = 100,
+    drop_final_data_row=True,
 ) -> tuple[np.ndarray, np.ndarray]:
     pulse_indices = []
     time_points = []
@@ -88,14 +94,20 @@ def regularize_grid(
     pulse_bins = np.append(tvec, tvec[-1] + 1 / 1e3)
     time_grid, pulse_grid = np.meshgrid(time_bins, pulse_bins)
 
-    corr_grid = np.full((len(windows), len(time_bins) - 1), np.nan)
+    if drop_final_data_row:
+        corr_grid = np.full((len(windows), len(time_bins) - 1), np.nan)
+    else:
+        corr_grid = np.full((len(windows), len(time_bins)), np.nan)
 
     for i, (t, c) in enumerate(zip(time_points, correlations)):
         time_idx = np.argmin(np.abs(time_bins - t))
         pulse_idx = pulse_indices[i]
         corr_grid[pulse_idx, time_idx] = c
 
-    corr_grid = interpolate_nan_rows(corr_grid, time_bins[:-1])
+    if drop_final_data_row:
+        corr_grid = interpolate_nan_rows(corr_grid, time_bins[:-1])
+    else:
+        corr_grid = interpolate_nan_rows(corr_grid, time_bins)
 
     return time_grid, pulse_grid, corr_grid
 
@@ -113,8 +125,6 @@ def stack_data(data: np.ndarray, dt: np.ndarray, window: float) -> list[np.ndarr
         windows.append(structured)
 
     return windows
-
-
 
 
 def plot_avg_power_timehist(
@@ -578,11 +588,12 @@ def plot_max_corr_mat(
     fig, axs = plt.subplots(
         nrows=4, ncols=3, figsize=(8, 10), gridspec_kw={"hspace": 0.15, "wspace": 0.15}
     )
+
     def drop_nans(arr: np.ndarray) -> np.ndarray:
         rows_clean = arr[~np.isnan(arr).all(axis=1)]
         cols_clean = rows_clean[:, ~np.isnan(rows_clean).any(axis=0)]
         return cols_clean
-    
+
     STATIONS = ["SHRU921/Tetra", "SHRU905/VLA1", "SHRU920/VLA2"]
     j_d = 0
     t_max = 0.0
@@ -611,7 +622,6 @@ def plot_max_corr_mat(
             else:
                 corr = drop_nans(data[j_d, i])
                 dt_cl = drop_nans(dt[j_d, i])
-                
 
                 t = np.cumsum(np.insert(np.diff(dt_cl[0]), 0, 0.0))
                 t_max = max(t_max, t[-1])
@@ -633,7 +643,6 @@ def plot_max_corr_mat(
 
     fig.suptitle(title, y=0.925)
     return fig
-
 
 
 def plot_max_corr_stack(

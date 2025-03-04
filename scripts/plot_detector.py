@@ -123,7 +123,7 @@ if __name__ == "__main__":
         help="Path to the configuration file",
         default=Path(os.getenv("INVCONFIG")),
     )
-    parser.add_argument("--event", type=str, default="A02")
+    parser.add_argument("--event", type=str, default="A10-B")
     parser.add_argument("--sensor", type=str, default="SHRU905_VLA1")
     parser.add_argument("--channel", type=int, default=0)
     parser.add_argument("--dec", type=int, default=39)
@@ -135,8 +135,8 @@ if __name__ == "__main__":
     parser.add_argument("--threshold", type=float, default=3.0)
     parser.add_argument("--distance", type=float, default=0.95)
     parser.add_argument("--savedir", type=Path, default=Path.cwd() / "results")
-    parser.add_argument("--zoom_start", type=int, default=770000)
-    parser.add_argument("--zoom_end", type=int, default=820000)
+    parser.add_argument("--zoom_start", type=int, default=700000)
+    parser.add_argument("--zoom_end", type=int, default=750000)
     parser.add_argument("--figsize", type=tuple, default=(8, 3))
     args = parser.parse_args()
     main(args)

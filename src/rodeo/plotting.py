@@ -949,7 +949,7 @@ def plot_pulse_dispersion(
     filt: str = "highpass",
     filt_freq: float = 10.0,
 ) -> plt.Figure:
-    fig = plt.figure(figsize=(4.5, 6))
+    fig = plt.figure(figsize=(3, 5))
     outer_gs = gridspec.GridSpec(3, 1, hspace=0.1)
 
     for i, ds in enumerate(streams):
@@ -984,15 +984,7 @@ def plot_pulse_dispersion(
 
         # Time series
         ax = fig.add_subplot(inner_gs[0])
-        ax.plot(t_series, data / 1e6, zorder=20)
-        ax.text(
-            0.005,
-            0.96,
-            stations[i],
-            transform=ax.transAxes,
-            va="top",
-            bbox=dict(facecolor="white", edgecolor="black", pad=1),
-        )
+        ax.plot(t_series, data / 1e6, zorder=20, c="k", linewidth=0.5)
         ax.set_xlim(xlim)
         ax.grid(True)
         ax.set_xticklabels([])
@@ -1002,7 +994,15 @@ def plot_pulse_dispersion(
 
         # Spectrogram
         ax = fig.add_subplot(inner_gs[1])
-        ax.pcolormesh(t_spec, f, SdB, shading="auto", vmin=vmin, vmax=vmax, cmap="jet")
+        ax.pcolormesh(t_spec, f, SdB, shading="auto", vmin=vmin, vmax=vmax, cmap="cmo.thermal")
+        ax.text(
+            0.01,
+            0.975,
+            stations[i],
+            transform=ax.transAxes,
+            va="top",
+            bbox=dict(facecolor="white", edgecolor="none", pad=1),
+        )
         ax.set_xlim(xlim)
 
         if i == 2:

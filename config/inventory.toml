@@ -2,7 +2,7 @@
 [SHRU905_VLA1]
 
 [SHRU905_VLA1.data]
-directory = "/data/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_905"
+directory = "/project/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_905"
 glob_pattern = "SHRU_905*/[!._]*.D23"
 destination = "data/inventory/SHRU905_VLA1_FileInfo.csv"
 file_format = "SHRU" # Optional
@@ -22,7 +22,7 @@ serial_number = ["722013", "722014", "722015", "722016"]
 [SHRU920_VLA2]
 
 [SHRU920_VLA2.data]
-directory = "/data/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_920"
+directory = "/project/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_920"
 glob_pattern = "SHRU_920*/[!._]*.D23"
 destination = "data/inventory/SHRU920_VLA2_FileInfo.csv"
 
@@ -41,7 +41,7 @@ serial_number = ["722017", "722019", "722020", "722022"]
 [SHRU921_Tetra]
 
 [SHRU921_Tetra.data]
-directory = "/data/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_921"
+directory = "/project/RODEO_II_South_Fork_Data/Leg4_2023_AUG_12/SHRU_921"
 glob_pattern = "SHRU_921*/[!._]*.D23"
 destination = "data/inventory/SHRU921_Tetra_FileInfo.csv"
 

@@ -1012,9 +1012,9 @@ def plot_pulse_dispersion(
             ax.set_xticklabels([])
 
     # Add a colorbar to the bottom of the figure:
-    cax = fig.add_axes([0.92, 0.25, 0.03, 0.5])
-    cbar = fig.colorbar(ax.collections[0], cax=cax, orientation="vertical")
-    cbar.set_label("PSD (dB re 1 $\\mu$Pa$^2$/Hz)")
+    cax = fig.add_axes([0.25, -0.01, 0.5, 0.03])
+    cbar = fig.colorbar(ax.collections[0], cax=cax, orientation="horizontal")
+    cbar.set_label("Power spectral density (dB re 1 $\\mu$Pa$^2$/Hz)")
 
     return fig
 

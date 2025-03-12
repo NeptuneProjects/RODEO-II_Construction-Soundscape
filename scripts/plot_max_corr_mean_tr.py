@@ -10,6 +10,7 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+from scipy.interpolate import interp1d
 from tqdm import tqdm
 from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
@@ -56,9 +57,9 @@ def load_range(df: pl.DataFrame, event: str, station: str) -> float:
 def main(args: argparse.Namespace) -> None:
     channel = 0
     df = pl.read_csv(args.events)
-    files = list(args.data.rglob("*.h*5"))
-    corr_means = []
+    files = list(args.data.glob("*.h*5"))
     ranges = []
+    corr_means = []
     for file in tqdm(files):
         event = file.stem.split("_")[1]
         tqdm.write(f"Processing {event}")
@@ -69,16 +70,29 @@ def main(args: argparse.Namespace) -> None:
             dt_sta = dt[i][channel]
 
             corr = plotting.drop_nans(data_sta)
-            print(corr)
             dt_cl = plotting.drop_nans(dt_sta)
-            print(dt_cl)
-            t = np.cumsum(np.insert(np.diff(dt_cl[0]), 0, 0.0)) / 1e3
+            t = np.cumsum(np.insert(np.diff(dt_cl[0]), 0, 0.0))
 
             windows = plotting.stack_data(corr, dt_cl, args.window)
-            time_grid, pulse_grid, corr_grid = plotting.regularize_grid(
-                windows, t, window=args.window, nbins=100
+            time_grid, _, corr_grid = plotting.regularize_grid(
+                windows, t, window=args.window, nbins=100, drop_final_data_row=False
             )
-            corr_means.append(np.mean(corr_grid, axis=0))
+
+            corr_grid[np.where(np.isnan(corr_grid))] = 0.0
+            corr_mean = np.mean(corr_grid, axis=0)
+            max_idx = np.argmax(corr_mean)
+            right_corr_mean = corr_mean[max_idx:]
+            right_time_grid = time_grid[0, max_idx:]
+
+            # print(right_time_grid.shape, right_corr_mean.shape)
+            # print(right_time_grid.min(), right_time_grid.max())
+        
+            
+            new_time_grid = np.linspace(0.0, args.window, 100)
+            f = interp1d(right_time_grid, right_corr_mean)
+            new_corr_mean = f(new_time_grid)
+
+            corr_means.append(new_corr_mean)
 
     # Sort `corr_means` and `ranges` by `ranges`
     corr_means, ranges = map(
@@ -91,19 +105,16 @@ def main(args: argparse.Namespace) -> None:
         ),
     )
 
-    print(len(corr_means), len(ranges))
-    print(corr_means[0].shape)
+    corr_all = np.array(corr_means)
+    ranges_all = np.array(ranges)
+    
+    fig = plt.figure()
+    plt.pcolormesh(new_time_grid, ranges_all / 1e3, corr_all, cmap="magma", vmin=0.0, vmax=1.0)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Range (km)")
+    plt.colorbar()
+    plt.show()
 
-    # fig = plotting.plot_max_corr_stack(
-    #     stations, data, dt, title=title, window=args.window
-    # )
-    # fig.savefig(
-    #     args.outdir / event / "max_corr_stack.png",
-    #     dpi=600,
-    #     bbox_inches="tight",
-    #     facecolor="white",
-    # )
-    # plt.close()
 
 
 if __name__ == "__main__":
@@ -125,7 +136,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--window",
         type=float,
-        default=60.0,
+        default=300.0,
         help="Single-sided window to plot (s).",
     )
     parser.add_argument(

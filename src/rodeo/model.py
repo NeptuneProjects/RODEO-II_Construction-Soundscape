@@ -77,10 +77,25 @@ def compute_greens_function(
         inds = np.argwhere((f >= freq_band[0]) & (f <= freq_band[1])).squeeze()
         return f[inds], inds
 
+    def _pad_freqs(
+        freq: npt.NDArray[np.float_],
+        computed_freq_inds: npt.NDArray[np.float_],
+        arr: npt.NDArray[np.complex_],
+    ) -> npt.NDArray[np.float_]:
+        """Pad frequencies to match the number of points in the FFT."""
+        if arr.ndim == 1:
+            arr = arr[:, np.newaxis]
+
+        padded_arr = np.zeros((len(freq), arr.shape[1]), dtype=complex)
+        # Fill the padded array with the computed frequencies
+        padded_arr[computed_freq_inds, :] = arr
+        return padded_arr.T.squeeze()
+
+
     env = copy.deepcopy(environment)
 
     # Define frequencies
-    freqs, _ = _get_freqs_from_band(num_points, freq_bounds, fs=fs)
+    computed_freqs, freq_inds = _get_freqs_from_band(num_points, freq_bounds, fs=fs)
 
     # Define the environment
     env.update({"rec_r": range_m / 1e3})
@@ -88,13 +103,15 @@ def compute_greens_function(
     # Compute Green's Function in parallel
     with concurrent.futures.ThreadPoolExecutor() as executor:
         chan_resp_f = list(
-            tqdm(executor.map(_greens_function, freqs), total=len(freqs))
+            tqdm(
+                executor.map(_greens_function, computed_freqs),
+                total=len(computed_freqs),
+            )
         )
     chan_resp_f_partial = np.array(chan_resp_f)
-    padding = len(freq) - chan_resp_f_partial.shape[0]
-    chan_resp_freq = fft.fftshift(
-        np.concatenate([np.zeros(padding, dtype=complex), chan_resp_f_partial])
-    )
+
+    chan_resp_freq = _pad_freqs(freq, freq_inds, chan_resp_f_partial)
+
     # Make chan_resp_freq conjugate symmetric:
     chan_resp_freq = _enforce_symmetry(chan_resp_freq)
 

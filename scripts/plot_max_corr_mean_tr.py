@@ -29,8 +29,8 @@ def load_data(file: Path) -> tuple[list[str], np.ndarray, np.ndarray]:
     with h5py.File(file, "r") as f:
         for grp in f.values():
             stations.append(grp.name[1:].replace("-", "/"))
-            data.append(grp["corr"][:])
-            dt.append(grp["time_diff"][:] / TIME_CONVERSION_FACTOR)
+            data.append(grp["corr"][:, :, 500:])
+            dt.append(grp["time_diff"][:, :, 500:] / TIME_CONVERSION_FACTOR)
 
     # Sort by order of STATIONS
     data, dt, stations = map(
@@ -42,7 +42,7 @@ def load_data(file: Path) -> tuple[list[str], np.ndarray, np.ndarray]:
             )
         ),
     )
-
+    # print(len(data[0][0]), len(dt[0][0]), len(stations))
     return stations, np.array(data), np.array(dt)
 
 
@@ -113,6 +113,12 @@ def main(args: argparse.Namespace) -> None:
     plt.xlabel("Time (s)")
     plt.ylabel("Range (km)")
     plt.colorbar()
+    fig.savefig(
+        args.outdir / "max_corr.png",
+        dpi=300,
+        bbox_inches="tight",
+        facecolor="w",
+    )
     plt.show()
 
 

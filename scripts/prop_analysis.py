@@ -543,6 +543,8 @@ def main(args: argparse.Namespace) -> None:
             bbox_inches="tight",
             facecolor="w",
         )
+        
+        plt.close("all")
 
     corr_coeffs = np.array(corr_coeff)
 

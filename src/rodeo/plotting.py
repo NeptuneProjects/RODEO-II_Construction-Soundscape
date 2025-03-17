@@ -1056,6 +1056,32 @@ def plot_pulse_stack(
     return fig
 
 
+def plot_signal(
+    time: np.ndarray,
+    signal_t: np.ndarray,
+    freq: np.ndarray,
+    signal_f: np.ndarray,
+    suptitle: str | None = None,
+):
+    fig, axs = plt.subplots(2, 1, figsize=(12, 8))
+    ax = axs[0]
+    ax.plot(time, signal_t.T)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Amplitude")
+    ax.set_title("Time Domain")
+
+    ax = axs[1]
+    ax.plot(freq, np.abs(signal_f).T)
+    ax.set_xlabel("Frequency (Hz)")
+    ax.set_ylabel("Magnitude")
+    ax.set_title("Frequency Domain")
+
+    if suptitle is not None:
+        fig.suptitle(suptitle)
+    fig.tight_layout()
+    return fig
+
+
 def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()

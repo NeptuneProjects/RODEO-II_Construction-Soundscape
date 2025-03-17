@@ -557,7 +557,6 @@ def main(args: argparse.Namespace) -> None:
         bbox_inches="tight",
         facecolor="w",
     )
-    plt.show()
 
 
 if __name__ == "__main__":

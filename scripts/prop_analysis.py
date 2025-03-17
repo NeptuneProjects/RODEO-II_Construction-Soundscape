@@ -7,7 +7,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import scipy.fft as fft
 
 from rodeo import model as mdl
@@ -26,19 +25,12 @@ def plot_signal(
     fig, axs = plt.subplots(2, 1, figsize=(12, 8))
     ax = axs[0]
     ax.plot(time, signal_t.T)
-    # ax.plot(time, np.real(signal_t).T, "r--")
-    # ax.plot(time, np.imag(signal_t).T, "g--")
-    # ax.plot(time, np.abs(signal_t).T, "b--")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Amplitude")
     ax.set_title("Time Domain")
 
     ax = axs[1]
     ax.plot(freq, np.abs(signal_f).T)
-    # ax.plot(freq, np.real(signal_f.T), "r--")
-    # ax.plot(freq, np.imag(signal_f.T), "g--")
-    # ax.plot(freq, np.abs(signal_f.T), "b--")
-
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("Magnitude")
     ax.set_title("Frequency Domain")
@@ -49,42 +41,9 @@ def plot_signal(
     return fig
 
 
-def build_base_environment(ctd_df: pd.DataFrame) -> dict:
-    base_environment = mdl.construct_environment()
-    layerdata = base_environment["layerdata"]
-    z = ctd_df["Depth"].values
-    c_p = ctd_df["Speed of sound"].values
-    z = np.append(z, layerdata[0]["z"].max())
-    c_p = np.append(c_p, c_p[-1])
-    z = np.insert(z, 0, 0.0)
-    c_p = np.insert(c_p, 0, layerdata[0]["c_p"])
-
-    new_layerdata = [
-        {"z": z, "c_p": c_p},
-        layerdata[1],
-    ]
-    base_environment.update({"layerdata": new_layerdata})
-    return base_environment
-
-
-def load_ssp(ctd_file: Path) -> pd.DataFrame:
-    ctd_df = utils.clean_ctd_data(
-        pd.read_csv(ctd_file, parse_dates=["Time"]), min_depth=1.0
-    )
-    # ctd_df = ctd_df.iloc[700:1300].sort_values("Depth")
-    # Find where the difference in depths changes sign:
-    depth_diff = ctd_df["Depth"].diff()
-    depth_diff_sign_change = depth_diff[depth_diff * depth_diff.shift(-1) < 0].index
-    # Find the index of the first occurrence of the sign change:
-    first_sign_change = depth_diff_sign_change[0]
-    # Create a new DataFrame with the first sign change:
-    ctd_df = ctd_df.iloc[:first_sign_change].sort_values("Depth")
-    return ctd_df
-
-
 def main(args: argparse.Namespace) -> None:
-    ctd_df = load_ssp(args.ssp)
-    env = build_base_environment(ctd_df)
+    ctd_df = utils.load_ssp(args.ssp)
+    env = mdl.build_base_environment(ctd_df)
     dr = 100
     ranges = np.arange(1000, 20000, dr)
 
@@ -97,7 +56,6 @@ def main(args: argparse.Namespace) -> None:
     pulse_duration = 0.25
     starting_fc = [475.0 + 4 * i for i in range(num_signals)]
     snr_db = 30.0
-    midpoint = num_samples // 2
 
     time, source_signals_time, freq, source_signals_freq = mdl.generate_source_signal(
         type="point",

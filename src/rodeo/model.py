@@ -12,10 +12,29 @@ import copy
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 import scipy.fft as fft
 from tqdm import tqdm
 from tritonoa.modeling.at.kraken import run_kraken
 from tritonoa.signal import waveforms
+
+
+def build_base_environment(ctd_df: pd.DataFrame) -> dict:
+    base_environment = construct_environment()
+    layerdata = base_environment["layerdata"]
+    z = ctd_df["Depth"].values
+    c_p = ctd_df["Speed of sound"].values
+    z = np.append(z, layerdata[0]["z"].max())
+    c_p = np.append(c_p, c_p[-1])
+    z = np.insert(z, 0, 0.0)
+    c_p = np.insert(c_p, 0, layerdata[0]["c_p"])
+
+    new_layerdata = [
+        {"z": z, "c_p": c_p},
+        layerdata[1],
+    ]
+    base_environment.update({"layerdata": new_layerdata})
+    return base_environment
 
 
 def compute_greens_function(

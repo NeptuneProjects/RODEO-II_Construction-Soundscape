@@ -8,6 +8,7 @@ February 2025
 """
 import importlib.resources as pkg_resources
 import logging
+from pathlib import Path
 from typing import Sequence
 
 import h5py
@@ -421,6 +422,19 @@ def initialize_julia(modules: str | Sequence[str]) -> object:
         jl.include(str(julia_path))
 
     return jl
+
+
+def load_ssp(ctd_file: Path) -> pd.DataFrame:
+    ctd_df = clean_ctd_data(pd.read_csv(ctd_file, parse_dates=["Time"]), min_depth=1.0)
+    # ctd_df = ctd_df.iloc[700:1300].sort_values("Depth")
+    # Find where the difference in depths changes sign:
+    depth_diff = ctd_df["Depth"].diff()
+    depth_diff_sign_change = depth_diff[depth_diff * depth_diff.shift(-1) < 0].index
+    # Find the index of the first occurrence of the sign change:
+    first_sign_change = depth_diff_sign_change[0]
+    # Create a new DataFrame with the first sign change:
+    ctd_df = ctd_df.iloc[:first_sign_change].sort_values("Depth")
+    return ctd_df
 
 
 def spectrogram_args(

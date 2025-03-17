@@ -8,37 +8,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.fft as fft
+from tritonoa.signal.util import double_to_single_sided_fft, double_to_single_sided_ifft
 
 from rodeo import model as mdl
-from rodeo import utils
+from rodeo import plotting, utils
 
 logging.basicConfig(**utils.logging_kwargs)
-
-
-def plot_signal(
-    time: np.ndarray,
-    signal_t: np.ndarray,
-    freq: np.ndarray,
-    signal_f: np.ndarray,
-    suptitle: str | None = None,
-):
-    fig, axs = plt.subplots(2, 1, figsize=(12, 8))
-    ax = axs[0]
-    ax.plot(time, signal_t.T)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Amplitude")
-    ax.set_title("Time Domain")
-
-    ax = axs[1]
-    ax.plot(freq, np.abs(signal_f).T)
-    ax.set_xlabel("Frequency (Hz)")
-    ax.set_ylabel("Magnitude")
-    ax.set_title("Frequency Domain")
-
-    if suptitle is not None:
-        fig.suptitle(suptitle)
-    fig.tight_layout()
-    return fig
 
 
 def main(args: argparse.Namespace) -> None:
@@ -67,10 +42,10 @@ def main(args: argparse.Namespace) -> None:
         snr_db=snr_db,
     )
 
-    fig = plot_signal(
+    fig = plotting.plotting.plot_signal(
         time,
         source_signals_time,
-        *utils.double_to_single_sided_fft(freq, source_signals_freq),
+        *double_to_single_sided_fft(freq, source_signals_freq),
         "Source Signals",
     )
     # plt.draw()
@@ -81,19 +56,17 @@ def main(args: argparse.Namespace) -> None:
     corr_coeff = []
     for r in ranges:
         logging.info(f"Processing range: {r} m")
-        # Expected travel time:
-        # c_max = 1500.0
-        # t_offset = env["rec_r"] * 1e3 / c_max
+
         chan_resp_time, chan_resp_freq = mdl.compute_greens_function(
             env, (40, fs), fs, num_samples, r, freq
         )
 
-        fig = plot_signal(
-            *utils.double_to_single_sided_ifft(
+        fig = plotting.plotting.plot_signal(
+            *double_to_single_sided_ifft(
                 time,
                 chan_resp_time,
             ),
-            *utils.double_to_single_sided_fft(freq, chan_resp_freq),
+            *double_to_single_sided_fft(freq, chan_resp_freq),
             "Channel Response",
         )
         # plt.draw()
@@ -152,14 +125,14 @@ def main(args: argparse.Namespace) -> None:
 
         corr_coeff.append(np.max(ry12))
 
-        fig = plot_signal(
+        fig = plotting.plot_signal(
             # *double_to_single_sided_ifft(
             #     time,
             #     y1,
             # ),
             time,
             y1,
-            *utils.double_to_single_sided_fft(freq, Y1),
+            *double_to_single_sided_fft(freq, Y1),
             "Received Signal 1",
         )
         # plt.draw()
@@ -170,12 +143,12 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        fig = plot_signal(
-            *utils.double_to_single_sided_ifft(
+        fig = plotting.plot_signal(
+            *double_to_single_sided_ifft(
                 time,
                 p11,
             ),
-            *utils.double_to_single_sided_fft(freq, P11),
+            *double_to_single_sided_fft(freq, P11),
             "Auto-spectral power of source signal 1",
         )
         # plt.draw()
@@ -186,12 +159,12 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        fig = plot_signal(
-            *utils.double_to_single_sided_ifft(
+        fig = plotting.plot_signal(
+            *double_to_single_sided_ifft(
                 time,
                 p22,
             ),
-            *utils.double_to_single_sided_fft(freq, P22),
+            *double_to_single_sided_fft(freq, P22),
             "Auto-spectral power of source signal 2",
         )
         # plt.draw()
@@ -202,12 +175,12 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        fig = plot_signal(
-            *utils.double_to_single_sided_ifft(
+        fig = plotting.plot_signal(
+            *double_to_single_sided_ifft(
                 time,
                 p12,
             ),
-            *utils.double_to_single_sided_fft(freq, P12),
+            *double_to_single_sided_fft(freq, P12),
             "Cross-spectral power of source signals",
         )
         # plt.draw()
@@ -218,12 +191,12 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        fig = plot_signal(
-            *utils.double_to_single_sided_ifft(
+        fig = plotting.plot_signal(
+            *double_to_single_sided_ifft(
                 time,
                 y12,
             ),
-            *utils.double_to_single_sided_fft(freq, Y12),
+            *double_to_single_sided_fft(freq, Y12),
             "Cross-spectral power of received signals",
         )
         # plt.draw()
@@ -234,9 +207,9 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        fig = plot_signal(
-            *utils.double_to_single_sided_ifft(time, r12),
-            *utils.double_to_single_sided_fft(freq, R12),
+        fig = plotting.plot_signal(
+            *double_to_single_sided_ifft(time, r12),
+            *double_to_single_sided_fft(freq, R12),
             "Cross-correlation of signals at source",
         )
         # plt.draw()
@@ -247,9 +220,9 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        fig = plot_signal(
-            *utils.double_to_single_sided_ifft(time, ry12),
-            *utils.double_to_single_sided_fft(freq, RY12),
+        fig = plotting.plot_signal(
+            *double_to_single_sided_ifft(time, ry12),
+            *double_to_single_sided_fft(freq, RY12),
             "Cross-correlation of signals at receiver",
         )
         # plt.draw()

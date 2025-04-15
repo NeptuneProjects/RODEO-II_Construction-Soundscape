@@ -27,7 +27,8 @@ def build_base_environment(ctd_df: pd.DataFrame) -> dict:
     z = np.append(z, layerdata[0]["z"].max())
     c_p = np.append(c_p, c_p[-1])
     z = np.insert(z, 0, 0.0)
-    c_p = np.insert(c_p, 0, layerdata[0]["c_p"])
+    # c_p = np.insert(c_p, 0, layerdata[0]["c_p"])
+    c_p = np.insert(c_p, 0, c_p[0])
 
     new_layerdata = [
         {"z": z, "c_p": c_p},

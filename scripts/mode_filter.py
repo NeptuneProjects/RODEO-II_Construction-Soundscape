@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import scipy.fft as fft
+import scipy.linalg as linalg
 import tritonoa.modeling.physics as physics
 from tritonoa.signal.util import double_to_single_sided_fft, double_to_single_sided_ifft
 
@@ -17,7 +18,9 @@ from rodeo import model as mdl, plotting, utils
 logging.basicConfig(**utils.logging_kwargs)
 
 
-def offset_traces(arr: npt.NDArray[np.complex_], offset: float) -> npt.NDArray[np.complex_]:
+def offset_traces(
+    arr: npt.NDArray[np.complex_], offset: float
+) -> npt.NDArray[np.complex_]:
     """Space traces by adding a constant to each column."""
     return np.array([col + i * offset for i, col in enumerate(arr)])
 
@@ -60,7 +63,9 @@ def main(args: argparse.Namespace) -> None:
     freq_spacing = np.max(np.abs(chan_resp_freq))
     fig = plotting.plot_signal(
         *double_to_single_sided_ifft(time, offset_traces(chan_resp_time, time_spacing)),
-        *double_to_single_sided_fft(freq, offset_traces(np.abs(chan_resp_freq), freq_spacing)),
+        *double_to_single_sided_fft(
+            freq, offset_traces(np.abs(chan_resp_freq), freq_spacing)
+        ),
         "Channel Response",
     )
     plt.draw()
@@ -83,8 +88,11 @@ def main(args: argparse.Namespace) -> None:
 
     fig = plotting.plot_signal(
         # *double_to_single_sided_ifft(time, offset_traces(received_signal_time, time_spacing)),
-        time, offset_traces(received_signal_time, time_spacing),
-        *double_to_single_sided_fft(freq, offset_traces(np.abs(received_signal_freq), freq_spacing)),
+        time,
+        offset_traces(received_signal_time, time_spacing),
+        *double_to_single_sided_fft(
+            freq, offset_traces(np.abs(received_signal_freq), freq_spacing)
+        ),
         "Received Signal",
     )
     plt.draw()
@@ -93,36 +101,42 @@ def main(args: argparse.Namespace) -> None:
     ## Form covariance matrices for each frequency:
     freq_ss, data = double_to_single_sided_fft(freq, received_signal_freq)
     data = data.T
-    noise = source_signal_time[:, len(time) // 2:].squeeze()
+    noise = source_signal_time[:, len(time) // 2 :].squeeze()
     print(data.shape)
-    
+
     noise_f = np.vstack([fft.fft(noise, n=num_samples) for _ in range(data.shape[-1])])
     freq_ss, noise_f = double_to_single_sided_fft(freq, noise_f)
     noise_f = noise_f.T
     print(noise_f.shape)
 
-    covar_signal = np.einsum('ij,ik->ijk', data, np.conj(data))
+    covar_signal = np.einsum("ij,ik->ijk", data, np.conj(data))
     print(covar_signal.shape)
-    covar_noise = np.einsum('ij,ik->ijk', noise_f, np.conj(noise_f))
+    covar_noise = np.einsum("ij,ik->ijk", noise_f, np.conj(noise_f))
     print(covar_noise.shape)
 
     f_ind = np.argmin(np.abs(freq_ss - args.fc))
     print(f"Frequency index: {f_ind}")
     print(f"Frequency: {freq_ss[f_ind]}")
 
-    plt.figure()
-    plt.imshow(np.abs(covar_signal[f_ind]), aspect='auto')
-    plt.colorbar()
-    plt.title("Signal covariance matrix")
-    plt.draw()
+    # plt.figure()
+    # plt.imshow(np.abs(covar_signal[f_ind]), aspect="auto")
+    # plt.colorbar()
+    # plt.title("Signal covariance matrix")
+    # plt.draw()
 
-    plt.figure()
-    plt.imshow(np.abs(covar_noise[f_ind]), aspect='auto')
-    plt.colorbar()
-    plt.title("Noise covariance matrix")
-    plt.draw()
+    # plt.figure()
+    # plt.imshow(np.abs(covar_noise[f_ind]), aspect="auto")
+    # plt.colorbar()
+    # plt.title("Noise covariance matrix")
+    # plt.draw()
 
-    plt.show()
+
+    U, s, Vh = linalg.svd(covar_signal)
+
+
+
+
+    # plt.show()
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ logging.basicConfig(**utils.logging_kwargs)
 def main(args: argparse.Namespace) -> None:
     ctd_df = utils.load_ssp(args.ssp)
     env = mdl.build_base_environment(ctd_df)
-    dr = 100
+    dr = 1000
     ranges = np.arange(1000, 20000, dr)
 
     # Attributes shared by all pulses
@@ -42,7 +42,7 @@ def main(args: argparse.Namespace) -> None:
         snr_db=snr_db,
     )
 
-    fig = plotting.plotting.plot_signal(
+    fig = plotting.plot_signal(
         time,
         source_signals_time,
         *double_to_single_sided_fft(freq, source_signals_freq),
@@ -53,6 +53,88 @@ def main(args: argparse.Namespace) -> None:
         args.output / "source_signals.png", dpi=300, bbox_inches="tight", facecolor="w"
     )
 
+    comparison_pulse = 1
+    s1 = source_signals_time[0]
+    s2 = source_signals_time[comparison_pulse]
+    S1 = source_signals_freq[0]
+    S2 = source_signals_freq[comparison_pulse]
+    # Compute auto-power spectra
+    P11 = np.abs(S1) ** 2
+    P22 = np.abs(S2) ** 2
+    # Compute cross-power spectra
+    P12 = S1 * np.conj(S2)
+
+    # Compute inverse FFTs
+    p11 = np.real_if_close(fft.ifft(P11, n=num_samples))
+    p22 = np.real_if_close(fft.ifft(P22, n=num_samples))
+    p12 = np.real_if_close(fft.ifft(P12, n=num_samples))
+
+    # Compute coherence
+    R12 = np.abs(P12) ** 2 / np.sqrt(P11 * P22)
+    norm = np.sqrt(np.sum(s1**2) * np.sum(s2**2))
+    r12 = np.real_if_close(fft.ifft(R12, n=num_samples) / norm)
+
+    fig = plotting.plot_signal(
+        *double_to_single_sided_ifft(
+            time,
+            p11,
+        ),
+        *double_to_single_sided_fft(freq, P11),
+        "Auto-spectral power of source signal 1",
+    )
+    # plt.draw()
+    fig.savefig(
+        args.output / f"auto_spectral_power_1.png",
+        dpi=300,
+        bbox_inches="tight",
+        facecolor="w",
+    )
+
+    fig = plotting.plot_signal(
+        *double_to_single_sided_ifft(
+            time,
+            p22,
+        ),
+        *double_to_single_sided_fft(freq, P22),
+        "Auto-spectral power of source signal 2",
+    )
+    # plt.draw()
+    fig.savefig(
+        args.output / f"auto_spectral_power_2.png",
+        dpi=300,
+        bbox_inches="tight",
+        facecolor="w",
+    )
+
+    fig = plotting.plot_signal(
+        *double_to_single_sided_ifft(
+            time,
+            p12,
+        ),
+        *double_to_single_sided_fft(freq, P12),
+        "Cross-spectral power of source signals",
+    )
+    # plt.draw()
+    fig.savefig(
+        args.output / f"cross_spectral_power_source.png",
+        dpi=300,
+        bbox_inches="tight",
+        facecolor="w",
+    )
+
+    fig = plotting.plot_signal(
+        *double_to_single_sided_ifft(time, r12),
+        *double_to_single_sided_fft(freq, R12),
+        "Cross-correlation of signals at source",
+    )
+    # plt.draw()
+    fig.savefig(
+        args.output / f"cross_correlation_source.png",
+        dpi=300,
+        bbox_inches="tight",
+        facecolor="w",
+    )
+
     corr_coeff = []
     for r in ranges:
         logging.info(f"Processing range: {r} m")
@@ -61,7 +143,7 @@ def main(args: argparse.Namespace) -> None:
             env, (40, fs), fs, num_samples, r, freq
         )
 
-        fig = plotting.plotting.plot_signal(
+        fig = plotting.plot_signal(
             *double_to_single_sided_ifft(
                 time,
                 chan_resp_time,
@@ -77,35 +159,18 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        comparison_pulse = -1
-
-        s1 = source_signals_time[0]
-        s2 = source_signals_time[comparison_pulse]
-
-        S1 = source_signals_freq[0]
-        S2 = source_signals_freq[comparison_pulse]
-
         Y1 = S1 * chan_resp_freq
         Y2 = S2 * chan_resp_freq
         y1 = fft.ifft(Y1, n=num_samples)
         y2 = fft.ifft(Y2, n=num_samples)
 
-        # Compute auto-power spectra
-        P11 = np.abs(S1) ** 2
-        P22 = np.abs(S2) ** 2
-
         # Compute cross-power spectra
-        P12 = S1 * np.conj(S2)
         Y12 = P12 * np.abs(chan_resp_freq) ** 2
 
         # Compute inverse FFTs
-        p11 = np.real_if_close(fft.ifft(P11, n=num_samples))
-        p22 = np.real_if_close(fft.ifft(P22, n=num_samples))
-        p12 = np.real_if_close(fft.ifft(P12, n=num_samples))
         y12 = np.real_if_close(fft.ifft(Y12, n=num_samples))
 
         # Compute coherence
-        R12 = np.abs(P12) ** 2 / np.sqrt(P11 * P22)
         RY12 = (
             np.abs(S1 * np.conj(S2)) ** 2
             * np.abs(chan_resp_freq) ** 2
@@ -113,8 +178,6 @@ def main(args: argparse.Namespace) -> None:
         )
 
         # Compute cross-correlation
-        norm = np.sqrt(np.sum(s1**2) * np.sum(s2**2))
-        r12 = np.real_if_close(fft.ifft(R12, n=num_samples) / norm)
         normy = np.sqrt(np.sum(np.abs(y1) ** 2) * np.sum(np.abs(y2) ** 2))
         ry12 = np.real_if_close(fft.ifft(RY12, n=num_samples) / normy)
 
@@ -144,48 +207,18 @@ def main(args: argparse.Namespace) -> None:
         )
 
         fig = plotting.plot_signal(
-            *double_to_single_sided_ifft(
-                time,
-                p11,
-            ),
-            *double_to_single_sided_fft(freq, P11),
-            "Auto-spectral power of source signal 1",
+            # *double_to_single_sided_ifft(
+            #     time,
+            #     y1,
+            # ),
+            time,
+            y2,
+            *double_to_single_sided_fft(freq, Y2),
+            "Received Signal 2",
         )
         # plt.draw()
         fig.savefig(
-            args.output / f"auto_spectral_power_1_{r}.png",
-            dpi=300,
-            bbox_inches="tight",
-            facecolor="w",
-        )
-
-        fig = plotting.plot_signal(
-            *double_to_single_sided_ifft(
-                time,
-                p22,
-            ),
-            *double_to_single_sided_fft(freq, P22),
-            "Auto-spectral power of source signal 2",
-        )
-        # plt.draw()
-        fig.savefig(
-            args.output / f"auto_spectral_power_2_{r}.png",
-            dpi=300,
-            bbox_inches="tight",
-            facecolor="w",
-        )
-
-        fig = plotting.plot_signal(
-            *double_to_single_sided_ifft(
-                time,
-                p12,
-            ),
-            *double_to_single_sided_fft(freq, P12),
-            "Cross-spectral power of source signals",
-        )
-        # plt.draw()
-        fig.savefig(
-            args.output / f"cross_spectral_power_source_{r}.png",
+            args.output / f"received_signal_2_{r}.png",
             dpi=300,
             bbox_inches="tight",
             facecolor="w",
@@ -202,19 +235,6 @@ def main(args: argparse.Namespace) -> None:
         # plt.draw()
         fig.savefig(
             args.output / f"cross_spectral_power_received_{r}.png",
-            dpi=300,
-            bbox_inches="tight",
-            facecolor="w",
-        )
-
-        fig = plotting.plot_signal(
-            *double_to_single_sided_ifft(time, r12),
-            *double_to_single_sided_fft(freq, R12),
-            "Cross-correlation of signals at source",
-        )
-        # plt.draw()
-        fig.savefig(
-            args.output / f"cross_correlation_source_{r}.png",
             dpi=300,
             bbox_inches="tight",
             facecolor="w",

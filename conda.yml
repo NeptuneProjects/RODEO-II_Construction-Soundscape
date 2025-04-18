@@ -9,6 +9,7 @@ dependencies:
   - ipympl
   - jupyterlab
   - matplotlib
+  - netcdf4
   - numpy
   - pandas
   - pip

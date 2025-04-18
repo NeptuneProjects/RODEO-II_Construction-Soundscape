@@ -16,9 +16,9 @@ from rodeo import model as mdl, utils
 
 def plot_transmission_loss(
     environment: dict,
-    p: npt.NDArray[np.float_],
-    rec_z: npt.NDArray[np.float_],
-    rec_r: npt.NDArray[np.float_],
+    p: npt.NDArray[np.float64],
+    rec_z: npt.NDArray[np.float64],
+    rec_r: npt.NDArray[np.float64],
     title: str | None = None,
 ) -> plt.Figure:
     layerdata = environment["layerdata"]

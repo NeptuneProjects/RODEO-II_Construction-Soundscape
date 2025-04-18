@@ -44,12 +44,12 @@ def compute_greens_function(
     fs: float,
     num_points: int,
     range_m: float,
-    freq: npt.NDArray[np.float_],
-) -> tuple[npt.NDArray[np.float_], npt.NDArray[np.complex_]]:
+    freq: npt.NDArray[np.float64],
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.complex128]]:
 
     def _enforce_symmetry(
-        fft_data: npt.NDArray[np.complex_],
-    ) -> npt.NDArray[np.complex_]:
+        fft_data: npt.NDArray[np.complex128],
+    ) -> npt.NDArray[np.complex128]:
         """Make FFT data conjugate symmetric to ensure real IFFT output"""
         n = len(fft_data)
         symmetric_fft = fft_data.copy()
@@ -67,7 +67,7 @@ def compute_greens_function(
 
         return symmetric_fft
 
-    def _greens_function(freq: float) -> npt.NDArray[np.complex_]:
+    def _greens_function(freq: float) -> npt.NDArray[np.complex128]:
         model = run_kraken(env | {"freq": freq})
         return model.modes.p.squeeze()
 
@@ -79,10 +79,10 @@ def compute_greens_function(
         return f[inds], inds
 
     def _pad_freqs(
-        freq: npt.NDArray[np.float_],
-        computed_freq_inds: npt.NDArray[np.float_],
-        arr: npt.NDArray[np.complex_],
-    ) -> npt.NDArray[np.float_]:
+        freq: npt.NDArray[np.float64],
+        computed_freq_inds: npt.NDArray[np.float64],
+        arr: npt.NDArray[np.complex128],
+    ) -> npt.NDArray[np.float64]:
         """Pad frequencies to match the number of points in the FFT."""
         if arr.ndim == 1:
             arr = arr[:, np.newaxis]

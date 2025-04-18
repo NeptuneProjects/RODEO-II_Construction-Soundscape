@@ -19,8 +19,8 @@ logging.basicConfig(**utils.logging_kwargs)
 
 
 def offset_traces(
-    arr: npt.NDArray[np.complex_], offset: float
-) -> npt.NDArray[np.complex_]:
+    arr: npt.NDArray[np.complex128], offset: float
+) -> npt.NDArray[np.complex128]:
     """Space traces by adding a constant to each column."""
     return np.array([col + i * offset for i, col in enumerate(arr)])
 

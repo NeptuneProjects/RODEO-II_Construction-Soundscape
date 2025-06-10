@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Script to aggregate metrics from multiple CSV files into a single CSV file."""
 

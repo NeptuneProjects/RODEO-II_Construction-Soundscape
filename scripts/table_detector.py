@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 
 """Script compiles all detector configuration files into a single table
 formatted for markdown.

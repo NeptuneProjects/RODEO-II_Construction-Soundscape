@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 
 """This script computes the RMS SPL and PSD of ambient noise data for each event.
 10 minutes of data are taken starting 11 minutes prior to the event start time.

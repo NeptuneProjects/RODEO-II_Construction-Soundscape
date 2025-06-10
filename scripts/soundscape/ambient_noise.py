@@ -22,7 +22,7 @@ from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
 
-from rodeo.metrics import spl_rms
+from rodeo.soundscape import spl_rms
 from rodeo.utils import get_welch
 
 load_dotenv()

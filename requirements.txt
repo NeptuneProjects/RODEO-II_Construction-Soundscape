@@ -1,0 +1,28 @@
+# Base packages
+basemap
+bathyreq
+cmasher
+cmocean
+h5py
+ipympl
+juliacall
+jupyterlab
+matplotlib
+netcdf4
+numpy
+pandas
+polars
+pyproj
+python-dotenv
+scipy
+seaborn
+tqdm
+
+# Install current package in editable mode
+-e .
+
+# Install core package
+-e ../core/
+
+# Install from GitHub repository
+git+ssh://git@github.com/TritonOA/TritonOA.git

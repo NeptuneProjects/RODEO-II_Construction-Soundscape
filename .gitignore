@@ -164,13 +164,10 @@ cython_debug/
 
 # Workspace
 .vscode
-data/
-demo/
-references/
-reports/
-results/
+/data
+/references
+/reports
+/results
 *.npy
 *.npz
-/old
-/products
 tmp/

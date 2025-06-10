@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 from pathlib import Path
 import tomllib
 
@@ -17,7 +18,7 @@ def main(args: argparse.Namespace) -> None:
     with open(args.event, "rb") as f:
         event_config = tomllib.load(f)["event"][0]
 
-    compute_event_metrics(event_config)
+    compute_event_metrics(event_config, Path(os.getenv("DBPATH")))
 
 
 if __name__ == "__main__":

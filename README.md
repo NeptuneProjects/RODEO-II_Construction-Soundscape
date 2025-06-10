@@ -4,7 +4,7 @@ William Jenkins, Ph.D.
 Scripps Institution of Oceanography
 University of California San Diego
 
-This repository depends on the [`rodeo` Python package](https://github.com/NeptuneProjects/RODEO-II).
+This repository depends on the [`rodeo`](https://github.com/NeptuneProjects/RODEO-II) Python package.
 
 ## Workflow
 

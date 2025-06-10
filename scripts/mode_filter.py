@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import argparse
 import logging
 from pathlib import Path
@@ -130,11 +129,7 @@ def main(args: argparse.Namespace) -> None:
     # plt.title("Noise covariance matrix")
     # plt.draw()
 
-
     U, s, Vh = linalg.svd(covar_signal)
-
-
-
 
     # plt.show()
 

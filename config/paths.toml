@@ -35,6 +35,6 @@ amb_db = "./data/amb.hdf5"
 # Max correlation databases
 max_corr_dir = "./data/max_corr"
 
-[computer.work-laptop]
+[computer.neptune2]
 # SHRU Data Directory
 shru_data = "/Volumes/T7_Shield/RODEOII/data/events"

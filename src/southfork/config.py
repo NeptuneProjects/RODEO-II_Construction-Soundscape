@@ -144,9 +144,10 @@ def load_paths() -> dict[str, Path]:
 
 def print_configuration() -> None:
     """Print the current configuration details"""
-    print(f"Configuration for: {current_computer}")
-    print(f"Machine ID stored in: {ENV_FILE}")
-    print("\nConfigured paths:")
+    print(f"[🆔] Machine alias: {current_computer}")
+    print(f"[🆔] Machine ID: {get_machine_id()}")
+    print(f"[🆔] Stored in: {ENV_FILE}")
+    print("Configured paths (✅ = created  ❌ = not created)")
     for name, path in paths.items():
         exists = "✅" if path.exists() else "❌"
         print(f"[{exists}] {name}: {path}")

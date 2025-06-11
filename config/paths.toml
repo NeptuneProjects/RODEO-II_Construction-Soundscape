@@ -16,7 +16,7 @@ inventory_config = "./config/inventory.toml"
 dispersion_dir = "./data/dispersion"
 # Root path for pulse metrics
 metrics_file = "./results/metrics.csv"
-metrics_tex_file = "./products/hdr_report/appendix_metrics/table.tex"
+metrics_tex_file = "./reports/hdr_report/appendix_metrics/table.tex"
 # Detector configurations
 detector_config_dir = "./config/events"
 # Event Index

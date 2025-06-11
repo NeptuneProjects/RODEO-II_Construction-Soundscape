@@ -1,3 +1,7 @@
+# Configuration file for paths used in the RODEOII project.
+# [default] section contains paths shared across all computers.
+# [computer.<name>] sections are paths for specific computers.
+
 [default]
 equipment_config = "./config/experiment/equipment.csv"
 # Acoustic Arrays
@@ -8,9 +12,29 @@ vla2_config = "./config/experiment/vla2.csv"
 turbine_config = "./config/experiment/turbines.csv"
 # SHRU Data Inventory
 inventory_config = "./config/inventory.toml"
+# Dispersion data path
+dispersion_dir = "./data/dispersion"
+# Root path for pulse metrics
+metrics_file = "./results/metrics.csv"
+metrics_tex_file = "./products/hdr_report/appendix_metrics/table.tex"
+# Detector configurations
+detector_config_dir = "./config/events"
+# Event Index
+event_config = "./config/events/events.csv"
+# Meteorological data
+wave_data = "./data/met/44085h2023.txt"
+wind_data = "./data/met/buzm3h2023.txt"
+met_data = "./data/met/data.csv"
+# Path for generic results
+results_dir = "./results"
+# Event results
+event_results_dir = "./results/events"
+# PSD Database
+psd_db = "./data/psd.hdf5"
+amb_db = "./data/amb.hdf5"
+# Max correlation databases
+max_corr_dir = "./data/max_corr"
 
-
-
-
-[computers]
-# SHRU Paths
+[computer.work-laptop]
+# SHRU Data Directory
+shru_data = "/Volumes/T7_Shield/RODEOII/data/events"

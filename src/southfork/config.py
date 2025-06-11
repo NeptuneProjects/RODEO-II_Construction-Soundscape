@@ -27,6 +27,20 @@ CONFIG_FILE = Path(__file__).parents[2] / "config" / "paths.toml"
 ENV_FILE = Path(__file__).parents[2] / ".env"
 
 
+def create_path(key: str, exist_ok: bool = True) -> Path:
+    """Create directory for a configured path if it doesn't exist"""
+    path = paths[key]
+    path.mkdir(parents=True, exist_ok=exist_ok)
+    return path
+
+
+def get_computer_alias() -> str:
+    """Get computer alias from .env file or create it if missing"""
+    get_or_create_env_file()
+    load_dotenv(ENV_FILE)
+    return os.getenv("COMPUTER_ALIAS", "default")
+
+
 def get_machine_id() -> str:
     """Get a persistent machine identifier that doesn't change with networks"""
     import uuid
@@ -88,6 +102,56 @@ def get_or_create_env_file() -> None:
     print(f"This file contains private information and should not be published.")
 
 
+def get_path(key, default=None, validate_exists=False):
+    """
+    Get a path with validation options
+
+    Args:
+        key: The path key from the config
+        default: Default path if key not found (string or Path)
+        validate_exists: If True, validate path exists
+
+    Returns:
+        Path object
+    """
+    if key not in paths and default is None:
+        raise KeyError(f"Path key '{key}' not found in configuration")
+
+    path = paths.get(key, Path(default) if default else None)
+
+    if validate_exists and not path.exists():
+        raise FileNotFoundError(f"Path does not exist: {path}")
+
+    return path
+
+
+def load_paths() -> dict[str, Path]:
+    """Load paths from TOML configuration file."""
+    if not CONFIG_FILE.exists():
+        raise FileNotFoundError(f"Configuration file not found: {CONFIG_FILE}")
+
+    with open(CONFIG_FILE, "rb") as f:
+        config = tomllib.load(f)
+
+    path_dict = config.get("default", {})
+    computer_alias = get_computer_alias()
+    computer_configs = config.get("computer", {})
+    if computer_alias in computer_configs:
+        path_dict.update(computer_configs[computer_alias])
+
+    return {k: Path(v) for k, v in path_dict.items()}
+
+
+def print_configuration() -> None:
+    """Print the current configuration details"""
+    print(f"Configuration for: {current_computer}")
+    print(f"Machine ID stored in: {ENV_FILE}")
+    print("\nConfigured paths:")
+    for name, path in paths.items():
+        exists = "✅" if path.exists() else "❌"
+        print(f"[{exists}] {name}: {path}")
+
+
 def update_machine_id(new_alias: str | None = None) -> None:
     """
     Update the MACHINE_ID line in the .env file.
@@ -132,70 +196,6 @@ def update_machine_id(new_alias: str | None = None) -> None:
     else:
         print("Computer alias unchanged")
     print("All other .env content preserved")
-
-
-def get_computer_alias() -> str:
-    """Get computer alias from .env file or create it if missing"""
-    get_or_create_env_file()
-    load_dotenv(ENV_FILE)
-    return os.getenv("COMPUTER_ALIAS", "default")
-
-
-def load_paths() -> dict[str, Path]:
-    """Load paths from TOML configuration file."""
-    if not CONFIG_FILE.exists():
-        raise FileNotFoundError(f"Configuration file not found: {CONFIG_FILE}")
-
-    with open(CONFIG_FILE, "rb") as f:
-        config = tomllib.load(f)
-
-    path_dict = config.get("default", {})
-    computer_alias = get_computer_alias()
-    computer_configs = config.get("computer", {})
-    if computer_alias in computer_configs:
-        path_dict.update(computer_configs[computer_alias])
-
-    return {k: Path(v) for k, v in path_dict.items()}
-
-
-def get_path(key, default=None, validate_exists=False):
-    """
-    Get a path with validation options
-
-    Args:
-        key: The path key from the config
-        default: Default path if key not found (string or Path)
-        validate_exists: If True, validate path exists
-
-    Returns:
-        Path object
-    """
-    if key not in paths and default is None:
-        raise KeyError(f"Path key '{key}' not found in configuration")
-
-    path = paths.get(key, Path(default) if default else None)
-
-    if validate_exists and not path.exists():
-        raise FileNotFoundError(f"Path does not exist: {path}")
-
-    return path
-
-
-def create_path(key: str, exist_ok: bool = True) -> Path:
-    """Create directory for a configured path if it doesn't exist"""
-    path = paths[key]
-    path.mkdir(parents=True, exist_ok=exist_ok)
-    return path
-
-
-def print_configuration() -> None:
-    """Print the current configuration details"""
-    print(f"Configuration for: {current_computer}")
-    print(f"Machine ID stored in: {ENV_FILE}")
-    print("\nConfigured paths:")
-    for name, path in paths.items():
-        exists = "✓" if path.exists() else "✗"
-        print(f"  {name}: {path} [{exists}]")
 
 
 paths = load_paths()

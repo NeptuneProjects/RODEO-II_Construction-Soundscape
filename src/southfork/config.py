@@ -34,11 +34,11 @@ def create_path(key: str, exist_ok: bool = True) -> Path:
     return path
 
 
-def get_computer_alias() -> str:
+def get_machine_alias() -> str:
     """Get computer alias from .env file or create it if missing"""
     get_or_create_env_file()
     load_dotenv(ENV_FILE)
-    return os.getenv("COMPUTER_ALIAS", "default")
+    return os.getenv("MACHINE_ALIAS", "default")
 
 
 def get_machine_id() -> str:
@@ -95,10 +95,10 @@ def get_or_create_env_file() -> None:
     with open(ENV_FILE, "w") as f:
         f.write(f"# Machine identification - DO NOT PUBLISH THIS FILE\n")
         f.write(f"MACHINE_ID={machine_id}\n")
-        f.write("COMPUTER_ALIAS=default\n")
+        f.write("MACHINE_ALIAS=default\n")
 
     print(f"Created new .env file with machine ID: {machine_id}")
-    print(f"Please edit {ENV_FILE} and set your COMPUTER_ALIAS.")
+    print(f"Please edit {ENV_FILE} and set your MACHINE_ALIAS.")
     print(f"This file contains private information and should not be published.")
 
 
@@ -134,10 +134,10 @@ def load_paths() -> dict[str, Path]:
         config = tomllib.load(f)
 
     path_dict = config.get("default", {})
-    computer_alias = get_computer_alias()
+    machine_alias = get_machine_alias()
     computer_configs = config.get("computer", {})
-    if computer_alias in computer_configs:
-        path_dict.update(computer_configs[computer_alias])
+    if machine_alias in computer_configs:
+        path_dict.update(computer_configs[machine_alias])
 
     return {k: Path(v) for k, v in path_dict.items()}
 
@@ -155,11 +155,11 @@ def print_configuration() -> None:
 def update_machine_id(new_alias: str | None = None) -> None:
     """
     Update the MACHINE_ID line in the .env file.
-    Optionally update the COMPUTER_ALIAS as well.
+    Optionally update the MACHINE_ALIAS as well.
     Preserves all other content in the file.
 
     Args:
-        new_alias: If provided, update the COMPUTER_ALIAS to this value
+        new_alias: If provided, update the MACHINE_ALIAS to this value
     """
     if not ENV_FILE.exists():
         get_or_create_env_file()
@@ -177,15 +177,15 @@ def update_machine_id(new_alias: str | None = None) -> None:
         if line.strip().startswith("MACHINE_ID="):
             lines[i] = f"MACHINE_ID={machine_id}\n"
             machine_id_exists = True
-        elif new_alias is not None and line.strip().startswith("COMPUTER_ALIAS="):
-            lines[i] = f"COMPUTER_ALIAS={new_alias}\n"
+        elif new_alias is not None and line.strip().startswith("MACHINE_ALIAS="):
+            lines[i] = f"MACHINE_ALIAS={new_alias}\n"
             alias_exists = True
 
     if not machine_id_exists:
         lines.append(f"MACHINE_ID={machine_id}\n")
 
     if new_alias is not None and not alias_exists:
-        lines.append(f"COMPUTER_ALIAS={new_alias}\n")
+        lines.append(f"MACHINE_ALIAS={new_alias}\n")
 
     with open(ENV_FILE, "w") as f:
         f.writelines(lines)
@@ -200,7 +200,7 @@ def update_machine_id(new_alias: str | None = None) -> None:
 
 paths = load_paths()
 
-current_computer = get_computer_alias()
+current_computer = get_machine_alias()
 
 __all__ = ["paths", "current_computer", "get_path", "create_path", "update_machine_id"]
 

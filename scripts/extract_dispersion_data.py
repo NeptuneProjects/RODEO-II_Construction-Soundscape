@@ -74,9 +74,9 @@ def main(args: argparse.Namespace):
             channels=[0, 1, 2, 3],
         )
 
-        fname = args.output / f"disp_{station}.npz"
-        ds.write(fname)
-        logging.info(f"Extracted data saved to {fname}")
+        # fname = args.output / f"disp_{station}.npz"
+        # ds.write(fname)
+        # logging.info(f"Extracted data saved to {fname}")
 
     logging.info("Data extraction complete.")
 

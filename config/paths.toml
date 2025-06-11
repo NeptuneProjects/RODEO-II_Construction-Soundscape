@@ -1,0 +1,16 @@
+[default]
+equipment_config = "./config/experiment/equipment.csv"
+# Acoustic Arrays
+geosled_config = "./config/experiment/geosled.csv"
+vla1_config = "./config/experiment/vla1.csv"
+vla2_config = "./config/experiment/vla2.csv"
+# Turbine Locations
+turbine_config = "./config/experiment/turbines.csv"
+# SHRU Data Inventory
+inventory_config = "./config/inventory.toml"
+
+
+
+
+[computers]
+# SHRU Paths

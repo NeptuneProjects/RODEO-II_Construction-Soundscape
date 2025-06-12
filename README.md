@@ -1,4 +1,4 @@
-# RODEO II Data Analysis Workflow
+# RODEO II - South Fork Wind Data Analysis Workflow
 
 William Jenkins, Ph.D.  
 Scripps Institution of Oceanography

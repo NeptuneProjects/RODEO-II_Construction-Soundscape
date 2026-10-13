@@ -1,0 +1,99 @@
+# Vineyard Wind, 1 December 2023 (RODEO II): pile AN36.
+#
+# Raw data are those fetched by vineyard_wind/scripts/get_data.sh. Point
+# VINEYARD_DATA at that directory (by default the vineyard_wind checkout next
+# to this repository).
+
+name = "vineyard"
+output_dir = "results/vineyard"
+events = "config/sites/vineyard/events.csv"
+piles = "config/sites/vineyard/piles.csv"
+
+# The original Vineyard Wind analysis normalized unsmoothed energy by the
+# maximum within hand-picked time ranges, with per-sensor thresholds. These
+# generic settings find all 2,928 of its strikes on every sensor, plus the
+# soft start before its first range, without hand-picked ranges. The neighbor
+# check rejects mooring noise on VLA2.
+[detector]
+band = [100.0, 300.0]
+threshold = 0.05
+min_interval_s = 1.0
+smooth_s = 0.02
+normalization_window_s = 60.0
+min_snr_db = 10.0
+min_neighbors = 2
+neighbor_window_s = 4.0
+
+[extract]
+pre_s = 0.6
+post_s = 0.6
+filter = { type = "highpass", freq = 10.0 }
+
+[ambient]
+offset_s = 660.0
+duration_s = 600.0
+interval_s = 60.0
+psd_segment_s = 5.0
+psd_overlap = 0.9
+filter = { type = "highpass", freq = 10.0 }
+
+[pulse_psd]
+nperseg = 16384
+overlap = 0.95
+
+[[sensors]]
+name = "3DVHA"
+latitude = 41.07138
+longitude = -70.35634
+water_depth_m = 39.0
+channels = [7]
+detect_channel = 7
+
+[sensors.source]
+type = "glob"
+directory = "${VINEYARD_DATA:-../vineyard_wind/data/acoustic/raw}"
+pattern = "3DVHA/acoustics/*.bin"
+file_format = "whoi3dvha"
+
+[sensors.calibration]
+type = "frequency_response"
+file = "config/sites/vineyard/calibration/3dvha_cal.csv"
+correction_db = -2.5 # manufacturer correction (vineyard.readers.calibrate_3dvha)
+
+[[sensors]]
+name = "VLA1" # SHRU 905
+latitude = 41.07135
+longitude = -70.34438
+water_depth_m = 38.5
+channels = [0, 1, 2, 3]
+detect_channel = 3
+
+[sensors.source]
+type = "glob"
+directory = "${VINEYARD_DATA:-../vineyard_wind/data/acoustic/raw}"
+pattern = "VLA1_shru905*/[!._]*.D23"
+file_format = "SHRU"
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-203.9, -204.0, -203.9, -204.1]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+[[sensors]]
+name = "VLA2" # SHRU 920
+latitude = 41.07133
+longitude = -70.28457
+water_depth_m = 32.5
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "${VINEYARD_DATA:-../vineyard_wind/data/acoustic/raw}"
+pattern = "VLA2_shru920*/[!._]*.D23"
+file_format = "SHRU"
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-204.0, -204.1, -204.0, -204.2]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]

@@ -1,16 +1,56 @@
 [build-system]
-requires = ["setuptools >= 79.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name = "south_fork_wind"  # Replace with your desired project name
-version = "0.0.1"
-description = "A local Python package for project imports"
-authors = [
-    { name = "William F. Jenkins", email = "wfjenkins@ucsd.edu" }
-]
-dependencies = []  # Add any dependencies here
+name = "soundscape"
+version = "0.1.0"
+description = "Soundscape analysis of offshore pile driving, generalized across wind farm sites"
+authors = [{ name = "William F. Jenkins", email = "wfjenkins@ucsd.edu" }]
 requires-python = ">= 3.12"
+dependencies = [
+    "h5py",
+    "matplotlib",
+    "numpy",
+    "polars<2",  # TritonOA inventory loading breaks on polars 2
+    "pydantic>=2",
+    "pyproj",
+    "scipy",
+    "TritonOA",
+]
 
-[tool.setuptools.packages.find]
-where = ["src"]  # Specifies where to find the package
+[project.optional-dependencies]
+# Legacy South Fork scripts in scripts/ (not yet ported to the soundscape package).
+legacy = [
+    "basemap",
+    "bathyreq",
+    "cmasher",
+    "cmocean",
+    "juliacall",
+    "jupyterlab",
+    "netcdf4",
+    "pandas",
+    "python-dotenv",
+    "rodeo",
+    "seaborn",
+    "tqdm",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[project.scripts]
+soundscape = "soundscape.workflow:main"
+
+[tool.uv.sources]
+rodeo = { path = "../core", editable = true }
+TritonOA = { git = "ssh://git@github.com/TritonOA/TritonOA.git" }
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/soundscape"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

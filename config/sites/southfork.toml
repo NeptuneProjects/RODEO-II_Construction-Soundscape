@@ -1,0 +1,170 @@
+# South Fork Wind, summer 2023 (RODEO II).
+#
+# Raw data live on the analysis server under /project/RODEO_II_South_Fork_Data.
+# Elsewhere, point SOUTHFORK_DATA at a copy or mount of that directory.
+
+name = "southfork"
+output_dir = "results/southfork"
+events = "config/sites/southfork/events.csv"
+piles = "config/sites/southfork/piles.csv"
+
+[detector]
+band = [100.0, 300.0]
+threshold = 0.05
+min_interval_s = 1.0
+smooth_s = 0.02
+normalization_window_s = 60.0
+min_snr_db = 10.0
+min_neighbors = 2
+neighbor_window_s = 4.0
+
+[extract]
+pre_s = 0.6
+post_s = 0.6
+filter = { type = "highpass", freq = 10.0 }
+
+[ambient]
+offset_s = 660.0
+duration_s = 600.0
+interval_s = 60.0
+psd_segment_s = 5.0
+psd_overlap = 0.9
+filter = { type = "highpass", freq = 10.0 }
+
+[pulse_psd]
+nperseg = 16384
+overlap = 0.95
+
+# ---------------------------------------------------------------------------
+# Sensors. Channels are hydrophone channels on each SHRU; strikes are detected
+# on `detect_channel` and every channel is windowed at the detected times.
+# ---------------------------------------------------------------------------
+
+[[sensors]]
+name = "Tetra" # SHRU 921 on the geosled
+latitude = 41.08493
+longitude = -71.09504
+water_depth_m = 33.7
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "${SOUTHFORK_DATA:-/project/RODEO_II_South_Fork_Data}/Leg4_2023_AUG_12/SHRU_921"
+pattern = "SHRU_921*/[!._]*.D23"
+file_format = "SHRU"
+clock = { time_check_0 = 2023-06-23T18:00:00, time_check_1 = 2023-08-12T14:00:00, offset_0 = 120e-9, offset_1 = -5.920e-3 }
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-203.8, -203.8, -203.5, -203.9]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+[[sensors]]
+name = "VLA1" # SHRU 905
+latitude = 41.08506
+longitude = -71.07804
+water_depth_m = 34.5
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "${SOUTHFORK_DATA:-/project/RODEO_II_South_Fork_Data}/Leg4_2023_AUG_12/SHRU_905"
+pattern = "SHRU_905*/[!._]*.D23"
+file_format = "SHRU"
+clock = { time_check_0 = 2023-06-23T19:00:00, time_check_1 = 2023-08-12T15:00:00, offset_0 = 280e-9, offset_1 = -3.080e-3 }
+
+# To reuse the inventory already built on the server instead of rescanning
+# file headers, replace the source above with:
+#   type = "inventory"
+#   inventory = "data/inventory/SHRU905_VLA1_FileInfo.csv"
+#   path_map = { "/project/RODEO_II_South_Fork_Data" = "${SOUTHFORK_DATA:-/project/RODEO_II_South_Fork_Data}" }
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-204.0, -204.1, -204.0, -204.2]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+[[sensors]]
+name = "VLA2" # SHRU 920
+latitude = 41.0851
+longitude = -71.01265
+water_depth_m = 36.3
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "${SOUTHFORK_DATA:-/project/RODEO_II_South_Fork_Data}/Leg4_2023_AUG_12/SHRU_920"
+pattern = "SHRU_920*/[!._]*.D23"
+file_format = "SHRU"
+clock = { time_check_0 = 2023-06-23T17:00:00, time_check_1 = 2023-08-12T12:00:00, offset_0 = 280e-9, offset_1 = 990e-6 }
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-203.9, -204.0, -203.9, -204.1]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+# ---------------------------------------------------------------------------
+# Exclusions carried over from the 2025 analysis (scripts/soundscape/
+# ambient_noise.py and config/events/*.toml). Reasons were not recorded there;
+# remove an entry to include it now that detection is automatic.
+# ---------------------------------------------------------------------------
+
+[[exclude]]
+event = "Z01-A"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "Z01-B"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "Z01-C"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "Z01-D"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A04"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A01"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A07"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A12-A"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A02"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A11"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A13"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A14"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A15"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."

@@ -8,6 +8,7 @@ Stages, in order:
     metrics    per-pulse metrics; also writes the site-wide summary
     psd        power spectral density of each pulse
     ambient    ambient noise preceding each event
+    report     figures and LaTeX tables
     run        all of the above
 """
 
@@ -17,6 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
+from tritonoa.data.reader import NoDataError
 
 from soundscape import detect as det
 from soundscape.config import SiteConfig, load_site
@@ -24,6 +26,7 @@ from soundscape.events import Event, load_events
 from soundscape.extract import extract
 from soundscape.metrics import compute_metrics
 from soundscape.plotting import plot_detections
+from soundscape.report import make_report
 from soundscape.sources import get_source
 from soundscape.spectra import ambient_noise, pulse_psd, write_ambient_psd
 
@@ -91,10 +94,11 @@ class Workflow:
 
     def extract(self) -> None:
         def _extract(event: Event, sensor) -> None:
-            detections = pl.read_csv(
-                self.site.detections_path(event.name, sensor.name),
-                schema_overrides={"time": pl.Datetime("us")},
-            )
+            path = self.site.detections_path(event.name, sensor.name)
+            if not path.exists():
+                logger.warning(f"[extract] missing {path}")
+                return
+            detections = pl.read_csv(path, schema_overrides={"time": pl.Datetime("us")})
             if detections.is_empty():
                 logger.warning(f"[extract] {event.name}/{sensor.name}: no strikes")
                 return
@@ -152,12 +156,16 @@ class Workflow:
         tables = []
 
         def _ambient(event: Event, sensor) -> None:
-            table, spectra = ambient_noise(
-                sensor,
-                self.site.inventory_path(sensor.name),
-                event,
-                self.site.ambient,
-            )
+            try:
+                table, spectra = ambient_noise(
+                    sensor,
+                    self.site.inventory_path(sensor.name),
+                    event,
+                    self.site.ambient,
+                )
+            except NoDataError:
+                logger.warning(f"[ambient] {event.name}/{sensor.name}: no data")
+                return
             write_ambient_psd(
                 self.site.ambient_path, event, sensor, spectra, self.site.ambient
             )
@@ -175,6 +183,9 @@ class Workflow:
                 new = pl.concat([old, new], how="vertical_relaxed")
             new.sort("event", "sensor", "channel", "interval_start").write_csv(path)
 
+    def report(self) -> None:
+        make_report(self.site, self.events)
+
     def run(self) -> None:
         self.inventory()
         self.detect()
@@ -182,9 +193,19 @@ class Workflow:
         self.metrics()
         self.psd()
         self.ambient()
+        self.report()
 
 
-COMMANDS = ["inventory", "detect", "extract", "metrics", "psd", "ambient", "run"]
+COMMANDS = [
+    "inventory",
+    "detect",
+    "extract",
+    "metrics",
+    "psd",
+    "ambient",
+    "report",
+    "run",
+]
 
 
 def main() -> None:
@@ -193,13 +214,19 @@ def main() -> None:
     )
     parser.add_argument("command", choices=COMMANDS)
     parser.add_argument(
-        "--site", type=Path, required=True, help="Site TOML, e.g. config/sites/southfork.toml"
+        "--site",
+        type=Path,
+        required=True,
+        help="Site TOML, e.g. config/sites/southfork.toml",
     )
     parser.add_argument(
-        "--event", action="append", help="Only this event (repeatable). "
-        "Naming an event overrides its exclusion."
+        "--event",
+        action="append",
+        help="Only this event (repeatable). Naming an event overrides its exclusion.",
     )
-    parser.add_argument("--sensor", action="append", help="Only this sensor (repeatable)")
+    parser.add_argument(
+        "--sensor", action="append", help="Only this sensor (repeatable)"
+    )
     parser.add_argument(
         "--reselect",
         action="store_true",

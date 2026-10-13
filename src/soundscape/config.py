@@ -239,6 +239,31 @@ class PulsePSDConfig(StrictModel):
     overlap: float = Field(default=0.95, ge=0.0, lt=1.0)
 
 
+class ReportConfig(StrictModel):
+    """Figures and LaTeX tables.
+
+    `met` is an optional CSV of weather observations with columns `datetime`,
+    `WSPD` (wind speed, m/s) and `WVHT` (significant wave height, m), averaged
+    over each event in the event tables.
+    """
+
+    style: Path | None = None
+    dpi: int = 300
+    met: Path | None = None
+    metrics: list[str] = [
+        "SPL_rms",
+        "SPL_pk",
+        "SPL_pkpk",
+        "SEL",
+        "SEL_cum",
+        "t_rise",
+        "t_decay",
+        "kurtosis",
+    ]
+    histogram_metric: str = "SPL_pk"
+    range_metrics: list[str] = ["SPL_pk", "SPL_pkpk", "SEL"]
+
+
 # --------------------------------------------------------------------------
 # Site
 # --------------------------------------------------------------------------
@@ -292,6 +317,7 @@ class SiteConfig(StrictModel):
     extract: ExtractConfig = ExtractConfig()
     ambient: AmbientConfig = AmbientConfig()
     pulse_psd: PulsePSDConfig = PulsePSDConfig()
+    report: ReportConfig = ReportConfig()
 
     @model_validator(mode="after")
     def _unique_sensors(self) -> "SiteConfig":
@@ -341,6 +367,10 @@ class SiteConfig(StrictModel):
 
     def pulse_psd_path(self, event: str, sensor: str) -> Path:
         return self.event_dir(event) / f"psd_{sensor}.h5"
+
+    @property
+    def report_dir(self) -> Path:
+        return self.output_dir / "report"
 
     @property
     def metrics_summary_path(self) -> Path:

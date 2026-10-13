@@ -82,3 +82,33 @@ def test_excluded_pairs_are_skipped(site):
     w._each(lambda e, s: called.append((e.name, s.name)), "test")
     assert called == []
     assert load_events(site)
+
+
+def test_report(wf, site):
+    site.ambient.offset_s = -600.0
+    site.ambient.duration_s = 120.0
+    wf.detect(plot=False)
+    wf.extract()
+    wf.metrics()
+    wf.psd()
+    wf.ambient()
+    wf.report()
+
+    figs = site.report_dir / "figures"
+    for name in ("metrics.png", "levels.png", "psd.png"):
+        assert (figs / "E1" / name).stat().st_size > 0
+    for metric in site.report.range_metrics:
+        assert (figs / f"{metric}_vs_range.png").exists()
+
+    tables = site.report_dir / "tables"
+    event = (tables / "E1.tex").read_text()
+    assert event.startswith("\\begin{tabular}") and "\\bottomrule" in event
+    # One row per metric and sensor, plus ambient.
+    assert event.count("\\\\") == 1 + len(site.report.metrics) + 1
+    assert "Ambient" in event
+    detections = (tables / "detections.tex").read_text()
+    assert "E1 & P1 & VLA1" in detections
+    pulses = (tables / "pulses.tex").read_text()
+    n_pulses = len(pl.read_csv(site.metrics_path("E1", "VLA1")).filter("valid"))
+    assert sum(line.startswith("E1 & VLA1 &") for line in pulses.splitlines()) == n_pulses
+    assert pulses.count("\\makecell") == 2 * (len(site.report.metrics) - 1)

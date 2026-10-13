@@ -22,6 +22,9 @@ graph LR
    A[inventory] --> B[detect] --> C[extract] --> D[metrics]
    C --> E[psd]
    A --> F[ambient]
+   D --> G[report]
+   E --> G
+   F --> G
 ```
 
 | Stage       | What it does                                                                 |
@@ -32,6 +35,7 @@ graph LR
 | `metrics`   | Per-pulse metrics for each channel; writes a site-wide summary table.        |
 | `psd`       | Power spectral density of each pulse.                                        |
 | `ambient`   | SPL and PSD of ambient noise in a window preceding each event.               |
+| `report`    | Figures and LaTeX tables (see [Figures and tables](#figures-and-tables)).    |
 
 Run from the repository root:
 
@@ -119,8 +123,38 @@ results/<site>/
 │   └── psd_<sensor>.h5
 ├── metrics.csv                     # all events, sensors, channels
 ├── ambient.h5                      # ambient PSD per event/sensor
-└── ambient_spl.csv                 # ambient SPL per interval
+├── ambient_spl.csv                 # ambient SPL per interval
+└── report/                         # figures and LaTeX tables
 ```
+
+## Figures and tables
+
+`soundscape report` writes, for each event:
+
+- `figures/<event>/metrics.png`: metric time series, one column per sensor (nearest first), colored by channel.
+- `figures/<event>/psd.png`: pulse PSD (mean ± 2σ, in dB) against the ambient PSD, per sensor and channel.
+- `figures/<event>/levels.png`: distribution of `histogram_metric` per channel and sensor.
+- `tables/<event>.tex`: mean, median, standard deviation, minimum, and maximum of each metric per sensor, one value per channel separated by slashes, with the ambient SPL and, if configured, the mean wind speed and significant wave height.
+
+and for the whole site:
+
+- `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
+- `tables/detections.tex`: strikes and median SNR per event and sensor.
+- `tables/pulses.tex`: every pulse and channel, as a `longtable` for an appendix.
+
+Figures and tables use valid pulses only. Configure them in `[report]`:
+
+```toml
+[report]
+style = "config/jasa_fig_style.mplstyle"  # optional matplotlib style
+met = "data/met/data.csv"                 # optional: datetime, WSPD, WVHT columns
+metrics = ["SPL_rms", "SPL_pk", "SPL_pkpk", "SEL", "SEL_cum", "t_rise", "t_decay", "kurtosis"]
+histogram_metric = "SPL_pk"
+range_metrics = ["SPL_pk", "SPL_pkpk", "SEL"]
+dpi = 300
+```
+
+The tables need `\usepackage{booktabs, longtable, makecell}`.
 
 ## Metrics
 

@@ -35,6 +35,10 @@ filter = { type = "highpass", freq = 10.0 }
 nperseg = 16384
 overlap = 0.95
 
+[report]
+style = "config/jasa_fig_style.mplstyle"
+met = "data/met/data.csv" # NDBC 44085 waves and BUZM3 wind (scripts/data/met_data.py)
+
 # ---------------------------------------------------------------------------
 # Sensors. Channels are hydrophone channels on each SHRU; strikes are detected
 # on `detect_channel` and every channel is windowed at the detected times.

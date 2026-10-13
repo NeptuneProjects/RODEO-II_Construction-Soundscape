@@ -31,7 +31,7 @@ class Record:
     sampling_rate: float
     time_diff: np.ndarray
     corr: np.ndarray
-    etime: np.ndarray
+    lag: np.ndarray
 
     def save_h5(self, path: Path) -> None:
         """Save the record to an HDF5 file.
@@ -41,10 +41,11 @@ class Record:
         /station
             /time_diff
             /corr
-            /etime
+            /lag
         ```
-        `time_diff` and `corr` are 3D arrays with the shape
-        `(num_channels, num_detections, num_detections)`.
+        `time_diff` (us), `corr`, and `lag` (s) are 3D arrays with the shape
+        `(num_channels, num_detections, num_detections)`. `lag[c, i, j]` is
+        the lag of maximum correlation; positive means detection j leads i.
 
         Args:
             path: Path to the output HDF5 file.
@@ -65,7 +66,7 @@ class Record:
             grp.attrs["sampling_rate"] = self.sampling_rate
             grp.create_dataset("time_diff", data=self.time_diff)
             grp.create_dataset("corr", data=self.corr)
-            grp.create_dataset("etime", data=self.etime)
+            grp.create_dataset("lag", data=self.lag)
 
 
 def condition_signal(stream: DataStream, target_fs: float) -> tuple[DataStream, int]:
@@ -163,7 +164,7 @@ def main(args: argparse.Namespace) -> None:
     for event_dir in event_dirs:
         event_name = event_dir.name.split("_")[0]
 
-        if args.event is not None and event_name != args.event:
+        if args.event is not None and event_name not in args.event:
             continue
         if args.omit is not None and event_name in args.omit:
             continue
@@ -181,12 +182,12 @@ def main(args: argparse.Namespace) -> None:
             num_detections = data.shape[1]
             time_diff = np.full((num_channels, num_detections, num_detections), np.nan)
             max_corr = np.full((num_channels, num_detections, num_detections), np.nan)
-            etime = np.full((num_channels, num_detections, num_detections), np.nan)
+            lag = np.full((num_channels, num_detections, num_detections), np.nan)
             logging.info(
                 f"Data shape: {num_channels} channels; {num_detections} detections."
             )
             logging.info(
-                f"Size of arrays: {compute_array_size([max_corr, etime, time_diff]) / (1024 ** 3):.2f} GB."
+                f"Size of arrays: {compute_array_size([max_corr, lag, time_diff]) / (1024 ** 3):.2f} GB."
             )
 
             threads = jl.seval("Threads.nthreads()")
@@ -196,15 +197,15 @@ def main(args: argparse.Namespace) -> None:
                 jl_data = jl.seval("x -> Matrix{Float64}(x)")(data[i])
                 jl_time = jl.seval("x -> Vector{Float64}(x)")(t0[i])
 
-                # logging.info(f"Computing dt for channel {i}.")
-                # time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
-                # logging.info(f"Computed dt for channel {i}.")
+                logging.info(f"Computing dt for channel {i}.")
+                time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
+                logging.info(f"Computed dt for channel {i}.")
 
-                logging.info(f"Computing corr & etime for channel {i}.")
-                max_corr_mat, etime_mat = jl.CrossCorr.corr_matrix(jl_data, target_fs)
+                logging.info(f"Computing corr & lag for channel {i}.")
+                max_corr_mat, shifts_mat = jl.CrossCorr.corr_matrix(jl_data)
                 max_corr[i] = np.array(max_corr_mat)
-                etime[i] = np.array(etime_mat)
-                logging.info(f"Computed corr & etime for channel {i}.")
+                lag[i] = np.array(shifts_mat) / target_fs
+                logging.info(f"Computed corr & lag for channel {i}.")
 
             record = Record(
                 event=event_name,
@@ -212,7 +213,7 @@ def main(args: argparse.Namespace) -> None:
                 sampling_rate=target_fs,
                 time_diff=time_diff,
                 corr=max_corr,
-                etime=etime,
+                lag=lag,
             )
 
             record.save_h5(args.output / f"maxcorr_{event_name}.h5")
@@ -233,9 +234,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--event",
-        type=list[str],
+        type=str,
         nargs="+",
-        help="Name of the event to process.",
+        help="Name of the event(s) to process.",
         default=None,
     )
     parser.add_argument(
@@ -265,5 +266,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     os.environ["JULIA_NUM_THREADS"] = str(args.max_workers)
+    os.environ["PYTHON_JULIACALL_THREADS"] = str(args.max_workers)
     os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
     main(args)

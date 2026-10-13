@@ -138,17 +138,17 @@ def main(args: argparse.Namespace) -> None:
     for r in ranges:
         logging.info(f"Processing range: {r} m")
 
-        chan_resp_time, chan_resp_freq = mdl.compute_greens_function(
+        greens_autocorr, greens_freq = mdl.compute_greens_function(
             env, (40, fs), fs, num_samples, r, freq
         )
 
         fig = plotting.plot_signal(
             *double_to_single_sided_ifft(
                 time,
-                chan_resp_time,
+                greens_autocorr,
             ),
-            *double_to_single_sided_fft(freq, chan_resp_freq),
-            "Channel Response",
+            *double_to_single_sided_fft(freq, greens_freq),
+            "Green's Function (autocorrelation, spectrum)",
         )
         # plt.draw()
         fig.savefig(
@@ -158,13 +158,13 @@ def main(args: argparse.Namespace) -> None:
             facecolor="w",
         )
 
-        Y1 = S1 * chan_resp_freq
-        Y2 = S2 * chan_resp_freq
+        Y1 = S1 * greens_freq
+        Y2 = S2 * greens_freq
         y1 = fft.ifft(Y1, n=num_samples)
         y2 = fft.ifft(Y2, n=num_samples)
 
         # Compute cross-power spectra
-        Y12 = P12 * np.abs(chan_resp_freq) ** 2
+        Y12 = P12 * np.abs(greens_freq) ** 2
 
         # Compute inverse FFTs
         y12 = np.real_if_close(fft.ifft(Y12, n=num_samples))
@@ -172,7 +172,7 @@ def main(args: argparse.Namespace) -> None:
         # Compute coherence
         RY12 = (
             np.abs(S1 * np.conj(S2)) ** 2
-            * np.abs(chan_resp_freq) ** 2
+            * np.abs(greens_freq) ** 2
             / (np.abs(S1) * np.abs(S2))
         )
 

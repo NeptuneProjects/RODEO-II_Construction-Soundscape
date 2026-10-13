@@ -2,14 +2,11 @@
 
 from pathlib import Path
 
-import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import polars as pl  # noqa: E402
-
-from soundscape.config import DetectorConfig  # noqa: E402
+from soundscape.config import DetectorConfig
 
 
 def plot_detections(
@@ -42,8 +39,14 @@ def plot_detections(
         )
     ax0.scatter(t[strike], energy_db[strike], s=2, c="C3", label="strike")
     ax0.plot(t, noise_db, c="k", lw=0.8, label="noise floor")
-    ax0.plot(t, noise_db + config.min_snr_db, c="k", lw=0.8, ls="--",
-             label=f"noise + {config.min_snr_db:g} dB")
+    ax0.plot(
+        t,
+        noise_db + config.min_snr_db,
+        c="k",
+        lw=0.8,
+        ls="--",
+        label=f"noise + {config.min_snr_db:g} dB",
+    )
     ax0.set_ylabel("Band energy (dB re 1 uPa²)")
     ax0.set_title(
         f"{title}: {strike.sum()} strikes, band {config.band[0]:g}-"

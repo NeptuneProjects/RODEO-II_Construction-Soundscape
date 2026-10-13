@@ -34,7 +34,9 @@ _FILTER_PAD_S = 5.0
 _MAX_GAP_FRACTION = 0.01
 
 
-def apply_filter(data: np.ndarray, fs: float, config: FilterConfig | None) -> np.ndarray:
+def apply_filter(
+    data: np.ndarray, fs: float, config: FilterConfig | None
+) -> np.ndarray:
     if config is None:
         return data
     sos = butter(config.order, config.freq, btype=config.type, fs=fs, output="sos")
@@ -60,8 +62,8 @@ def window_pulses(
         waveforms (n, n_channels, n_samples), window start times, and a mask
         that is False where the window is out of range or mostly zero-filled.
     """
-    n_pre = int(round(pre_s * seg.sampling_rate))
-    n_samples = n_pre + int(round(post_s * seg.sampling_rate))
+    n_pre = round(pre_s * seg.sampling_rate)
+    n_samples = n_pre + round(post_s * seg.sampling_rate)
     out = np.zeros((len(times), seg.data.shape[0], n_samples), dtype=np.float32)
     starts = np.empty(len(times), dtype="datetime64[us]")
     valid = np.ones(len(times), dtype=bool)
@@ -143,7 +145,9 @@ def extract(
     logger.info(f"{event.name}/{sensor.name}: {len(wf)} pulses -> {destination}")
 
 
-def read_pulses(path: Path, waveforms: bool = True) -> tuple[np.ndarray | None, dict, dict]:
+def read_pulses(
+    path: Path, waveforms: bool = True
+) -> tuple[np.ndarray | None, dict, dict]:
     """Read a pulse file.
 
     Returns:

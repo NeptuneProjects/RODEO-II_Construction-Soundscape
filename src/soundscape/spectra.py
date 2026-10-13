@@ -18,7 +18,9 @@ from soundscape.sources import read_segment
 logger = logging.getLogger(__name__)
 
 
-def ambient_window(event: Event, config: AmbientConfig) -> tuple[np.datetime64, np.datetime64]:
+def ambient_window(
+    event: Event, config: AmbientConfig
+) -> tuple[np.datetime64, np.datetime64]:
     start = event.start - np.timedelta64(int(config.offset_s * 1e6), "us")
     return start, start + np.timedelta64(int(config.duration_s * 1e6), "us")
 
@@ -34,7 +36,7 @@ def ambient_noise(
     start, end = ambient_window(event, config)
     seg = read_segment(sensor, inventory, start, end)
     fs = seg.sampling_rate
-    n_int = int(round(config.interval_s * fs))
+    n_int = round(config.interval_s * fs)
     n_full = seg.data.shape[1] // n_int
 
     def _blocks(x: np.ndarray) -> np.ndarray:
@@ -46,7 +48,7 @@ def ambient_noise(
     blocks = _blocks(data)
     spl = _db_power(np.mean(blocks**2, axis=-1))
 
-    nperseg = int(round(config.psd_segment_s * fs))
+    nperseg = round(config.psd_segment_s * fs)
     freqs, psd = welch(
         data,
         fs=fs,
@@ -126,4 +128,6 @@ def pulse_psd(pulses_path: Path, config: PulsePSDConfig, destination: Path) -> N
             f.create_dataset(k, data=arrays[k])
         f.create_dataset("time", data=arrays["time"].astype(np.int64))
         f.attrs.update(attrs)
-        f.attrs.update({"units": "uPa^2/Hz", "nperseg": nperseg, "overlap": config.overlap})
+        f.attrs.update(
+            {"units": "uPa^2/Hz", "nperseg": nperseg, "overlap": config.overlap}
+        )

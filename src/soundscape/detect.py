@@ -48,7 +48,7 @@ def band_energy(
     """Zero-phase band-pass, square, and smooth with a centered moving average."""
     sos = butter(order, band, btype="bandpass", fs=fs, output="sos")
     energy = sosfiltfilt(sos, x) ** 2
-    n = int(round(smooth_s * fs))
+    n = round(smooth_s * fs)
     if n > 1:
         energy = uniform_filter1d(energy, size=n, mode="nearest")
     return energy
@@ -60,9 +60,7 @@ def noise_floor(energy: np.ndarray, recorded: np.ndarray) -> float:
     return float(np.median(values)) if values.size else np.nan
 
 
-def find_candidates(
-    energy: np.ndarray, fs: float, min_interval_s: float
-) -> np.ndarray:
+def find_candidates(energy: np.ndarray, fs: float, min_interval_s: float) -> np.ndarray:
     distance = max(1, int(min_interval_s * fs))
     return find_peaks(energy, distance=distance)[0]
 

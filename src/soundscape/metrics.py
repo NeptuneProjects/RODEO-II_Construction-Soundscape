@@ -73,9 +73,10 @@ def pulse_metrics(x: np.ndarray, fs: float) -> dict[str, np.ndarray]:
     energy = x**2
     i0, i1, cum = energy_interval(energy)
     n90 = np.maximum(i1 - i0, 1)
-    e90 = np.take_along_axis(cum, i1[..., None], -1)[..., 0] - np.take_along_axis(
-        cum, i0[..., None], -1
-    )[..., 0]
+    e90 = (
+        np.take_along_axis(cum, i1[..., None], -1)[..., 0]
+        - np.take_along_axis(cum, i0[..., None], -1)[..., 0]
+    )
     i_pk = np.argmax(energy, axis=-1)
 
     return {

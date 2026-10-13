@@ -122,7 +122,9 @@ def neutralize_conditioning(df: pl.DataFrame) -> pl.DataFrame:
     cols = []
     for col, value in _NEUTRAL_CONDITIONING.items():
         if col in df.columns:
-            values = [float(v) for row in df[col].drop_nulls() for v in row.split(",") if v]
+            values = [
+                float(v) for row in df[col].drop_nulls() for v in row.split(",") if v
+            ]
             if any(v != float(value) for v in values):
                 logger.warning(
                     f"Inventory column '{col}' is not neutral; it is reset and "
@@ -151,7 +153,7 @@ class Segment:
         return self.time_init + self.duration(self.data.shape[1])
 
     def duration(self, n: int) -> np.timedelta64:
-        return np.timedelta64(int(round(n / self.sampling_rate * 1e6)), "us")
+        return np.timedelta64(round(n / self.sampling_rate * 1e6), "us")
 
     def times(self) -> np.ndarray:
         offsets = np.arange(self.data.shape[1]) / self.sampling_rate * 1e6
@@ -159,7 +161,7 @@ class Segment:
 
     def index(self, t: np.datetime64) -> int:
         seconds = (t - self.time_init) / np.timedelta64(1, "s")
-        return int(round(seconds * self.sampling_rate))
+        return round(seconds * self.sampling_rate)
 
 
 def read_segment(

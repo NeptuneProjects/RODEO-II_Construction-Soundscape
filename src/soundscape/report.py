@@ -23,6 +23,7 @@ import polars as pl
 
 from soundscape.config import SiteConfig
 from soundscape.events import source_range
+from soundscape.metrics import read_table
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +71,7 @@ def tex_escape(text: str) -> str:
 
 def load_metrics(site: SiteConfig) -> pl.DataFrame:
     """Site-wide metrics table, valid pulses only."""
-    df = pl.read_csv(site.metrics_summary_path, try_parse_dates=True)
-    return df.filter(pl.col("valid"))
+    return read_table(site.metrics_summary_path).filter(pl.col("valid"))
 
 
 def sensors_by_range(df: pl.DataFrame) -> list[tuple[str, float]]:
@@ -355,6 +355,23 @@ def event_table(
     sensors = sensors_by_range(df)
     columns = ["Metric", "Sensor", "Mean", "Median", "Std", "Min", "Max"]
     rows = []
+    if "depth_m" in df.columns:
+        for label, col, fmt in (
+            ("Hydrophone depth (m)", "depth_m", lambda v: _num(v, 1)),
+            ("Hydrophone S/N", "serial_number", lambda v: v or "--"),
+        ):
+            for k, (sensor, _) in enumerate(sensors):
+                per_ch = (
+                    df.filter(pl.col("sensor") == sensor)
+                    .group_by("channel")
+                    .agg(pl.col(col).first())
+                    .sort("channel")
+                )
+                rows.append(
+                    [label if k == 0 else "", tex_escape(sensor)]
+                    + ["/".join(fmt(v) for v in per_ch[col].to_list())]
+                    + [""] * 4
+                )
     for metric in metrics:
         digits = 1 if metric.startswith(("SPL", "SEL")) else 2
         for k, (sensor, _) in enumerate(sensors):
@@ -443,12 +460,11 @@ def detections_table(site: SiteConfig, events: list) -> str:
 def pulses_longtable(df: pl.DataFrame, metrics: list[str]) -> str:
     """Every pulse and channel (LaTeX longtable, needs the longtable,
     booktabs, and makecell packages)."""
-    columns = ["Event", "Sensor", "Ch.", "R (km)", "Strike", "Time (UTC)"] + [
-        _tex_label(m, stacked=True) for m in metrics
-    ]
+    columns = ["Event", "Sensor", "Ch.", "Depth (m)", "R (km)", "Strike"]
+    columns += ["Time (UTC)"] + [_tex_label(m, stacked=True) for m in metrics]
     header = " & ".join(columns) + " \\\\"
     lines = [
-        f"\\begin{{longtable}}{{lllrrl{'r' * len(metrics)}}}",
+        f"\\begin{{longtable}}{{lllrrrl{'r' * len(metrics)}}}",
         "\\toprule",
         header,
         "\\midrule",
@@ -471,6 +487,7 @@ def pulses_longtable(df: pl.DataFrame, metrics: list[str]) -> str:
             tex_escape(r["event"]),
             tex_escape(r["sensor"]),
             str(r["channel"]),
+            _num(r.get("depth_m"), 1),
             f"{r['range_m'] / 1e3:.2f}",
             str(r["strike"]),
             r["time_str"],
@@ -517,9 +534,7 @@ def make_report(site: SiteConfig, events: list) -> None:
     names = [e.name for e in events]
     df = load_metrics(site).filter(pl.col("event").is_in(names))
     ambient_spl = (
-        pl.read_csv(site.ambient_spl_path, try_parse_dates=True)
-        if site.ambient_spl_path.exists()
-        else None
+        read_table(site.ambient_spl_path) if site.ambient_spl_path.exists() else None
     )
     met = pl.read_csv(cfg.met, try_parse_dates=True) if cfg.met is not None else None
 

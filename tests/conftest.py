@@ -8,6 +8,7 @@ import pytest
 from soundscape.config import (
     DetectorConfig,
     GlobSourceConfig,
+    HydrophoneConfig,
     SensorConfig,
     SiteConfig,
 )
@@ -60,12 +61,14 @@ class SyntheticRecording:
     def read(self, sensor, inventory, start, end, channels=None) -> Segment:
         channels = sensor.channels if channels is None else channels
         i0 = max(0, int(np.ceil((start - T0) / np.timedelta64(1, "us") * 1e-6 * FS)))
-        i1 = min(self.data.shape[1], int((end - T0) / np.timedelta64(1, "us") * 1e-6 * FS))
+        i1 = min(
+            self.data.shape[1], int((end - T0) / np.timedelta64(1, "us") * 1e-6 * FS)
+        )
         rows = [sensor.channels.index(c) for c in channels]
         return Segment(
             data=self.data[rows, i0:i1].copy(),
             sampling_rate=FS,
-            time_init=T0 + np.timedelta64(int(round(i0 / FS * 1e6)), "us"),
+            time_init=T0 + np.timedelta64(round(i0 / FS * 1e6), "us"),
             channels=list(channels),
         )
 
@@ -84,6 +87,10 @@ def sensor() -> SensorConfig:
         channels=[0, 1],
         detect_channel=0,
         source=GlobSourceConfig(directory=Path("."), pattern="*.D23"),
+        hydrophones=[
+            HydrophoneConfig(channel=0, depth_m=16.2, serial_number="722013"),
+            HydrophoneConfig(channel=1, depth_m=17.7, serial_number="722014"),
+        ],
     )
 
 
@@ -96,8 +103,7 @@ def detector() -> DetectorConfig:
 def site(tmp_path, sensor) -> SiteConfig:
     events = tmp_path / "events.csv"
     events.write_text(
-        "event,pile,start,end\n"
-        "E1,P1,2023-07-06T15:00:00,2023-07-06T15:15:00\n"
+        "event,pile,start,end\nE1,P1,2023-07-06T15:00:00,2023-07-06T15:15:00\n"
     )
     piles = tmp_path / "piles.csv"
     piles.write_text("pile,latitude,longitude\nP1,41.09197,-71.16789\n")

@@ -21,10 +21,10 @@ import polars as pl
 from tritonoa.data.reader import NoDataError
 
 from soundscape import detect as det
-from soundscape.config import SiteConfig, load_site
+from soundscape.config import SensorConfig, SiteConfig, load_site
 from soundscape.events import Event, load_events
 from soundscape.extract import extract
-from soundscape.metrics import compute_metrics
+from soundscape.metrics import compute_metrics, read_table
 from soundscape.plotting import plot_detections
 from soundscape.report import make_report
 from soundscape.sources import get_source
@@ -33,14 +33,37 @@ from soundscape.spectra import ambient_noise, pulse_psd, write_ambient_psd
 logger = logging.getLogger(__name__)
 
 
+def with_hydrophones(df: pl.DataFrame, sensor: SensorConfig) -> pl.DataFrame:
+    """Add hydrophone depth and serial number columns after `channel`."""
+    channels = sorted(df["channel"].unique().to_list())
+    info = pl.DataFrame(
+        {
+            "channel": channels,
+            "depth_m": [sensor.hydrophone(c).depth_m for c in channels],
+            "serial_number": [sensor.hydrophone(c).serial_number for c in channels],
+        },
+        schema={
+            "channel": df.schema["channel"],
+            "depth_m": pl.Float64,
+            "serial_number": pl.String,
+        },
+    )
+    cols = df.columns
+    at = cols.index("channel") + 1
+    order = cols[:at] + ["depth_m", "serial_number"] + cols[at:]
+    return df.join(info, on="channel", how="left").select(order)
+
+
 class Workflow:
     def __init__(
         self,
         site: SiteConfig,
         events: list[str] | None = None,
         sensors: list[str] | None = None,
+        data_dir: Path | None = None,
     ):
         self.site = site
+        self.data_dir = data_dir
         self.events = load_events(site, events)
         self.sensors = (
             site.sensors if sensors is None else [site.sensor(s) for s in sensors]
@@ -120,7 +143,7 @@ class Workflow:
             if not path.exists():
                 logger.warning(f"[metrics] missing {path}")
                 return
-            compute_metrics(path).write_csv(
+            with_hydrophones(compute_metrics(path), sensor).write_csv(
                 self.site.metrics_path(event.name, sensor.name)
             )
 
@@ -169,7 +192,7 @@ class Workflow:
             write_ambient_psd(
                 self.site.ambient_path, event, sensor, spectra, self.site.ambient
             )
-            tables.append(table)
+            tables.append(with_hydrophones(table, sensor))
 
         self._each(_ambient, "ambient")
         if tables:

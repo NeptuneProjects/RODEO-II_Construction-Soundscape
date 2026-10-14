@@ -8,6 +8,7 @@ import pytest
 from soundscape import detect, extract, spectra, workflow
 from soundscape.config import Exclusion
 from soundscape.events import load_events
+from soundscape.metrics import read_table
 from tests.conftest import SyntheticRecording
 
 
@@ -41,8 +42,17 @@ def test_end_to_end(wf, site):
     assert wf_shape == (len(detections), 2, int(1.2 * 2000))
 
     wf.metrics()
-    m = pl.read_csv(site.metrics_path(event, "VLA1"))
+    m = read_table(site.metrics_path(event, "VLA1"))
     assert len(m) == 2 * len(detections)
+    assert m.columns[
+        m.columns.index("channel") + 1 : m.columns.index("channel") + 3
+    ] == [
+        "depth_m",
+        "serial_number",
+    ]
+    assert m.filter(pl.col("channel") == 1)["serial_number"].unique().to_list() == [
+        "722014"
+    ]
     # Both channels carry the same pulses, so levels agree closely.
     by_channel = m.pivot(on="channel", index="strike", values="SPL_pk")
     np.testing.assert_allclose(by_channel["0"], by_channel["1"], atol=1.0)
@@ -104,11 +114,16 @@ def test_report(wf, site):
     event = (tables / "E1.tex").read_text()
     assert event.startswith("\\begin{tabular}") and "\\bottomrule" in event
     # One row per metric and sensor, plus ambient.
-    assert event.count("\\\\") == 1 + len(site.report.metrics) + 1
+    # Header, depth and S/N, one row per metric (one sensor), ambient.
+    assert event.count("\\\\") == 1 + 2 + len(site.report.metrics) + 1
     assert "Ambient" in event
+    assert "Hydrophone depth (m) & VLA1 & 16.2/17.7" in event
+    assert "Hydrophone S/N & VLA1 & 722013/722014" in event
     detections = (tables / "detections.tex").read_text()
     assert "E1 & P1 & VLA1" in detections
     pulses = (tables / "pulses.tex").read_text()
     n_pulses = len(pl.read_csv(site.metrics_path("E1", "VLA1")).filter("valid"))
-    assert sum(line.startswith("E1 & VLA1 &") for line in pulses.splitlines()) == n_pulses
+    assert (
+        sum(line.startswith("E1 & VLA1 &") for line in pulses.splitlines()) == n_pulses
+    )
     assert pulses.count("\\makecell") == 2 * (len(site.report.metrics) - 1)

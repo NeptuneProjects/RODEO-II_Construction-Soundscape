@@ -41,6 +41,13 @@ METRIC_COLUMNS = [
 ]
 
 
+def read_table(path) -> pl.DataFrame:
+    """Read a metrics or ambient table written by the workflow."""
+    return pl.read_csv(
+        path, try_parse_dates=True, schema_overrides={"serial_number": pl.String}
+    )
+
+
 def _db_power(x: np.ndarray) -> np.ndarray:
     with np.errstate(divide="ignore"):
         return 10 * np.log10(x / REF_PRESSURE_UPA**2)

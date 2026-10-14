@@ -65,18 +65,47 @@ config/sites/
 ```
 
 The TOML sets the output directory, the processing parameters, the sensors, and any excluded events or event–sensor pairs.
-Each sensor has a position, its channels, the channel used for detection, a data source, and a calibration.
+Each sensor has a description, a position and water depth, its channels, the channel used for detection, a data source, a calibration, and a description of each hydrophone:
+
+```toml
+[[sensors]]
+name = "VLA1"
+description = "SHRU 905 recorder on vertical line array 1"
+latitude = 41.08506
+longitude = -71.07804
+water_depth_m = 34.5
+channels = [0, 1, 2, 3]
+detect_channel = 0
+# [sensors.source] and [sensors.calibration] ...
+
+[[sensors.hydrophones]]
+channel = 0
+depth_m = 16.2
+serial_number = "722013"
+description = "CH-0 hydrophone"
+```
+
+Hydrophone entries are descriptive (calibration stays in `[sensors.calibration]`), and channels that are not analyzed may be listed to document the instrument.
+The serial number identifies a hydrophone across deployments; sensor names such as `VLA1` are labels for one site only, and a serial number may appear only once per site.
+`depth_m` is the hydrophone's depth below the sea surface, which moorings are adjusted to keep consistent between deployments; `water_depth_m` is the water depth at the sensor, which changes with the site.
+Hydrophone depth and serial number are carried into `metrics.csv`, `ambient_spl.csv`, the pulse files, and the event tables, so results can be compared by depth.
 
 ### Data sources
 
-Raw data typically live on a remote server.
-All reading goes through a TritonOA inventory, so the workflow does not need to know where the files are:
+The site files do not say where the raw data are stored.
+Data source directories are relative to a data directory passed at run time with `--data-dir`, which the `inventory` stage (and `run`) needs:
+
+```bash
+soundscape inventory --site config/sites/southfork.toml --data-dir /path/to/southfork/raw/data
+```
+
+All later stages read data through the TritonOA inventory this builds, which records each file's full path, so they need no `--data-dir`.
+Rerun `inventory` after moving the data or switching machines.
+A source directory given as an absolute path is used as is.
 
 - `type = "glob"` builds the inventory by reading the headers of files in `directory` that match `pattern` (on local disk or a mounted share), with an optional clock-drift correction.
-- `type = "inventory"` adopts an inventory built elsewhere, for example on the server. `path_map` rewrites file path prefixes so the same inventory works on another machine.
+- `type = "inventory"` adopts an inventory built elsewhere. `path_map` rewrites file path prefixes so the same inventory works on another machine.
 
-Paths may use environment variables with defaults, e.g. `"${SOUTHFORK_DATA:-/project/RODEO_II_South_Fork_Data}/..."`.
-On the server, nothing needs to be set. Elsewhere, export `SOUTHFORK_DATA` or `VINEYARD_DATA` to point at a local copy.
 This replaces the earlier `paths.toml`/`.env` machine-alias scheme.
 
 New kinds of source (e.g. fetching over SSH) can be added in `src/soundscape/sources.py` by implementing `DataSource.prepare()`.

@@ -134,6 +134,14 @@ def extract(
                 "range_m": source_range(event, sensor),
                 "sampling_rate": fs,
                 "channels": sensor.channels,
+                # HDF5 attributes cannot hold None: NaN and "" mean unknown.
+                "depth_m": [
+                    np.nan if (d := sensor.hydrophone(c).depth_m) is None else d
+                    for c in sensor.channels
+                ],
+                "serial_number": [
+                    sensor.hydrophone(c).serial_number or "" for c in sensor.channels
+                ],
                 "pre_s": config.pre_s,
                 "post_s": config.post_s,
                 "filter": json.dumps(

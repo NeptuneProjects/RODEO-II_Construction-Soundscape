@@ -269,8 +269,29 @@ class ReportConfig(StrictModel):
 # --------------------------------------------------------------------------
 
 
+class HydrophoneConfig(StrictModel):
+    """Description of the hydrophone on one recorder channel.
+
+    The serial number identifies the physical hydrophone across deployments;
+    sensor names such as "VLA1" are labels for one site only.
+
+    `depth_m` is the hydrophone's depth below the sea surface. Moorings are
+    adjusted at each deployment to keep sensor depths consistent, whereas the
+    water depth (`SensorConfig.water_depth_m`) changes with the site.
+
+    Descriptive only: calibration is set in `[sensors.calibration]`. Channels
+    that are not analyzed may also be listed, to document the instrument.
+    """
+
+    channel: int
+    depth_m: float | None = None
+    serial_number: str | None = None
+    description: str | None = None
+
+
 class SensorConfig(StrictModel):
     name: str
+    description: str | None = None
     latitude: float
     longitude: float
     water_depth_m: float | None = None
@@ -279,6 +300,7 @@ class SensorConfig(StrictModel):
     source: DataSourceConfig
     calibration: CalibrationConfig = NoCalibration()
     detector: DetectorOverride = DetectorOverride()
+    hydrophones: list[HydrophoneConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_channels(self) -> "SensorConfig":
@@ -287,6 +309,9 @@ class SensorConfig(StrictModel):
                 f"{self.name}: detect_channel {self.detect_channel} is not in "
                 f"channels {self.channels}."
             )
+        listed = [h.channel for h in self.hydrophones]
+        if len(listed) != len(set(listed)):
+            raise ValueError(f"{self.name}: hydrophone channels repeat: {listed}")
         if isinstance(self.calibration, FlatCalibration):
             n = max(self.channels) + 1
             cal = self.calibration
@@ -296,6 +321,13 @@ class SensorConfig(StrictModel):
                     f"for every channel up to {n - 1}."
                 )
         return self
+
+    def hydrophone(self, channel: int) -> HydrophoneConfig:
+        """The hydrophone on a channel; empty if it is not described."""
+        for h in self.hydrophones:
+            if h.channel == channel:
+                return h
+        return HydrophoneConfig(channel=channel)
 
 
 class Exclusion(StrictModel):
@@ -324,6 +356,19 @@ class SiteConfig(StrictModel):
         names = [s.name for s in self.sensors]
         if len(names) != len(set(names)):
             raise ValueError(f"Duplicate sensor names: {names}")
+        # A serial number identifies one physical hydrophone.
+        seen: dict[str, str] = {}
+        for sensor in self.sensors:
+            for h in sensor.hydrophones:
+                if h.serial_number is None:
+                    continue
+                where = f"{sensor.name} channel {h.channel}"
+                if h.serial_number in seen:
+                    raise ValueError(
+                        f"Hydrophone {h.serial_number} is listed on both "
+                        f"{seen[h.serial_number]} and {where}."
+                    )
+                seen[h.serial_number] = where
         return self
 
     def sensor(self, name: str) -> SensorConfig:

@@ -55,17 +55,17 @@ def main(args: argparse.Namespace) -> None:
     plt.draw()
 
     # 3. Compute Green's Function
-    chan_resp_time, chan_resp_freq = mdl.compute_greens_function(
+    greens_autocorr, greens_freq = mdl.compute_greens_function(
         env, (40, fs), fs, num_samples, range_m, freq
     )
-    time_spacing = np.max(np.abs(chan_resp_time))
-    freq_spacing = np.max(np.abs(chan_resp_freq))
+    time_spacing = np.max(np.abs(greens_autocorr))
+    freq_spacing = np.max(np.abs(greens_freq))
     fig = plotting.plot_signal(
-        *double_to_single_sided_ifft(time, offset_traces(chan_resp_time, time_spacing)),
+        *double_to_single_sided_ifft(time, offset_traces(greens_autocorr, time_spacing)),
         *double_to_single_sided_fft(
-            freq, offset_traces(np.abs(chan_resp_freq), freq_spacing)
+            freq, offset_traces(np.abs(greens_freq), freq_spacing)
         ),
-        "Channel Response",
+        "Green's Function (autocorrelation, spectrum)",
     )
     plt.draw()
 
@@ -76,7 +76,7 @@ def main(args: argparse.Namespace) -> None:
     # time_offset = 0.0
     received_signal_time = physics.propagate_signal(
         source_signal_time,
-        chan_resp_freq,
+        greens_freq,
         freq,
         t_offset=time_offset,
         nfft=num_samples,

@@ -1,0 +1,139 @@
+# Vineyard Wind, 1 December 2023 (RODEO II): pile AN36.
+#
+# Data source directories are relative to the Vineyard Wind raw data
+# directory, given at run time:
+#   soundscape inventory --site config/sites/vineyard.toml --data-dir <path>
+# It holds one directory per recorder, VLA1_shru905/ and VLA2_shru920/, each
+# with the recordings under Data/.
+
+name = "vineyard"
+output_dir = "results/vineyard"
+events = "config/sites/vineyard/events.csv"
+piles = "config/sites/vineyard/piles.csv"
+
+# The original Vineyard Wind analysis normalized unsmoothed energy by the
+# maximum within hand-picked time ranges, with per-sensor thresholds. These
+# generic settings find all 2,928 of its strikes on every sensor, plus the
+# soft start before its first range, without hand-picked ranges. The neighbor
+# check rejects mooring noise on VLA2.
+[detector]
+band = [100.0, 300.0]
+threshold = 0.05
+min_interval_s = 1.0
+smooth_s = 0.02
+normalization_window_s = 60.0
+min_snr_db = 10.0
+min_neighbors = 2
+neighbor_window_s = 4.0
+
+[extract]
+pre_s = 0.6
+post_s = 0.6
+filter = { type = "highpass", freq = 10.0 }
+
+[ambient]
+offset_s = 660.0
+duration_s = 600.0
+interval_s = 60.0
+psd_segment_s = 5.0
+psd_overlap = 0.9
+filter = { type = "highpass", freq = 10.0 }
+
+[pulse_psd]
+nperseg = 16384
+overlap = 0.95
+
+[[sensors]]
+name = "VLA1"
+description = "SHRU 905 recorder on vertical line array 1"
+latitude = 41.07135
+longitude = -70.34438
+water_depth_m = 38.5
+channels = [0, 1, 2, 3]
+detect_channel = 3
+
+[sensors.source]
+type = "glob"
+directory = "VLA1_shru905/Data"
+pattern = "[!._]*.D23"
+file_format = "SHRU"
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-203.9, -204.0, -203.9, -204.1]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+# Serial numbers from vineyard_wind/data/sensors.csv. Hydrophones are
+# identified by serial number; "VLA1"/"VLA2" are per-site mooring labels.
+# Depths follow the serial numbers as recorded at South Fork
+# (config/legacy/experiment/vla2.csv); vineyard_wind/data/sensors.csv had
+# attached them to the mooring labels instead.
+[[sensors.hydrophones]]
+channel = 0
+depth_m = 16.3
+serial_number = "722017"
+description = "CH-0 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 1
+depth_m = 17.8
+serial_number = "722019"
+description = "CH-1 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 2
+depth_m = 21.4
+serial_number = "722020"
+description = "CH-2 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 3
+depth_m = 22.9
+serial_number = "722022"
+description = "CH-3 hydrophone"
+
+[[sensors]]
+name = "VLA2"
+description = "SHRU 920 recorder on vertical line array 2"
+latitude = 41.07133
+longitude = -70.28457
+water_depth_m = 32.5
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "VLA2_shru920/Data"
+pattern = "[!._]*.D23"
+file_format = "SHRU"
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-204.0, -204.1, -204.0, -204.2]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+# Serial numbers from vineyard_wind/data/sensors.csv. Depths follow the
+# serial numbers as recorded at South Fork (config/legacy/experiment/vla1.csv).
+[[sensors.hydrophones]]
+channel = 0
+depth_m = 16.2
+serial_number = "722013"
+description = "CH-0 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 1
+depth_m = 17.7
+serial_number = "722014"
+description = "CH-1 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 2
+depth_m = 21.3
+serial_number = "722015"
+description = "CH-2 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 3
+depth_m = 22.8
+serial_number = "722016"
+description = "CH-3 hydrophone"

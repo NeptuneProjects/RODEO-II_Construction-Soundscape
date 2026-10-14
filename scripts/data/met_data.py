@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-
+"""Load and process meteorological data."""
 
 import argparse
-from datetime import datetime
 import os
-from pathlib import Path
 import re
+from datetime import datetime
+from pathlib import Path
 
 import dotenv
 import polars as pl
@@ -79,8 +79,8 @@ def convert_whitespace_to_single_space(file: Path) -> bytes:
     Returns:
         The file as a byte string.
     """
-    with open(file, "r") as file:
-        lines = file.readlines()
+    with open(file, "r") as f:
+        lines = f.readlines()
 
     processed_lines = [re.sub(r"\s+", " ", line).strip() for line in lines]
     return "\n".join(processed_lines).encode()

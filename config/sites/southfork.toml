@@ -1,0 +1,251 @@
+# South Fork Wind, Summer 2023 (RODEO II)
+#
+# Data source directories are relative to the South Fork raw data directory,
+# given at run time:
+#   soundscape inventory --site config/sites/southfork.toml --data-dir <path>
+# It holds the cruise legs; the SHRU recordings are under Leg4_2023_AUG_12/.
+
+name = "southfork"
+output_dir = "results/southfork"
+events = "config/sites/southfork/events.csv"
+piles = "config/sites/southfork/piles.csv"
+
+[detector]
+band = [100.0, 300.0]
+threshold = 0.05
+min_interval_s = 1.0
+smooth_s = 0.02
+normalization_window_s = 60.0
+min_snr_db = 10.0
+min_neighbors = 2
+neighbor_window_s = 4.0
+
+[extract]
+pre_s = 0.6
+post_s = 0.6
+filter = { type = "highpass", freq = 10.0 }
+
+[ambient]
+offset_s = 660.0
+duration_s = 600.0
+interval_s = 60.0
+psd_segment_s = 5.0
+psd_overlap = 0.9
+filter = { type = "highpass", freq = 10.0 }
+
+[pulse_psd]
+nperseg = 16384
+overlap = 0.95
+
+[report]
+style = "config/jasa_fig_style.mplstyle"
+met = "data/met/data.csv" # NDBC 44085 waves and BUZM3 wind (scripts/data/met_data.py)
+
+# ---------------------------------------------------------------------------
+# Sensors. Channels are hydrophone channels on each SHRU; strikes are detected
+# on `detect_channel` and every channel is windowed at the detected times.
+# ---------------------------------------------------------------------------
+
+[[sensors]]
+name = "Tetra"
+description = "SHRU 921 recorder with a tetrahedral hydrophone array on the geosled"
+latitude = 41.08493
+longitude = -71.09504
+water_depth_m = 33.7
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "Leg4_2023_AUG_12/SHRU_921"
+pattern = "SHRU_921*/[!._]*.D23"
+file_format = "SHRU"
+clock = { time_check_0 = 2023-06-23T18:00:00, time_check_1 = 2023-08-12T14:00:00, offset_0 = 120e-9, offset_1 = -5.920e-3 }
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-203.8, -203.8, -203.5, -203.9]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+# Hydrophone depths ("Mooring Depth [m]") and serial numbers from
+# config/legacy/experiment/geosled.csv.
+[[sensors.hydrophones]]
+channel = 0
+depth_m = 33.7
+serial_number = "722010"
+description = "Tetrahedral CH-0"
+
+[[sensors.hydrophones]]
+channel = 1
+depth_m = 33.7
+serial_number = "722012"
+description = "Tetrahedral CH-1"
+
+[[sensors.hydrophones]]
+channel = 2
+depth_m = 33.7
+serial_number = "722009"
+description = "Tetrahedral CH-2"
+
+[[sensors.hydrophones]]
+channel = 3
+depth_m = 33.7
+serial_number = "722011"
+description = "Tetrahedral CH-3"
+
+[[sensors]]
+name = "VLA1"
+description = "SHRU 905 recorder on vertical line array 1"
+latitude = 41.08506
+longitude = -71.07804
+water_depth_m = 34.5
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "Leg4_2023_AUG_12/SHRU_905"
+pattern = "SHRU_905*/[!._]*.D23"
+file_format = "SHRU"
+clock = { time_check_0 = 2023-06-23T19:00:00, time_check_1 = 2023-08-12T15:00:00, offset_0 = 280e-9, offset_1 = -3.080e-3 }
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-204.0, -204.1, -204.0, -204.2]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+# Hydrophone depths ("Mooring Depth [m]") and serial numbers from
+# config/legacy/experiment/vla1.csv.
+[[sensors.hydrophones]]
+channel = 0
+depth_m = 16.2
+serial_number = "722013"
+description = "CH-0 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 1
+depth_m = 17.7
+serial_number = "722014"
+description = "CH-1 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 2
+depth_m = 21.3
+serial_number = "722015"
+description = "CH-2 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 3
+depth_m = 22.8
+serial_number = "722016"
+description = "CH-3 hydrophone"
+
+[[sensors]]
+name = "VLA2"
+description = "SHRU 920 recorder on vertical line array 2"
+latitude = 41.0851
+longitude = -71.01265
+water_depth_m = 36.3
+channels = [0, 1, 2, 3]
+detect_channel = 0
+
+[sensors.source]
+type = "glob"
+directory = "Leg4_2023_AUG_12/SHRU_920"
+pattern = "SHRU_920*/[!._]*.D23"
+file_format = "SHRU"
+clock = { time_check_0 = 2023-06-23T17:00:00, time_check_1 = 2023-08-12T12:00:00, offset_0 = 280e-9, offset_1 = 990e-6 }
+
+[sensors.calibration]
+type = "flat"
+sensitivity = [-203.9, -204.0, -203.9, -204.1]
+fixed_gain = [6.0, 6.0, 6.0, 6.0]
+
+# Hydrophone depths ("Mooring Depth [m]") and serial numbers from
+# config/legacy/experiment/vla2.csv.
+[[sensors.hydrophones]]
+channel = 0
+depth_m = 16.3
+serial_number = "722017"
+description = "CH-0 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 1
+depth_m = 17.8
+serial_number = "722019"
+description = "CH-1 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 2
+depth_m = 21.4
+serial_number = "722020"
+description = "CH-2 hydrophone"
+
+[[sensors.hydrophones]]
+channel = 3
+depth_m = 22.9
+serial_number = "722022"
+description = "CH-3 hydrophone"
+
+# ---------------------------------------------------------------------------
+# Exclusions carried over from the 2025 analysis (scripts/soundscape/
+# ambient_noise.py and config/legacy/events/*.toml). Reasons were not recorded there;
+# remove an entry to include it now that detection is automatic.
+# ---------------------------------------------------------------------------
+
+[[exclude]]
+event = "Z01-A"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "Z01-B"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "Z01-C"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "Z01-D"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A04"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A01"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A07"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A12-A"
+reason = "Not analyzed in 2025."
+
+[[exclude]]
+event = "A02"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A11"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A13"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A14"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."
+
+[[exclude]]
+event = "A15"
+sensors = ["Tetra"]
+reason = "Tetra not analyzed for this event in 2025."

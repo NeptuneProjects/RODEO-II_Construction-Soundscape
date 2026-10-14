@@ -82,7 +82,7 @@ class Workflow:
     def inventory(self) -> None:
         for sensor in self.sensors:
             dest = self.site.inventory_path(sensor.name)
-            get_source(sensor).prepare(dest)
+            get_source(sensor, self.data_dir).prepare(dest)
             logger.info(f"[inventory] {sensor.name} -> {dest}")
 
     def detect(self, reselect: bool = False, plot: bool = True) -> None:
@@ -151,13 +151,24 @@ class Workflow:
         self.summarize()
 
     def summarize(self) -> None:
-        """Concatenate all per-event metrics into one site-wide table."""
-        files = sorted(self.site.output_dir.glob("events/*/metrics_*.csv"))
+        """Concatenate per-event metrics into one site-wide table.
+
+        Covers every event and sensor in the site file (not only those selected
+        on the command line); results for sensors or events no longer in the
+        site file, or now excluded, are left out.
+        """
+        files = [
+            path
+            for event in load_events(self.site)
+            for sensor in self.site.sensors
+            if not self.site.is_excluded(event.name, sensor.name)
+            and (path := self.site.metrics_path(event.name, sensor.name)).exists()
+        ]
         if not files:
             return
-        df = pl.concat(
-            [pl.read_csv(f, try_parse_dates=True) for f in files], how="vertical"
-        ).sort("time", "sensor", "channel")
+        df = pl.concat([read_table(f) for f in files], how="diagonal_relaxed").sort(
+            "time", "sensor", "channel"
+        )
         df.write_csv(self.site.metrics_summary_path)
         logger.info(f"[metrics] {len(df):,} rows -> {self.site.metrics_summary_path}")
 
@@ -200,10 +211,12 @@ class Workflow:
             new = pl.concat(tables)
             if path.exists():
                 # Keep results for events/sensors not rerun this time.
-                old = pl.read_csv(path, try_parse_dates=True)
+                old = read_table(path).filter(
+                    pl.col("sensor").is_in([s.name for s in self.site.sensors])
+                )
                 keys = new.select("event", "sensor").unique()
                 old = old.join(keys, on=["event", "sensor"], how="anti")
-                new = pl.concat([old, new], how="vertical_relaxed")
+                new = pl.concat([old, new], how="diagonal_relaxed").select(new.columns)
             new.sort("event", "sensor", "channel", "interval_start").write_csv(path)
 
     def report(self) -> None:
@@ -243,6 +256,12 @@ def main() -> None:
         help="Site TOML, e.g. config/sites/southfork.toml",
     )
     parser.add_argument(
+        "--data-dir",
+        type=Path,
+        help="Directory holding the site's raw data; data source directories in "
+        "the site file are relative to it (inventory, run)",
+    )
+    parser.add_argument(
         "--event",
         action="append",
         help="Only this event (repeatable). Naming an event overrides its exclusion.",
@@ -260,7 +279,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    wf = Workflow(load_site(args.site), events=args.event, sensors=args.sensor)
+    wf = Workflow(
+        load_site(args.site),
+        events=args.event,
+        sensors=args.sensor,
+        data_dir=args.data_dir,
+    )
     if args.command == "detect":
         wf.detect(reselect=args.reselect, plot=not args.no_plot)
     else:

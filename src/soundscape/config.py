@@ -1,17 +1,14 @@
 """Site configuration.
 
-A site is described by a single TOML file (see `config/sites/`). Paths may
-reference environment variables using `${VAR}` or `${VAR:-default}`, which
-replaces the per-machine `paths.toml`/`.env` scheme: set e.g.
-`SOUTHFORK_DATA=/Volumes/T7_Shield/...` on a laptop and leave it unset on the
-server to fall back to the default.
+A site is described by a single TOML file (see `config/sites/`). The file
+does not say where the raw data are on a given machine: data source
+directories are relative to a data directory given at run time
+(`soundscape inventory --data-dir ...`).
 
-Relative paths are resolved against the current working directory, so the
-workflow is expected to be run from the repository root.
+Other relative paths are resolved against the current working directory, so
+the workflow is expected to be run from the repository root.
 """
 
-import os
-import re
 import tomllib
 from datetime import datetime
 from pathlib import Path
@@ -19,37 +16,6 @@ from typing import Annotated, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
-_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
-
-
-def expand_env(value: str) -> str:
-    """Expand `${VAR}` and `${VAR:-default}` in a string.
-
-    Raises:
-        KeyError: If a variable without a default is not set.
-    """
-
-    def _sub(match: re.Match) -> str:
-        name, default = match.group(1), match.group(2)
-        if name in os.environ:
-            return os.environ[name]
-        if default is not None:
-            return default
-        raise KeyError(f"Environment variable '{name}' is not set and has no default.")
-
-    return _ENV_PATTERN.sub(_sub, value)
-
-
-def _expand_paths(data):
-    """Recursively expand environment variables in all strings of a TOML dict."""
-    if isinstance(data, dict):
-        return {k: _expand_paths(v) for k, v in data.items()}
-    if isinstance(data, list):
-        return [_expand_paths(v) for v in data]
-    if isinstance(data, str):
-        return expand_env(data)
-    return data
 
 
 class StrictModel(BaseModel):
@@ -74,6 +40,8 @@ class GlobSourceConfig(StrictModel):
     """Raw files discovered by globbing a directory (local disk or mounted share).
 
     An inventory is built from the file headers by `soundscape inventory`.
+    A relative `directory` is taken relative to the data directory given at
+    run time (`--data-dir`); an absolute one is used as is.
     """
 
     type: Literal["glob"] = "glob"
@@ -87,8 +55,8 @@ class InventorySourceConfig(StrictModel):
     """A prebuilt TritonOA inventory CSV, e.g. one built on the remote server.
 
     `path_map` rewrites filename prefixes so an inventory built on one machine
-    can be read on another, e.g. `{"/project/RODEO_II_South_Fork_Data" =
-    "/Volumes/T7_Shield/southfork"}`.
+    can be read on another, e.g. `{"/data/server/southfork" =
+    "/Volumes/drive/southfork"}`.
     """
 
     type: Literal["inventory"] = "inventory"
@@ -434,7 +402,7 @@ def load_site(path: Path) -> SiteConfig:
     """Load and validate a site configuration file."""
     with open(path, "rb") as f:
         raw = tomllib.load(f)
-    return SiteConfig(**_expand_paths(raw))
+    return SiteConfig(**raw)
 
 
 def to_datetime64(t: datetime | str) -> np.datetime64:

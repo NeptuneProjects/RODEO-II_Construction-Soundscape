@@ -4,7 +4,7 @@ import pytest
 
 from soundscape import detect
 from soundscape.events import Event
-from tests.conftest import FS, T0, SyntheticRecording
+from tests.conftest import T0, SyntheticRecording
 
 
 def _event(duration_s: float) -> Event:
@@ -33,7 +33,9 @@ def _run(rec: SyntheticRecording, sensor, config, monkeypatch, duration_s=900.0)
     return detect.select(candidates, config)
 
 
-def test_detects_all_strikes_without_false_alarms(recording, sensor, detector, monkeypatch):
+def test_detects_all_strikes_without_false_alarms(
+    recording, sensor, detector, monkeypatch
+):
     scored = _run(recording, sensor, detector, monkeypatch)
     times = scored.filter("is_strike")["time"].to_numpy()
     hits, false_alarms = _match(times, recording.peak_times)
@@ -51,9 +53,7 @@ def test_strike_times_are_accurate(recording, sensor, detector, monkeypatch):
 
 
 def test_chunking_does_not_change_detections(recording, sensor, monkeypatch):
-    configs = [
-        detect.DetectorConfig(chunk_s=c) for c in (37.0, 120.0, 1000.0)
-    ]
+    configs = [detect.DetectorConfig(chunk_s=c) for c in (37.0, 120.0, 1000.0)]
     results = [
         _run(recording, sensor, c, monkeypatch).filter("is_strike")["time"].to_list()
         for c in configs
@@ -109,7 +109,13 @@ def test_reference_energy(window):
 
 def test_count_neighbors():
     times = np.array([0.0, 1.5, 3.0, 10.0, 16.0]) * 1e6
-    assert detect.count_neighbors(times.astype(np.int64), 2.0).tolist() == [1, 2, 1, 0, 0]
+    assert detect.count_neighbors(times.astype(np.int64), 2.0).tolist() == [
+        1,
+        2,
+        1,
+        0,
+        0,
+    ]
 
 
 def test_neighbor_check_rejects_isolated_transients():

@@ -10,11 +10,16 @@ from soundscape.config import (
     DetectorOverride,
     FlatCalibration,
     FrequencyResponseCalibration,
-    expand_env,
+    GlobSourceConfig,
+    SensorConfig,
     load_site,
 )
 from soundscape.events import load_events, source_range
-from soundscape.sources import neutralize_conditioning, remap_filenames
+from soundscape.sources import (
+    GlobSource,
+    neutralize_conditioning,
+    remap_filenames,
+)
 
 SITES = Path(__file__).parents[1] / "config" / "sites"
 
@@ -47,15 +52,6 @@ def test_sensor_detector_override():
     assert site.detector_for(vla2).threshold == 0.02
     assert site.detector_for(vla2).min_neighbors == site.detector.min_neighbors
     assert site.detector_for(site.sensor("VLA1")).threshold == 0.05
-
-
-def test_expand_env(monkeypatch):
-    monkeypatch.setenv("DATA_ROOT", "/mnt/data")
-    assert expand_env("${DATA_ROOT}/x") == "/mnt/data/x"
-    monkeypatch.delenv("DATA_ROOT")
-    assert expand_env("${DATA_ROOT:-/project}/x") == "/project/x"
-    with pytest.raises(KeyError):
-        expand_env("${DATA_ROOT}/x")
 
 
 def test_flat_calibration():
@@ -97,3 +93,68 @@ def test_inventory_rewrite():
     assert out["gain"][0] == "0.0,0.0,0.0,0.0"
     assert out["sensitivity"][0] == "0.0,0.0,0.0,0.0"
     assert out["adc_vref"][0] == "1.0,1.0,1.0,1.0"
+
+
+def test_hydrophones():
+    site = load_site(SITES / "southfork.toml")
+    vla1 = site.sensor("VLA1")
+    h = vla1.hydrophone(2)
+    assert (h.depth_m, h.serial_number) == (21.3, "722015")
+    # Every analyzed channel at both sites is described.
+    for name in ("southfork", "vineyard"):
+        for sensor in load_site(SITES / f"{name}.toml").sensors:
+            assert sensor.description
+            for c in sensor.channels:
+                assert sensor.hydrophone(c).description
+    # Undescribed channels give an empty description rather than an error.
+    assert vla1.hydrophone(9).depth_m is None
+
+
+def test_hydrophone_channels_must_be_unique():
+    with pytest.raises(ValidationError):
+        SensorConfig(
+            name="X",
+            latitude=0.0,
+            longitude=0.0,
+            channels=[0],
+            detect_channel=0,
+            source={"type": "glob", "directory": ".", "pattern": "*"},
+            hydrophones=[{"channel": 0}, {"channel": 0, "depth_m": 10.0}],
+        )
+
+
+def test_serial_numbers_identify_one_hydrophone():
+    site = load_site(SITES / "vineyard.toml")
+    data = site.model_dump()
+    vla2 = next(s for s in data["sensors"] if s["name"] == "VLA2")
+    vla2["hydrophones"][0]["serial_number"] = "722017"  # also on VLA1
+    with pytest.raises(ValidationError, match="722017"):
+        type(site).model_validate(data)
+
+
+def test_depths_follow_serial_numbers_across_sites():
+    """Each hydrophone has the same depth at both sites, whatever its mooring
+    is called there."""
+    depth = {}
+    for name in ("southfork", "vineyard"):
+        for sensor in load_site(SITES / f"{name}.toml").sensors:
+            for h in sensor.hydrophones:
+                if h.serial_number and h.serial_number.startswith("722"):
+                    depth.setdefault(h.serial_number, set()).add(h.depth_m)
+    assert depth and all(len(d) == 1 for d in depth.values())
+
+
+def test_source_directory_is_relative_to_data_dir(tmp_path):
+    relative = GlobSourceConfig(directory="Leg4/SHRU_905", pattern="*.D23")
+    assert GlobSource(relative, tmp_path).directory() == tmp_path / "Leg4/SHRU_905"
+    with pytest.raises(ValueError, match="--data-dir"):
+        GlobSource(relative).directory()
+    absolute = GlobSourceConfig(directory=str(tmp_path), pattern="*.D23")
+    assert GlobSource(absolute).directory() == tmp_path
+    assert GlobSource(absolute, Path("/elsewhere")).directory() == tmp_path
+
+
+def test_site_files_hold_no_machine_paths():
+    for name in ("southfork", "vineyard"):
+        for sensor in load_site(SITES / f"{name}.toml").sensors:
+            assert not Path(sensor.source.directory).is_absolute()

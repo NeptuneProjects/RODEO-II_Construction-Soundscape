@@ -40,8 +40,8 @@ graph LR
 Run from the repository root:
 
 ```bash
-soundscape run --site config/sites/southfork.toml           # everything
-soundscape detect --site config/sites/vineyard.toml          # one stage
+soundscape run --site config/sites/southfork.toml --data-dir /path/to/raw/data   # everything
+soundscape detect --site config/sites/vineyard.toml                                 # one stage
 soundscape extract --site config/sites/southfork.toml --event A08 --sensor VLA1
 ```
 
@@ -115,7 +115,7 @@ New kinds of source (e.g. fetching over SSH) can be added in `src/soundscape/sou
 Inventories are kept unconditioned; calibration is applied by this package from the site file:
 
 - `flat`: frequency-independent sensitivity and fixed gain per channel, converting 24-bit counts to uPa (SHRU).
-- `frequency_response`: deconvolves a tabulated sensitivity curve from a voltage time series (WHOI 3D VHA).
+- `frequency_response`: deconvolves a tabulated sensitivity curve from a voltage time series (e.g. a WHOI 3D VHA).
 - `none`: data are already in uPa.
 
 Sensitivities are in dB re 1 V/uPa and must be negative.
@@ -130,7 +130,7 @@ Strikes are detected by band-limited energy, generalizing the Vineyard Wind appr
 
 All channels of a sensor are windowed at the same strike times, so detections are synchronized across channels.
 
-On Vineyard Wind (pile AN36, 1 December 2023), these settings find all 2,928 strikes of the original hand-tuned analysis on each of the three sensors, within 0.5 s, plus the soft-start strikes that preceded its first time range, without hand-picked time ranges. Raising the band to 300–500 Hz lost 16–23% of the strikes at these 13 km ranges.
+On Vineyard Wind (pile AN36, 1 December 2023), these settings find all 2,928 strikes of the original hand-tuned analysis on each of the three sensors tested (3DVHA, VLA1, VLA2), within 0.5 s, plus the soft-start strikes that preceded its first time range, without hand-picked time ranges. Raising the band to 300–500 Hz lost 16–23% of the strikes at these 13 km ranges.
 
 To tune the detector, inspect `results/<site>/events/<event>/detections_<sensor>.png`, edit `[detector]` (or a sensor's `[sensors.detector]` override), and re-apply the thresholds to the saved candidates without re-reading data:
 
@@ -215,7 +215,7 @@ Checked on 1,200 A10-B Tetra pulses from the earlier analysis:
 
 1. Write `config/sites/<site>/events.csv` and `piles.csv`.
 2. Copy an existing site TOML, then set the sensors, their data sources, and their calibration.
-3. Run `soundscape inventory`, then `soundscape detect`, and check the diagnostic figures before running the remaining stages.
+3. Run `soundscape inventory --data-dir <path>`, then `soundscape detect`, and check the diagnostic figures before running the remaining stages.
 
 ## Tests
 
@@ -226,6 +226,9 @@ uv run pytest
 The tests use synthetic recordings and need no data.
 
 ## Legacy scripts
+
+`config/legacy/events/` holds the 2025 South Fork event table, the hand-tuned STA/LTA detector settings for each event (`*.toml`, read only by `scripts/reports/table_detector.py`), and the piling intervals identified by hand in 2025 (`events_full.csv`).
+`config/legacy/experiment/` holds the original South Fork equipment, hydrophone, and turbine tables; their contents now live in `config/sites/southfork.toml` and `config/sites/southfork/piles.csv`, and only `scripts/plotting/study_area.ipynb` still reads them.
 
 `scripts/` holds the propagation, coherence, plotting, and reporting code from the 2025 South Fork analysis.
 These scripts read paths from a `.env` file and the earlier output formats, and need the `legacy` extra (`uv sync --extra legacy`).

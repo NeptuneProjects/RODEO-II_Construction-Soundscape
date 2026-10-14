@@ -46,11 +46,24 @@ class DataSource(Protocol):
 class GlobSource:
     """Build an inventory by reading headers of files matching a glob."""
 
-    def __init__(self, config: GlobSourceConfig):
+    def __init__(self, config: GlobSourceConfig, data_dir: Path | None = None):
         self.config = config
+        self.data_dir = data_dir
+
+    def directory(self) -> Path:
+        """The source directory, resolved against the data directory."""
+        directory = Path(self.config.directory)
+        if directory.is_absolute():
+            return directory
+        if self.data_dir is None:
+            raise ValueError(
+                f"The data directory is needed to find '{directory}': pass --data-dir."
+            )
+        return Path(self.data_dir) / directory
 
     def prepare(self, destination: Path) -> Path:
         cfg = self.config
+        directory = self.directory()
         clock = ClockParameters()
         if cfg.clock is not None:
             clock = ClockParameters(
@@ -59,10 +72,10 @@ class GlobSource:
                 offset_0=cfg.clock.offset_0,
                 offset_1=cfg.clock.offset_1,
             )
-        logger.info(f"Building inventory from {cfg.directory}/{cfg.pattern}")
+        logger.info(f"Building inventory from {directory}/{cfg.pattern}")
         inv = Inventory()
         inv.build(
-            dataset_path=cfg.directory,
+            dataset_path=directory,
             glob_pattern=cfg.pattern,
             clock_params=clock,
             # TritonOA's default SignalParams is shared between calls and
@@ -82,7 +95,7 @@ class InventorySource:
     site calibration is the single source of truth.
     """
 
-    def __init__(self, config: InventorySourceConfig):
+    def __init__(self, config: InventorySourceConfig, data_dir: Path | None = None):
         self.config = config
 
     def prepare(self, destination: Path) -> Path:
@@ -97,8 +110,8 @@ class InventorySource:
 SOURCES: dict[str, type] = {"glob": GlobSource, "inventory": InventorySource}
 
 
-def get_source(sensor: SensorConfig) -> DataSource:
-    return SOURCES[sensor.source.type](sensor.source)
+def get_source(sensor: SensorConfig, data_dir: Path | None = None) -> DataSource:
+    return SOURCES[sensor.source.type](sensor.source, data_dir)
 
 
 def remap_filenames(df: pl.DataFrame, path_map: dict[str, str]) -> pl.DataFrame:

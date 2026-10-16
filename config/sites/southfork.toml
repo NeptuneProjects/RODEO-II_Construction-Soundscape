@@ -10,6 +10,9 @@ output_dir = "results/southfork"
 events = "config/sites/southfork/events.csv"
 piles = "config/sites/southfork/piles.csv"
 
+# The neighbor check is off: the South Fork soft start is single strikes about
+# 12 s apart, which a check for strikes within a few seconds would reject.
+# Without it, 99.6% of the 2025 detections are found.
 [detector]
 band = [100.0, 300.0]
 threshold = 0.05
@@ -17,8 +20,7 @@ min_interval_s = 1.0
 smooth_s = 0.02
 normalization_window_s = 60.0
 min_snr_db = 10.0
-min_neighbors = 2
-neighbor_window_s = 4.0
+min_neighbors = 0
 
 [extract]
 pre_s = 0.6

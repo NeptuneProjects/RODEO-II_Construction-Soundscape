@@ -5,7 +5,7 @@
 #   soundscape inventory --site config/sites/southfork.toml --data-dir <path>
 # It holds the cruise legs; the SHRU recordings are under Leg4_2023_AUG_12/.
 
-name = "southfork"
+name = "South Fork"
 output_dir = "results/southfork"
 events = "config/sites/southfork/events.csv"
 piles = "config/sites/southfork/piles.csv"

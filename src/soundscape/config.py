@@ -360,6 +360,10 @@ class SiteConfig(StrictModel):
 
     # Output layout -------------------------------------------------------
 
+    @property
+    def log_dir(self) -> Path:
+        return self.output_dir / "logs"
+
     def inventory_path(self, sensor: str) -> Path:
         return self.output_dir / "inventory" / f"{sensor}.csv"
 

@@ -153,6 +153,7 @@ results/<site>/
 ├── metrics.csv                     # all events, sensors, channels
 ├── ambient.h5                      # ambient PSD per event/sensor
 ├── ambient_spl.csv                 # ambient SPL per interval
+├── logs/<command>_<time>.log       # one log per run, as printed to the terminal
 └── report/                         # figures and LaTeX tables
 ```
 
@@ -167,6 +168,7 @@ results/<site>/
 
 and for the whole site:
 
+- `figures/coverage.png`: when each sensor was recording, with every event in the site file on the same time axis, its window, and the sensors that recorded it. It is drawn from the inventories, so it needs no metrics.
 - `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
 - `tables/detections.tex`: strikes and median SNR per event and sensor.
 - `tables/pulses.tex`: every pulse and channel, as a `longtable` for an appendix.

@@ -1,5 +1,7 @@
 """End to end on a synthetic recording: detect -> extract -> metrics -> psd."""
 
+import logging
+
 import h5py
 import numpy as np
 import polars as pl
@@ -147,6 +149,20 @@ def test_pairs_without_data_are_skipped(site):
     called = []
     workflow.Workflow(site)._each(lambda e, s: called.append(s.name), "test")
     assert called == []
+
+
+def test_log_to_file(tmp_path):
+    root = logging.getLogger()
+    handlers = list(root.handlers)
+    try:
+        path = workflow.log_to_file(tmp_path / "logs", "detect")
+        logging.getLogger("soundscape.test").info("hello")
+    finally:
+        for h in root.handlers[len(handlers) :]:
+            h.close()
+        root.handlers = handlers
+    assert path.parent == tmp_path / "logs" and path.name.startswith("detect_")
+    assert "|INFO|soundscape.test|hello" in path.read_text()
 
 
 def test_report(wf, site):

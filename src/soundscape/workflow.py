@@ -13,8 +13,11 @@ Stages, in order:
 """
 
 import logging
+import shlex
+import sys
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -255,6 +258,19 @@ class Workflow:
         self.report()
 
 
+def log_to_file(log_dir: Path, command: str) -> Path:
+    """Copy log messages to `<log_dir>/<command>_<YYYYmmdd-HHMMSS>.log`, in
+    the same format as the terminal."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / f"{command}_{datetime.now():%Y%m%d-%H%M%S}.log"
+    handler = logging.FileHandler(path)
+    root = logging.getLogger()
+    if root.handlers:
+        handler.setFormatter(root.handlers[0].formatter)
+    root.addHandler(handler)
+    return path
+
+
 COMMANDS = [
     "inventory",
     "detect",
@@ -302,8 +318,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    site = load_site(args.site)
+    path = log_to_file(site.log_dir, args.command)
+    logger.info(f"Command: {shlex.join(sys.argv)}")
+    logger.info(f"Log: {path}")
     wf = Workflow(
-        load_site(args.site),
+        site,
         events=args.event,
         sensors=args.sensor,
         data_dir=args.data_dir,

@@ -14,12 +14,17 @@ place, under version control, alongside the site configuration.
 """
 
 import logging
+import struct
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 import polars as pl
+from tqdm import tqdm
+from tritonoa.data.formats import factory
+from tritonoa.data.formats.base import DataRecord
 from tritonoa.data.inventory import Inventory
 from tritonoa.data.reader import read_inventory
 from tritonoa.data.signal import SignalParams
@@ -33,6 +38,12 @@ from soundscape.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# What corrupt file contents raise while headers are parsed: undecodable or
+# non-numeric text fields (ValueError, including UnicodeDecodeError) and
+# records cut short (struct.error). Anything else, such as an OSError from the
+# file system or a bug, is not a property of the file and is raised.
+_CORRUPT_FILE_ERRORS = (ValueError, struct.error)
 
 _NEUTRAL_CONDITIONING = {"adc_vref": "1.0", "gain": "0.0", "sensitivity": "0.0"}
 
@@ -73,19 +84,59 @@ class GlobSource:
                 offset_1=cfg.clock.offset_1,
             )
         logger.info(f"Building inventory from {directory}/{cfg.pattern}")
-        inv = Inventory()
-        inv.build(
-            dataset_path=directory,
-            glob_pattern=cfg.pattern,
-            clock_params=clock,
-            # TritonOA's default SignalParams is shared between calls and
-            # resized in place, so always pass a fresh one.
-            conditioner=SignalParams(),
-            file_format=cfg.file_format,
-        )
+        files = Inventory._get_files(directory, cfg.pattern)
+        # TritonOA's default SignalParams is shared between calls and resized
+        # in place, so always pass a fresh one.
+        conditioner = SignalParams()
+
+        def read(file: Path) -> list[DataRecord] | None:
+            try:
+                return read_file_records(file, cfg.file_format, clock, conditioner)
+            except _CORRUPT_FILE_ERRORS as exc:
+                logger.warning(
+                    f"Unreadable, left out: {file} ({type(exc).__name__}: {exc})"
+                )
+                return None
+
+        with ThreadPoolExecutor(max_workers=min(len(files), 64)) as executor:
+            results = list(
+                tqdm(executor.map(read, files), total=len(files), desc="Reading files")
+            )
+        bad = [f.name for f, r in zip(files, results) if r is None]
+        if len(bad) == len(files):
+            raise RuntimeError(f"No readable files in {directory}/{cfg.pattern}.")
+        if bad:
+            logger.warning(
+                f"{len(bad)} of {len(files)} files unreadable and left out of the "
+                f"inventory: {', '.join(bad)}"
+            )
+        inv = Inventory([rec for r in results if r is not None for rec in r])
         destination.parent.mkdir(parents=True, exist_ok=True)
         inv.save(destination)
         return destination
+
+
+def read_file_records(
+    file: Path,
+    file_format: str | None,
+    clock: ClockParameters,
+    conditioner: SignalParams,
+) -> list[DataRecord]:
+    """Inventory records for one file, as TritonOA's `Inventory.build` makes
+    them; raises if the file cannot be read."""
+    key = file.suffix if file_format is None else file_format
+    reader, formatter = factory.get_reader(key), factory.get_formatter(key)
+    records = [
+        formatter.format_record(
+            filename=file,
+            record_number=i,
+            header=header,
+            clock=clock,
+            conditioner=conditioner,
+        )
+        for i, header in enumerate(reader.read_headers(file))
+    ]
+    return formatter.callback(records)
 
 
 class InventorySource:

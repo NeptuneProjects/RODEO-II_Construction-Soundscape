@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 from pydantic import ValidationError
 
+from soundscape import sources
 from soundscape.calibration import calibrate
 from soundscape.config import (
     DetectorOverride,
@@ -161,3 +162,50 @@ def test_site_files_hold_no_machine_paths():
     for name in ("southfork", "vineyard"):
         for sensor in load_site(SITES / f"{name}.toml").sensors:
             assert not Path(sensor.source.directory).is_absolute()
+
+
+def test_unreadable_files_are_left_out(tmp_path, monkeypatch, caplog):
+    for name in ("a.D23", "bad.D23", "c.D23"):
+        (tmp_path / name).touch()
+
+    def fake_read(file, *args):
+        if file.name == "bad.D23":
+            raise UnicodeDecodeError("utf-8", b"\xce", 0, 1, "invalid")
+        return [file.name]
+
+    saved = {}
+
+    class FakeInventory:
+        _get_files = staticmethod(sources.Inventory._get_files)
+
+        def __init__(self, records):
+            saved["records"] = records
+
+        def save(self, path):
+            saved["path"] = path
+
+    monkeypatch.setattr(sources, "read_file_records", fake_read)
+    monkeypatch.setattr(sources, "Inventory", FakeInventory)
+    source = sources.GlobSource(
+        GlobSourceConfig(directory=tmp_path, pattern="*.D23", file_format="SHRU")
+    )
+    source.prepare(tmp_path / "inv.csv")
+    assert saved["records"] == ["a.D23", "c.D23"]
+    assert "bad.D23" in caplog.text and "1 of 3 files unreadable" in caplog.text
+
+    (tmp_path / "a.D23").unlink()
+    (tmp_path / "c.D23").unlink()
+    with pytest.raises(RuntimeError, match="No readable files"):
+        source.prepare(tmp_path / "inv.csv")
+
+
+def test_other_read_errors_are_raised(tmp_path, monkeypatch):
+    (tmp_path / "a.D23").touch()
+
+    def fail(*args):
+        raise OSError("share unavailable")
+
+    monkeypatch.setattr(sources, "read_file_records", fail)
+    source = sources.GlobSource(GlobSourceConfig(directory=tmp_path, pattern="*.D23"))
+    with pytest.raises(OSError, match="share unavailable"):
+        source.prepare(tmp_path / "inv.csv")

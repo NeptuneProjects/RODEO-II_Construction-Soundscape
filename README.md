@@ -102,6 +102,7 @@ soundscape inventory --site config/sites/southfork.toml --data-dir /path/to/sout
 All later stages read data through the TritonOA inventory this builds, which records each file's full path, so they need no `--data-dir`.
 Rerun `inventory` after moving the data or switching machines.
 A source directory given as an absolute path is used as is.
+A file whose headers cannot be read (e.g. a corrupt recording) is left out of the inventory with a warning naming it, and the stage carries on; the run's log lists every file left out.
 
 - `type = "glob"` builds the inventory by reading the headers of files in `directory` that match `pattern` (on local disk or a mounted share), with an optional clock-drift correction.
 - `type = "inventory"` adopts an inventory built elsewhere. `path_map` rewrites file path prefixes so the same inventory works on another machine.

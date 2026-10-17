@@ -152,6 +152,19 @@ def neutralize_conditioning(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(cols)
 
 
+def coverage(inventory: Path, start: np.datetime64, end: np.datetime64) -> float:
+    """Fraction of [start, end) spanned by records listed in an inventory."""
+    start, end = np.datetime64(start, "us"), np.datetime64(end, "us")
+    df = pl.read_csv(
+        inventory, columns=["timestamp", "npts", "sampling_rate"]
+    ).with_columns(pl.col("timestamp").str.to_datetime(time_unit="us"))
+    t0 = df["timestamp"].to_numpy()
+    seconds = df["npts"].to_numpy() / df["sampling_rate"].to_numpy()
+    t1 = t0 + (seconds * 1e6).round().astype("timedelta64[us]")
+    covered = (np.minimum(t1, end) - np.maximum(t0, start)).clip(min=np.timedelta64(0))
+    return min(1.0, covered.sum() / (end - start))
+
+
 @dataclass
 class Segment:
     """A calibrated multichannel time series (uPa)."""

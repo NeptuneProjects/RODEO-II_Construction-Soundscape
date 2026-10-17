@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from soundscape.calibration import calibrate
 from soundscape.config import (
     DetectorOverride,
+    Exclusion,
     FlatCalibration,
     FrequencyResponseCalibration,
     GlobSourceConfig,
@@ -35,14 +36,16 @@ def test_site_files_load(name):
             assert 0 < source_range(e, s) < 50_000
 
 
-def test_southfork_exclusions():
+def test_exclusions():
     site = load_site(SITES / "southfork.toml")
+    site.exclude = [Exclusion(event="A01"), Exclusion(event="A11", sensors=["Tetra"])]
     names = {e.name for e in load_events(site)}
-    assert "A04" not in names and "A08" in names
+    assert "A01" not in names and "A08" in names
+    assert site.is_excluded("A01", "VLA1")
     assert site.is_excluded("A11", "Tetra")
     assert not site.is_excluded("A11", "VLA1")
     # Naming an excluded event explicitly includes it.
-    assert [e.name for e in load_events(site, ["A04"])] == ["A04"]
+    assert [e.name for e in load_events(site, ["A01"])] == ["A01"]
 
 
 def test_sensor_detector_override():

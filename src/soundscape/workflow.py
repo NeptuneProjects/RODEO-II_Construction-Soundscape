@@ -27,7 +27,7 @@ from soundscape.extract import extract
 from soundscape.metrics import compute_metrics, read_table
 from soundscape.plotting import plot_detections
 from soundscape.report import make_report
-from soundscape.sources import get_source
+from soundscape.sources import coverage, get_source
 from soundscape.spectra import ambient_noise, pulse_psd, write_ambient_psd
 
 logger = logging.getLogger(__name__)
@@ -65,19 +65,42 @@ class Workflow:
         self.site = site
         self.data_dir = data_dir
         self.events = load_events(site, events)
+        # Events named explicitly run even if the site file excludes them.
+        self.named = set(events or [])
         self.sensors = (
             site.sensors if sensors is None else [site.sensor(s) for s in sensors]
         )
+        self._coverage_cache: dict[tuple[str, str], float | None] = {}
 
     def _each(self, fn: Callable, label: str) -> None:
-        """Call fn(event, sensor) for each selected, non-excluded pair."""
+        """Call fn(event, sensor) for each selected pair that is not excluded
+        (unless its event was named) and has recorded data during the event."""
         for event in self.events:
             for sensor in self.sensors:
-                if self.site.is_excluded(event.name, sensor.name):
-                    logger.info(f"[{label}] {event.name}/{sensor.name}: excluded")
+                pair = f"{event.name}/{sensor.name}"
+                if event.name not in self.named and self.site.is_excluded(
+                    event.name, sensor.name
+                ):
+                    logger.info(f"[{label}] {pair}: excluded")
                     continue
-                logger.info(f"[{label}] {event.name}/{sensor.name}")
+                frac = self._coverage(event, sensor)
+                if frac == 0.0:
+                    logger.warning(f"[{label}] {pair}: no data during event, skipped")
+                    continue
+                if frac is not None and frac < 0.999:
+                    logger.warning(f"[{label}] {pair}: data cover {frac:.0%} of event")
+                logger.info(f"[{label}] {pair}")
                 fn(event, sensor)
+
+    def _coverage(self, event: Event, sensor: SensorConfig) -> float | None:
+        """Fraction of the event the sensor recorded; None without an inventory."""
+        key = (event.name, sensor.name)
+        if key not in self._coverage_cache:
+            path = self.site.inventory_path(sensor.name)
+            self._coverage_cache[key] = (
+                coverage(path, event.start, event.end) if path.exists() else None
+            )
+        return self._coverage_cache[key]
 
     def inventory(self) -> None:
         for sensor in self.sensors:

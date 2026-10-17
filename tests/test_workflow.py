@@ -9,7 +9,8 @@ from soundscape import detect, extract, spectra, workflow
 from soundscape.config import Exclusion
 from soundscape.events import load_events
 from soundscape.metrics import read_table
-from tests.conftest import SyntheticRecording
+from soundscape.sources import coverage
+from tests.conftest import FS, T0, SyntheticRecording
 
 
 @pytest.fixture
@@ -88,10 +89,43 @@ def test_excluded_pairs_are_skipped(site):
         update={"exclude": [Exclusion(event="E1", sensors=["VLA1"])]}
     )
     called = []
-    w = workflow.Workflow(site, events=["E1"])
-    w._each(lambda e, s: called.append((e.name, s.name)), "test")
+    workflow.Workflow(site)._each(lambda e, s: called.append(s.name), "test")
     assert called == []
     assert load_events(site)
+    # Naming the event overrides its exclusion.
+    workflow.Workflow(site, events=["E1"])._each(
+        lambda e, s: called.append(s.name), "test"
+    )
+    assert called == ["VLA1"]
+
+
+def write_inventory(path, starts, npts=2000, fs=FS):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "timestamp": [str(np.datetime64(t, "us")) for t in starts],
+            "npts": [npts] * len(starts),
+            "sampling_rate": [fs] * len(starts),
+        }
+    ).write_csv(path)
+
+
+def test_coverage(tmp_path):
+    path = tmp_path / "inv.csv"
+    # Two 1 s records with a 1 s gap between them.
+    write_inventory(path, [T0, T0 + np.timedelta64(2, "s")])
+    s = np.timedelta64(1, "s")
+    assert coverage(path, T0, T0 + 4 * s) == pytest.approx(0.5)
+    assert coverage(path, T0, T0 + s) == pytest.approx(1.0)
+    assert coverage(path, T0 + 10 * s, T0 + 20 * s) == 0.0
+
+
+def test_pairs_without_data_are_skipped(site):
+    event = load_events(site)[0]
+    write_inventory(site.inventory_path("VLA1"), [event.end + np.timedelta64(1, "h")])
+    called = []
+    workflow.Workflow(site)._each(lambda e, s: called.append(s.name), "test")
+    assert called == []
 
 
 def test_report(wf, site):

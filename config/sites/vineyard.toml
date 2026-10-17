@@ -1,5 +1,5 @@
-# Vineyard Wind, 1 December 2023 (RODEO II): pile AN36.
-#
+# Vineyard Wind, November-December 2023 (RODEO II)
+
 # Data source directories are relative to the Vineyard Wind raw data
 # directory, given at run time:
 #   soundscape inventory --site config/sites/vineyard.toml --data-dir <path>

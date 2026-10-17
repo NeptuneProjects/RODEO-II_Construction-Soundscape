@@ -190,64 +190,8 @@ serial_number = "722022"
 description = "CH-3 hydrophone"
 
 # ---------------------------------------------------------------------------
-# Exclusions carried over from the 2025 analysis (scripts/soundscape/
-# ambient_noise.py and config/legacy/events/*.toml). Reasons were not recorded there;
-# remove an entry to include it now that detection is automatic.
+# No exclusions. Event-sensor pairs with no recorded data (Z01-A to Z01-D and
+# A04 on every sensor; Tetra after 2023-07-18; VLA1 for A07) are skipped
+# automatically. The 2025 analysis also left out A01, A07 and A12-A for low
+# SNR; the band-pass detector handles them (2026-10-16).
 # ---------------------------------------------------------------------------
-
-[[exclude]]
-event = "Z01-A"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "Z01-B"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "Z01-C"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "Z01-D"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "A04"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "A01"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "A07"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "A12-A"
-reason = "Not analyzed in 2025."
-
-[[exclude]]
-event = "A02"
-sensors = ["Tetra"]
-reason = "Tetra not analyzed for this event in 2025."
-
-[[exclude]]
-event = "A11"
-sensors = ["Tetra"]
-reason = "Tetra not analyzed for this event in 2025."
-
-[[exclude]]
-event = "A13"
-sensors = ["Tetra"]
-reason = "Tetra not analyzed for this event in 2025."
-
-[[exclude]]
-event = "A14"
-sensors = ["Tetra"]
-reason = "Tetra not analyzed for this event in 2025."
-
-[[exclude]]
-event = "A15"
-sensors = ["Tetra"]
-reason = "Tetra not analyzed for this event in 2025."

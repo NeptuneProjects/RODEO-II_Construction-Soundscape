@@ -1,14 +1,15 @@
 """Figures and LaTeX tables from the workflow outputs.
 
-Figures (event metrics, pulse PSD distributions, channel level histograms,
-metrics versus range) and tables (event summaries, pulse-by-pulse appendix)
-for any site.
+Figures (data coverage, event metrics, pulse PSD distributions, channel level
+histograms, metrics versus range) and tables (event summaries, pulse-by-pulse
+appendix) for any site.
 
 Output layout:
 
     report/
     ├── figures/<event>/{metrics,psd,levels}.png
     ├── figures/<metric>_vs_range.png
+    ├── figures/coverage.png
     └── tables/{detections,pulses,<event>}.tex
 """
 
@@ -22,8 +23,9 @@ import numpy as np
 import polars as pl
 
 from soundscape.config import SiteConfig
-from soundscape.events import source_range
+from soundscape.events import load_events, source_range
 from soundscape.metrics import read_table
+from soundscape.sources import coverage, recorded_intervals
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +316,103 @@ def plot_metric_vs_range(df: pl.DataFrame, metric: str, site_name: str) -> plt.F
     return fig
 
 
+def plot_data_coverage(
+    events: list,
+    recorded: dict[str, list[tuple[np.datetime64, np.datetime64]]],
+    covered: dict[tuple[str, str], float],
+    site_name: str,
+    pad_days: float = 3.0,
+) -> plt.Figure:
+    """Recording coverage of each sensor (top) and pile-driving events
+    (bottom, one row per event) on a shared time axis.
+
+    Each event is a bar over its time window with a diamond at its center,
+    which stays visible when the window is too short to see at the scale of
+    the deployment. A column at the right gives each window and the sensors that recorded it.
+    Events that no sensor recorded are drawn in gray.
+
+    `recorded` maps each sensor to its continuous recording intervals and
+    `covered` maps (event, sensor) to the fraction of the event recorded.
+    """
+    events = sorted(events, key=lambda e: e.start)
+    sensors = list(recorded)
+    pad = np.timedelta64(round(pad_days * 86400), "s")
+    t_lo = min(e.start for e in events) - pad
+    t_hi = max(e.end for e in events) + pad
+
+    fig, (ax_s, ax_e) = plt.subplots(
+        nrows=2,
+        figsize=(7.0, 0.3 * len(sensors) + 0.2 * len(events) + 1.2),
+        sharex=True,
+        height_ratios=[len(sensors) + 0.5, len(events) + 0.5],
+        layout="constrained",
+    )
+    ink, muted = "0.15", "0.6"
+
+    for i, sensor in enumerate(sensors):
+        spans = [
+            (mdates.date2num(max(a, t_lo)), mdates.date2num(min(b, t_hi)))
+            for a, b in recorded[sensor]
+            if b > t_lo and a < t_hi
+        ]
+        ax_s.broken_barh(
+            [(a, b - a) for a, b in spans], (i - 0.3, 0.6), color=f"C{i}", lw=0
+        )
+    ax_s.set_yticks(range(len(sensors)), sensors)
+    ax_s.set_ylim(len(sensors) - 0.5, -0.5)
+    ax_s.set_title(f"{site_name}: Data coverage and pile-driving events")
+
+    # Right-hand columns, offset in points from the right edge of the axes.
+    col_when, col_by = 6, 84
+    to_row = ax_e.get_yaxis_transform()
+
+    def column(x: float, y: float, text: str, color: str) -> None:
+        ax_e.annotate(
+            text,
+            (1, y),
+            xycoords=to_row,
+            xytext=(x, 0),
+            textcoords="offset points",
+            va="center",
+            color=color,
+        )
+
+    column(col_when, -1, "Window (UTC)", muted)
+    column(col_by, -1, "Recorded by", muted)
+
+    for i, event in enumerate(events):
+        x0, x1 = mdates.date2num(event.start), mdates.date2num(event.end)
+        by = [s for s in sensors if covered.get((event.name, s), 0.0) > 0.0]
+        color = ink if by else muted
+        ax_e.hlines(i, x0, x1, color=color, lw=3)
+        ax_e.plot((x0 + x1) / 2, i, marker="D", ms=4, color=color, ls="")
+        when = f"{str(event.start)[5:16].replace('T', ' ')}–{str(event.end)[11:16]}"
+        names = [
+            s
+            if covered[(event.name, s)] >= 0.999
+            else f"{s} ({covered[(event.name, s)]:.0%})"
+            for s in by
+        ]
+        column(col_when, i, when, color)
+        column(col_by, i, ", ".join(names) or "no data", color)
+    ax_e.set_yticks(range(len(events)), [f"{e.name}" for e in events])
+    for tick, event in zip(ax_e.get_yticklabels(), events):
+        if not any(covered.get((event.name, s), 0.0) > 0.0 for s in sensors):
+            tick.set_color(muted)
+    ax_e.set_ylim(len(events) - 0.5, -0.5)
+    ax_e.set_ylabel("Event")
+    ax_e.set_xlim(mdates.date2num(t_lo), mdates.date2num(t_hi))
+    ax_e.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=mdates.MO))
+    ax_e.xaxis.set_minor_locator(mdates.DayLocator())
+    ax_e.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    ax_e.set_xlabel("Date (UTC)")
+    for ax in (ax_s, ax_e):
+        ax.grid(True, lw=0.3)
+        ax.set_axisbelow(True)
+        ax.tick_params(axis="y", length=0)
+    return fig
+
+
 # --------------------------------------------------------------------------
 # Tables
 # --------------------------------------------------------------------------
@@ -517,6 +616,31 @@ def _save(fig: plt.Figure, path: Path, dpi: int) -> None:
     logger.info(f"[report] {path}")
 
 
+def write_coverage_figure(site: SiteConfig, path: Path) -> None:
+    """Data coverage for every event in the site file, from the inventories."""
+    inventories = {
+        s.name: site.inventory_path(s.name)
+        for s in site.sensors
+        if site.inventory_path(s.name).exists()
+    }
+    if not inventories:
+        logger.warning("[report] no inventories; run inventory first")
+        return
+    for s in site.sensors:
+        if s.name not in inventories:
+            logger.warning(f"[report] coverage: no inventory for {s.name}")
+    events = load_events(site)
+    recorded = {s: recorded_intervals(p) for s, p in inventories.items()}
+    covered = {
+        (e.name, s): coverage(p, e.start, e.end)
+        for e in events
+        for s, p in inventories.items()
+    }
+    _save(
+        plot_data_coverage(events, recorded, covered, site.name), path, site.report.dpi
+    )
+
+
 def make_report(site: SiteConfig, events: list) -> None:
     """Write all figures and tables for the given events."""
     cfg = site.report
@@ -525,6 +649,8 @@ def make_report(site: SiteConfig, events: list) -> None:
     figs = site.report_dir / "figures"
     tables = site.report_dir / "tables"
     tables.mkdir(parents=True, exist_ok=True)
+
+    write_coverage_figure(site, figs / "coverage.png")
 
     if not site.metrics_summary_path.exists():
         logger.warning(

@@ -152,17 +152,41 @@ def neutralize_conditioning(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(cols)
 
 
+def record_spans(inventory: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Start and end times (datetime64[us]) of the records in an inventory,
+    sorted by start time."""
+    df = (
+        pl.read_csv(inventory, columns=["timestamp", "npts", "sampling_rate"])
+        .with_columns(pl.col("timestamp").str.to_datetime(time_unit="us"))
+        .sort("timestamp")
+    )
+    t0 = df["timestamp"].to_numpy()
+    seconds = df["npts"].to_numpy() / df["sampling_rate"].to_numpy()
+    return t0, t0 + (seconds * 1e6).round().astype("timedelta64[us]")
+
+
 def coverage(inventory: Path, start: np.datetime64, end: np.datetime64) -> float:
     """Fraction of [start, end) spanned by records listed in an inventory."""
     start, end = np.datetime64(start, "us"), np.datetime64(end, "us")
-    df = pl.read_csv(
-        inventory, columns=["timestamp", "npts", "sampling_rate"]
-    ).with_columns(pl.col("timestamp").str.to_datetime(time_unit="us"))
-    t0 = df["timestamp"].to_numpy()
-    seconds = df["npts"].to_numpy() / df["sampling_rate"].to_numpy()
-    t1 = t0 + (seconds * 1e6).round().astype("timedelta64[us]")
+    t0, t1 = record_spans(inventory)
     covered = (np.minimum(t1, end) - np.maximum(t0, start)).clip(min=np.timedelta64(0))
     return min(1.0, covered.sum() / (end - start))
+
+
+def recorded_intervals(
+    inventory: Path, max_gap_s: float = 60.0
+) -> list[tuple[np.datetime64, np.datetime64]]:
+    """Continuous recording intervals, merging records less than `max_gap_s`
+    apart."""
+    t0, t1 = record_spans(inventory)
+    gap = np.timedelta64(round(max_gap_s * 1e6), "us")
+    intervals: list[tuple[np.datetime64, np.datetime64]] = []
+    for a, b in zip(t0, t1):
+        if intervals and a - intervals[-1][1] <= gap:
+            intervals[-1] = (intervals[-1][0], max(intervals[-1][1], b))
+        else:
+            intervals.append((a, b))
+    return intervals
 
 
 @dataclass

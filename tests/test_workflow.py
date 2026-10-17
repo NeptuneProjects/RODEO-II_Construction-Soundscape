@@ -9,7 +9,8 @@ from soundscape import detect, extract, spectra, workflow
 from soundscape.config import Exclusion
 from soundscape.events import load_events
 from soundscape.metrics import read_table
-from soundscape.sources import coverage
+from soundscape.report import write_coverage_figure
+from soundscape.sources import coverage, recorded_intervals
 from tests.conftest import FS, T0, SyntheticRecording
 
 
@@ -118,6 +119,26 @@ def test_coverage(tmp_path):
     assert coverage(path, T0, T0 + 4 * s) == pytest.approx(0.5)
     assert coverage(path, T0, T0 + s) == pytest.approx(1.0)
     assert coverage(path, T0 + 10 * s, T0 + 20 * s) == 0.0
+
+
+def test_recorded_intervals(tmp_path):
+    path = tmp_path / "inv.csv"
+    s = np.timedelta64(1, "s")
+    # Records at 0, 1 and 5 s, each 1 s long: one join, one gap.
+    write_inventory(path, [T0, T0 + s, T0 + 5 * s])
+    assert recorded_intervals(path, max_gap_s=0.5) == [
+        (T0, T0 + 2 * s),
+        (T0 + 5 * s, T0 + 6 * s),
+    ]
+    assert recorded_intervals(path, max_gap_s=10.0) == [(T0, T0 + 6 * s)]
+
+
+def test_coverage_figure(site, tmp_path):
+    event = load_events(site)[0]
+    write_inventory(site.inventory_path("VLA1"), [event.start], npts=int(600 * FS))
+    path = tmp_path / "coverage.png"
+    write_coverage_figure(site, path)
+    assert path.stat().st_size > 0
 
 
 def test_pairs_without_data_are_skipped(site):

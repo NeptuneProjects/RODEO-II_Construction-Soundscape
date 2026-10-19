@@ -9,6 +9,7 @@ import polars as pl
 import pytest
 
 from soundscape import detect, extract, spectra, workflow
+from soundscape.compare import compare_sites
 from soundscape.config import Exclusion
 from soundscape.document import Document
 from soundscape.events import load_events
@@ -190,6 +191,7 @@ def test_report(wf, site):
     # Header, depth and S/N, one row per metric (one sensor), ambient.
     assert event.count("\\\\") == 1 + 2 + len(site.report.metrics) + 1
     assert "Ambient" in event
+    assert "Event total cSEL" in event
     assert "Hydrophone depth (m) & VLA1 & 16.2/17.7" in event
     assert "Hydrophone S/N & VLA1 & 722013/722014" in event
     detections = (tables / "detections.tex").read_text()
@@ -236,3 +238,27 @@ def test_rich_text(tmp_path):
     runs = doc.doc.paragraphs[-1].runs
     assert [r.text for r in runs] == ["L", "p,pk", " (dB re 1 µPa", "2", " s)"]
     assert runs[1].font.subscript and runs[3].font.superscript
+
+
+def test_compare(wf, site, tmp_path):
+    site.ambient.offset_s = -600.0
+    site.ambient.duration_s = 120.0
+    wf.detect(plot=False)
+    wf.extract()
+    wf.metrics()
+    wf.psd()
+    wf.ambient()
+    other = site.model_copy(update={"name": "Other"})
+    out = tmp_path / "compare"
+    compare_sites([site, other], out)
+
+    summary = pl.read_csv(out / "tables" / "summary.csv")
+    assert summary["site"].to_list() == [site.name, "Other"]
+    valid = pl.read_csv(site.metrics_path("E1", "VLA1")).filter(
+        "valid", pl.col("channel") == site.sensors[0].detect_channel
+    )
+    assert summary["pulses"][0] == len(valid)
+    for name in ("levels_vs_range", "depth", "psd"):
+        assert (out / "figures" / f"{name}.png").exists()
+    doc = docx.Document(str(out / "compare.docx"))
+    assert len(doc.tables) == 1 and len(doc.inline_shapes) == 3

@@ -165,7 +165,7 @@ results/<site>/
 - `figures/<event>/metrics.png`: metric time series, one column per sensor (nearest first), colored by channel.
 - `figures/<event>/psd.png`: pulse PSD (mean ± 2σ, in dB) against the ambient PSD, per sensor and channel.
 - `figures/<event>/levels.png`: distribution of `histogram_metric` per channel and sensor.
-- `tables/<event>.tex`: mean, median, standard deviation, minimum, and maximum of each metric per sensor, one value per channel separated by slashes, with the ambient SPL and, if configured, the mean wind speed and significant wave height.
+- `tables/<event>.tex`: mean, median, standard deviation, minimum, and maximum of each metric per sensor (for `SEL_cum`, only the event total, the cumulative SEL of all valid pulses), one value per channel separated by slashes, with the ambient SPL and, if configured, the mean wind speed and significant wave height.
 
 and for the whole site:
 
@@ -177,6 +177,26 @@ and for the whole site:
 It also writes `report.docx`, which collects the figures and tables (except `pulses.tex`) with captions written from the data, for pasting into a shared Word report.
 Tables are native Word tables, with each event table on a landscape page, and captions are numbered with Word fields, so they renumber in the document they are pasted into (select all and press F9).
 `metrics.csv` stands in for the pulse-by-pulse table as a data supplement.
+
+### Comparing sites
+
+```bash
+soundscape compare --site config/sites/southfork.toml --site config/sites/vineyard.toml --output results/compare
+```
+
+reads each site's results (valid pulses from events it does not exclude) and writes:
+
+- `figures/levels_vs_range.png`: median and interquartile range of each of `range_metrics` per event and sensor against range (log scale), with a least-squares fit of a − b log10 R for each site, and the event total cSEL.
+- `figures/depth.png`: median level on each hydrophone relative to the mean over its sensor, against hydrophone depth, for sensors with hydrophones at more than one depth.
+- `figures/psd.png`: mean pulse PSD for each event and sensor, colored by range, one panel per site, with the ambient PSD.
+- `tables/summary.{csv,tex}`: per site, event, and sensor, the range, hydrophone depth, pulses, median of each of `range_metrics`, event total cSEL, and mean ambient SPL.
+- `tables/range_fits.csv`: the fit coefficients.
+- `compare.docx`: the above with captions.
+
+Except for the depth figure, levels are on each sensor's detection channel.
+Figure style, metrics, and Word template come from the first site's `[report]`.
+
+### Configuration
 
 Figures and tables use valid pulses only. Configure them in `[report]`:
 

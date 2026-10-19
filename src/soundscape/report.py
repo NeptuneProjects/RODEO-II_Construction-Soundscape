@@ -104,6 +104,12 @@ def load_metrics(site: SiteConfig) -> pl.DataFrame:
     return read_table(site.metrics_summary_path).filter(pl.col("valid"))
 
 
+def total_sel() -> pl.Expr:
+    """Cumulative SEL over all rows in a group, as column `SEL_total`
+    (dB re 1 uPa^2 s); the last value of `SEL_cum` for valid pulses."""
+    return ((10 ** (pl.col("SEL") / 10)).sum().log10() * 10).alias("SEL_total")
+
+
 def sensors_by_range(df: pl.DataFrame) -> list[tuple[str, float]]:
     """(sensor, range in m) for one event, nearest first."""
     rows = df.group_by("sensor").agg(pl.col("range_m").first()).sort("range_m")
@@ -521,6 +527,21 @@ def event_rows(
                 )
     for metric in metrics:
         digits = 1 if metric.startswith(("SPL", "SEL")) else 2
+        if metric == "SEL_cum":
+            # Statistics of a running sum mean little; give the event total.
+            for k, (sensor, _) in enumerate(sensors):
+                total = (
+                    df.filter(pl.col("sensor") == sensor)
+                    .group_by("channel")
+                    .agg(total_sel())
+                    .sort("channel")
+                )
+                rows.append(
+                    [f"Event total {label(metric)}" if k == 0 else "", text(sensor)]
+                    + [_fmt(total["SEL_total"].to_list(), digits)]
+                    + [""] * 4
+                )
+            continue
         for k, (sensor, _) in enumerate(sensors):
             by_ch = (
                 df.filter(pl.col("sensor") == sensor)

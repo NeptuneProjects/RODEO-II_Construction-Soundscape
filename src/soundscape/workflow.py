@@ -8,8 +8,10 @@ Stages, in order:
     metrics    per-pulse metrics; also writes the site-wide summary
     psd        power spectral density of each pulse
     ambient    ambient noise preceding each event
-    report     figures and LaTeX tables
+    report     figures, LaTeX tables, and a Word document
     run        all of the above
+
+    compare    figures and tables comparing sites (--site repeated)
 """
 
 import logging
@@ -24,6 +26,7 @@ import polars as pl
 from tritonoa.data.reader import NoDataError
 
 from soundscape import detect as det
+from soundscape.compare import compare_sites
 from soundscape.config import SensorConfig, SiteConfig, load_site
 from soundscape.events import Event, load_events
 from soundscape.extract import extract
@@ -280,6 +283,7 @@ COMMANDS = [
     "ambient",
     "report",
     "run",
+    "compare",
 ]
 
 
@@ -291,8 +295,15 @@ def main() -> None:
     parser.add_argument(
         "--site",
         type=Path,
+        action="append",
         required=True,
-        help="Site TOML, e.g. config/sites/southfork.toml",
+        help="Site TOML, e.g. config/sites/southfork.toml (repeatable for compare)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("results/compare"),
+        help="compare: output directory (default: results/compare)",
     )
     parser.add_argument(
         "--data-dir",
@@ -318,7 +329,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    site = load_site(args.site)
+    if args.command == "compare":
+        sites = [load_site(p) for p in args.site]
+        path = log_to_file(args.output / "logs", args.command)
+        logger.info(f"Command: {shlex.join(sys.argv)}")
+        logger.info(f"Log: {path}")
+        compare_sites(sites, args.output)
+        return
+    if len(args.site) > 1:
+        parser.error(f"{args.command} takes one --site")
+    site = load_site(args.site[0])
     path = log_to_file(site.log_dir, args.command)
     logger.info(f"Command: {shlex.join(sys.argv)}")
     logger.info(f"Log: {path}")

@@ -213,9 +213,15 @@ class ReportConfig(StrictModel):
     `met` is an optional CSV of weather observations with columns `datetime`,
     `WSPD` (wind speed, m/s) and `WVHT` (significant wave height, m), averaged
     over each event in the event tables.
+
+    `titles = false` leaves titles off the figures, for documents whose
+    captions say the same. `docx_template` is a .docx whose styles the Word
+    document uses (e.g. the shared report, downloaded as .docx).
     """
 
     style: Path | None = None
+    titles: bool = True
+    docx_template: Path | None = None
     dpi: int = 300
     met: Path | None = None
     metrics: list[str] = [

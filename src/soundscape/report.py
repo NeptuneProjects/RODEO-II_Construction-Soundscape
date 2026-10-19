@@ -1,12 +1,14 @@
-"""Figures and LaTeX tables from the workflow outputs.
+"""Figures, LaTeX tables, and a Word document from the workflow outputs.
 
 Figures (data coverage, event metrics, pulse PSD distributions, channel level
 histograms, metrics versus range) and tables (event summaries, pulse-by-pulse
-appendix) for any site.
+appendix) for any site. The Word document collects the figures and tables
+(except the pulse-by-pulse table) with captions.
 
 Output layout:
 
     report/
+    ├── report.docx
     ├── figures/<event>/{metrics,psd,levels}.png
     ├── figures/<metric>_vs_range.png
     ├── figures/coverage.png
@@ -14,6 +16,8 @@ Output layout:
 """
 
 import logging
+from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 
 import h5py
@@ -23,6 +27,7 @@ import numpy as np
 import polars as pl
 
 from soundscape.config import SiteConfig
+from soundscape.document import Document
 from soundscape.events import load_events, source_range
 from soundscape.metrics import read_table
 from soundscape.sources import coverage, recorded_intervals
@@ -41,7 +46,30 @@ METRIC_LABELS = {
     "t_rise": ("$t_\\mathrm{r}$", "s"),
     "t_decay": ("$t_\\mathrm{d}$", "s"),
     "kurtosis": ("$\\beta_2$", ""),
+    "WSPD": ("Wind speed", "m/s"),
+    "WVHT": ("$H_{1/3}$", "m"),
 }
+
+# The same labels for Word (see soundscape.document for the markup).
+WORD_LABELS = {
+    "SPL_rms": ("L_{p,rms}", "dB re 1 µPa"),
+    "SPL_rms90": ("L_{p,rms,90}", "dB re 1 µPa"),
+    "SPL_pk": ("L_{p,pk}", "dB re 1 µPa"),
+    "SPL_pkpk": ("L_{p,pk-pk}", "dB re 1 µPa"),
+    "SEL": ("L_{E,p}", "dB re 1 µPa^{2} s"),
+    "SEL_cum": ("cSEL", "dB re 1 µPa^{2} s"),
+    "T90": ("T_{90}", "s"),
+    "t_rise": ("t_{r}", "s"),
+    "t_decay": ("t_{d}", "s"),
+    "kurtosis": ("β_{2}", ""),
+    "WSPD": ("Wind speed", "m/s"),
+    "WVHT": ("H_{1/3}", "m"),
+}
+
+
+def _word_label(metric: str) -> str:
+    name, unit = WORD_LABELS.get(metric, (metric, ""))
+    return f"{name} ({unit})" if unit else name
 
 
 def _axis_label(metric: str) -> str:
@@ -446,16 +474,36 @@ def event_table(
     ambient_spl: pl.DataFrame | None = None,
     weather: dict[str, float] | None = None,
 ) -> str:
-    """Summary statistics for one event (LaTeX tabular).
+    """Summary statistics for one event (LaTeX tabular); see `event_rows`."""
+    columns, rows = event_rows(
+        event, df, metrics, ambient_spl, weather, _tex_label, tex_escape
+    )
+    return _tabular(columns, rows, EVENT_ALIGN)
+
+
+EVENT_ALIGN = "llrrrrr"
+
+
+def event_rows(
+    event: str,
+    df: pl.DataFrame,
+    metrics: list[str],
+    ambient_spl: pl.DataFrame | None = None,
+    weather: dict[str, float | None] | None = None,
+    label: Callable[[str], str] = _tex_label,
+    text: Callable[[str], str] = tex_escape,
+) -> tuple[list[str], list[list[str]]]:
+    """Columns and rows of the summary statistics for one event.
 
     Each cell lists one value per channel, separated by slashes, in channel
     order. Ambient SPL is the mean over valid intervals before the event.
+    `label` names a metric and `text` escapes other text for the output format.
     """
     sensors = sensors_by_range(df)
     columns = ["Metric", "Sensor", "Mean", "Median", "Std", "Min", "Max"]
     rows = []
     if "depth_m" in df.columns:
-        for label, col, fmt in (
+        for name, col, fmt in (
             ("Hydrophone depth (m)", "depth_m", lambda v: _num(v, 1)),
             ("Hydrophone S/N", "serial_number", lambda v: v or "--"),
         ):
@@ -467,7 +515,7 @@ def event_table(
                     .sort("channel")
                 )
                 rows.append(
-                    [label if k == 0 else "", tex_escape(sensor)]
+                    [name if k == 0 else "", text(sensor)]
                     + ["/".join(fmt(v) for v in per_ch[col].to_list())]
                     + [""] * 4
                 )
@@ -487,14 +535,14 @@ def event_table(
                 .sort("channel")
             )
             rows.append(
-                [_tex_label(metric) if k == 0 else "", tex_escape(sensor)]
+                [label(metric) if k == 0 else "", text(sensor)]
                 + [
                     _fmt(by_ch[c].to_list(), digits)
                     for c in ("mean", "median", "std", "min", "max")
                 ]
             )
     if ambient_spl is not None:
-        label = f"Ambient {_tex_label('SPL_rms')}"
+        name = f"Ambient {label('SPL_rms')}"
         for sensor, _ in sensors:
             amb = (
                 ambient_spl.filter(
@@ -509,20 +557,32 @@ def event_table(
             if not amb.is_empty():
                 rows.append(
                     [
-                        label,
-                        tex_escape(sensor),
+                        name,
+                        text(sensor),
                         _fmt(amb["SPL_rms"].to_list()),
                     ]
                     + [""] * 4
                 )
-                label = ""
-    for label, value in (weather or {}).items():
-        rows.append([label, "", "--" if value is None else f"{value:.1f}"] + [""] * 4)
-    return _tabular(columns, rows, "llrrrrr")
+                name = ""
+    for key, value in (weather or {}).items():
+        rows.append(
+            [label(key), "", "--" if value is None else f"{value:.1f}"] + [""] * 4
+        )
+    return columns, rows
 
 
 def detections_table(site: SiteConfig, events: list) -> str:
     """Detections per event and sensor (LaTeX tabular)."""
+    return _tabular(*detection_rows(site, events, tex_escape), DETECTIONS_ALIGN)
+
+
+DETECTIONS_ALIGN = "lllrllrr"
+
+
+def detection_rows(
+    site: SiteConfig, events: list, text: Callable[[str], str] = tex_escape
+) -> tuple[list[str], list[list[str]]]:
+    """Columns and rows of the detections per event and sensor."""
     columns = [
         "Event",
         "Pile",
@@ -543,9 +603,9 @@ def detections_table(site: SiteConfig, events: list) -> str:
             snr = det["snr_db"].median() if len(det) else None
             rows.append(
                 [
-                    tex_escape(event.name),
-                    tex_escape(event.pile),
-                    tex_escape(sensor.name),
+                    text(event.name),
+                    text(event.pile),
+                    text(sensor.name),
                     f"{source_range(event, sensor) / 1e3:.1f}",
                     str(event.start)[:16].replace("T", " "),
                     str(event.end)[:16].replace("T", " "),
@@ -553,7 +613,7 @@ def detections_table(site: SiteConfig, events: list) -> str:
                     "--" if snr is None else f"{snr:.1f}",
                 ]
             )
-    return _tabular(columns, rows, "lllrllrr")
+    return columns, rows
 
 
 def pulses_longtable(df: pl.DataFrame, metrics: list[str]) -> str:
@@ -598,10 +658,7 @@ def pulses_longtable(df: pl.DataFrame, metrics: list[str]) -> str:
 
 def event_weather(met: pl.DataFrame, start, end) -> dict[str, float | None]:
     sub = met.filter((pl.col("datetime") >= start) & (pl.col("datetime") <= end))
-    return {
-        "Wind speed (m/s)": sub["WSPD"].mean() if len(sub) else None,
-        "$H_{1/3}$ (m)": sub["WVHT"].mean() if len(sub) else None,
-    }
+    return {key: sub[key].mean() if len(sub) else None for key in ("WSPD", "WVHT")}
 
 
 # --------------------------------------------------------------------------
@@ -609,7 +666,14 @@ def event_weather(met: pl.DataFrame, start, end) -> dict[str, float | None]:
 # --------------------------------------------------------------------------
 
 
-def _save(fig: plt.Figure, path: Path, dpi: int) -> None:
+def _save(fig: plt.Figure, path: Path, dpi: int, title: bool = True) -> None:
+    """Save and close a figure. Without `title`, drop the figure title (or,
+    if it has none, the title of its first axes)."""
+    if not title:
+        if fig.get_suptitle():
+            fig.suptitle("")
+        elif fig.axes:
+            fig.axes[0].set_title("")
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
@@ -637,12 +701,26 @@ def write_coverage_figure(site: SiteConfig, path: Path) -> None:
         for s, p in inventories.items()
     }
     _save(
-        plot_data_coverage(events, recorded, covered, site.name), path, site.report.dpi
+        plot_data_coverage(events, recorded, covered, site.name),
+        path,
+        site.report.dpi,
+        site.report.titles,
     )
 
 
+def _window(event) -> str:
+    return f"{str(event.start)[:16].replace('T', ' ')}–{str(event.end)[11:16]}"
+
+
+def _and(items: list[str]) -> str:
+    if len(items) < 3:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + ", and " + items[-1]
+
+
 def make_report(site: SiteConfig, events: list) -> None:
-    """Write all figures and tables for the given events."""
+    """Write all figures and tables for the given events, and the Word
+    document that collects them."""
     cfg = site.report
     if cfg.style is not None:
         plt.style.use(cfg.style)
@@ -669,19 +747,18 @@ def make_report(site: SiteConfig, events: list) -> None:
         if df_e.is_empty():
             logger.warning(f"[report] {event.name}: no metrics")
             continue
-        when = (
-            f"{str(event.start)[:16].replace('T', ' ')} to {str(event.end)[11:16]} UTC"
-        )
-        title = f"Event {event.name} (pile {event.pile}), {when}"
+        title = f"Event {event.name} (pile {event.pile}), {_window(event)} UTC"
         _save(
             plot_event_metrics(df_e, cfg.metrics, title),
             figs / event.name / "metrics.png",
             cfg.dpi,
+            cfg.titles,
         )
         _save(
             plot_level_histograms(df_e, cfg.histogram_metric, title),
             figs / event.name / "levels.png",
             cfg.dpi,
+            cfg.titles,
         )
 
         sensors = sensors_by_range(df_e)
@@ -699,6 +776,7 @@ def make_report(site: SiteConfig, events: list) -> None:
                 plot_pulse_psd(event.name, sensors, stats, ambient),
                 figs / event.name / "psd.png",
                 cfg.dpi,
+                cfg.titles,
             )
 
         weather = (
@@ -708,17 +786,156 @@ def make_report(site: SiteConfig, events: list) -> None:
             event_table(event.name, df_e, cfg.metrics, ambient_spl, weather)
         )
 
-    detect_ch = {s.name: s.detect_channel for s in site.sensors}
-    df_ref = df.filter(
-        pl.col("channel") == pl.col("sensor").replace_strict(detect_ch, default=None)
-    )
     for metric in cfg.range_metrics:
         _save(
-            plot_metric_vs_range(df_ref, metric, site.name),
+            plot_metric_vs_range(detection_channels(site, df), metric, site.name),
             figs / f"{metric}_vs_range.png",
             cfg.dpi,
+            cfg.titles,
         )
 
     (tables / "detections.tex").write_text(detections_table(site, events))
     (tables / "pulses.tex").write_text(pulses_longtable(df, cfg.metrics))
     logger.info(f"[report] tables -> {tables}")
+
+    write_document(site, events, df, ambient_spl, met)
+
+
+def detection_channels(site: SiteConfig, df: pl.DataFrame) -> pl.DataFrame:
+    """Rows of `df` on each sensor's detection channel."""
+    detect_ch = {s.name: s.detect_channel for s in site.sensors}
+    return df.filter(
+        pl.col("channel") == pl.col("sensor").replace_strict(detect_ch, default=None)
+    )
+
+
+def write_document(
+    site: SiteConfig,
+    events: list,
+    df: pl.DataFrame,
+    ambient_spl: pl.DataFrame | None = None,
+    met: pl.DataFrame | None = None,
+) -> Path:
+    """Word document of the figures (as already written to the report
+    directory) and tables, with captions, for pasting into a shared report.
+
+    Event tables are on landscape pages. The pulse-by-pulse table is left out;
+    `metrics.csv` serves as the data supplement.
+    """
+    cfg = site.report
+    figs = site.report_dir / "figures"
+    doc = Document(cfg.docx_template)
+
+    def figure(path: Path, caption: str) -> None:
+        if path.exists():
+            doc.figure(path, caption)
+        else:
+            logger.warning(f"[report] docx: missing {path}")
+
+    def at_range(sensors: list[tuple[str, float]]) -> str:
+        return _and([f"{s} ({r / 1e3:.1f} km)" for s, r in sensors])
+
+    n_events = df["event"].n_unique()
+    doc.heading(site.name, 1)
+    doc.paragraph(
+        f"Figures and tables generated by soundscape report on "
+        f"{date.today():%Y-%m-%d} from {len(df):,} valid pulse records "
+        f"(all channels) in {n_events} event{'s' * (n_events != 1)}. "
+        f"Where a sensor has several channels, a table cell lists one value "
+        f"per channel, in channel order, separated by slashes."
+    )
+
+    doc.heading("Data coverage", 2)
+    figure(
+        figs / "coverage.png",
+        f"Recording periods of each sensor at {site.name} (top) and the "
+        f"pile-driving events (bottom), with each event's time window and the "
+        f"sensors that recorded it. Events that no sensor recorded are gray; a "
+        f"percentage is the fraction of an event that a sensor recorded.",
+    )
+
+    doc.heading("Detections", 2)
+    columns, rows = detection_rows(site, events, str)
+    doc.table(
+        columns,
+        rows,
+        f"Pile strikes detected at {site.name} for each event and sensor. Range "
+        f"is the horizontal distance from the pile to the sensor; SNR is the "
+        f"strike energy relative to the noise floor in the detection band on the "
+        f"sensor's detection channel.",
+        DETECTIONS_ALIGN,
+    )
+
+    doc.heading("Received levels versus range", 2)
+    for metric in cfg.range_metrics:
+        figure(
+            figs / f"{metric}_vs_range.png",
+            f"{WORD_LABELS.get(metric, (metric,))[0]} versus range for all "
+            f"events at {site.name}, on each sensor's detection channel. Points "
+            f"are individual pulses colored by strike number; black markers are "
+            f"the median and interquartile range for each event and sensor.",
+        )
+
+    for event in events:
+        df_e = df.filter(pl.col("event") == event.name)
+        if df_e.is_empty():
+            continue
+        sensors = sensors_by_range(df_e)
+        n = {
+            s: df_e.filter(pl.col("sensor") == s)["strike"].n_unique()
+            for s, _ in sensors
+        }
+        weather = (
+            event_weather(met, event.start, event.end) if met is not None else None
+        )
+
+        doc.orientation(landscape=True)
+        doc.heading(f"Event {event.name}", 2)
+        caption = (
+            f"Statistics of pulse metrics for event {event.name} (pile "
+            f"{event.pile}), {_window(event)} UTC, from "
+            + _and([f"{n[s]:,} pulses at {s} ({r / 1e3:.1f} km)" for s, r in sensors])
+            + "."
+        )
+        if ambient_spl is not None:
+            a = site.ambient
+            caption += (
+                f" Ambient L_{{p,rms}} is the mean over {a.interval_s:g}-s "
+                f"intervals in the {a.duration_s / 60:g} min starting "
+                f"{a.offset_s / 60:g} min before the event."
+            )
+        if weather is not None:
+            caption += (
+                " Wind speed and significant wave height H_{1/3} are means over "
+                "the event."
+            )
+        columns, rows = event_rows(
+            event.name, df_e, cfg.metrics, ambient_spl, weather, _word_label, str
+        )
+        doc.table(columns, rows, caption, EVENT_ALIGN, font_pt=7.5)
+
+        doc.orientation(landscape=False)
+        event_figs = figs / event.name
+        figure(
+            event_figs / "metrics.png",
+            f"Pulse metrics for event {event.name} versus time at "
+            f"{at_range(sensors)}, colored by channel. From top: "
+            + ", ".join(WORD_LABELS.get(m, (m,))[0] for m in cfg.metrics)
+            + ".",
+        )
+        figure(
+            event_figs / "psd.png",
+            f"Power spectral density of the pulses for event {event.name} "
+            f"(red: mean ± 2σ in dB) and of ambient noise before the event "
+            f"(blue) at {at_range(sensors)} (columns), by channel (rows).",
+        )
+        figure(
+            event_figs / "levels.png",
+            f"Distribution of {_word_label(cfg.histogram_metric)} for event "
+            f"{event.name} at {at_range(sensors)}, by channel.",
+        )
+
+    path = site.report_dir / "report.docx"
+    doc.save(path)
+    logger.info(f"[report] {path}")
+    return path

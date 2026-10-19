@@ -35,7 +35,7 @@ graph LR
 | `metrics`   | Per-pulse metrics for each channel; writes a site-wide summary table.        |
 | `psd`       | Power spectral density of each pulse.                                        |
 | `ambient`   | SPL and PSD of ambient noise in a window preceding each event.               |
-| `report`    | Figures and LaTeX tables (see [Figures and tables](#figures-and-tables)).    |
+| `report`    | Figures, LaTeX tables, and a Word document (see [Figures and tables](#figures-and-tables)). |
 
 Run from the repository root:
 
@@ -174,6 +174,10 @@ and for the whole site:
 - `tables/detections.tex`: strikes and median SNR per event and sensor.
 - `tables/pulses.tex`: every pulse and channel, as a `longtable` for an appendix.
 
+It also writes `report.docx`, which collects the figures and tables (except `pulses.tex`) with captions written from the data, for pasting into a shared Word report.
+Tables are native Word tables, with each event table on a landscape page, and captions are numbered with Word fields, so they renumber in the document they are pasted into (select all and press F9).
+`metrics.csv` stands in for the pulse-by-pulse table as a data supplement.
+
 Figures and tables use valid pulses only. Configure them in `[report]`:
 
 ```toml
@@ -184,6 +188,8 @@ metrics = ["SPL_rms", "SPL_pk", "SPL_pkpk", "SEL", "SEL_cum", "t_rise", "t_decay
 histogram_metric = "SPL_pk"
 range_metrics = ["SPL_pk", "SPL_pkpk", "SEL"]
 dpi = 300
+titles = true                             # false leaves titles off figures, for captioned documents
+docx_template = "shared_report.docx"      # optional: styles for report.docx, e.g. the shared report downloaded as .docx
 ```
 
 The tables need `\usepackage{booktabs, longtable, makecell}`.

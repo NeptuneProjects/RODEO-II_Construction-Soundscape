@@ -6,7 +6,7 @@
 # It holds one directory per recorder, VLA1_shru905/ and VLA2_shru920/, each
 # with the recordings under Data/.
 
-name = "vineyard"
+name = "Vineyard Wind"
 output_dir = "results/vineyard"
 events = "config/sites/vineyard/events.csv"
 piles = "config/sites/vineyard/piles.csv"
@@ -42,6 +42,10 @@ filter = { type = "highpass", freq = 10.0 }
 [pulse_psd]
 nperseg = 16384
 overlap = 0.95
+
+[report]
+style = "config/jasa_fig_style.mplstyle"
+# No met: data/met/data.csv covers the South Fork period (July-August 2023) only.
 
 [[sensors]]
 name = "VLA1"

@@ -12,9 +12,11 @@ dependencies = [
     "h5py",
     "matplotlib",
     "numpy",
+    "pillow>=12.3.0",
     "polars<2",  # TritonOA inventory loading breaks on polars 2
     "pydantic>=2",
     "pyproj",
+    "python-docx>=1.2.0",
     "scipy",
     "TritonOA",
 ]

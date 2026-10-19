@@ -2,6 +2,7 @@
 
 import logging
 
+import docx
 import h5py
 import numpy as np
 import polars as pl
@@ -9,6 +10,7 @@ import pytest
 
 from soundscape import detect, extract, spectra, workflow
 from soundscape.config import Exclusion
+from soundscape.document import Document
 from soundscape.events import load_events
 from soundscape.metrics import read_table
 from soundscape.report import write_coverage_figure
@@ -198,3 +200,39 @@ def test_report(wf, site):
         sum(line.startswith("E1 & VLA1 &") for line in pulses.splitlines()) == n_pulses
     )
     assert pulses.count("\\makecell") == 2 * (len(site.report.metrics) - 1)
+
+    doc = docx.Document(str(site.report_dir / "report.docx"))
+    # Detections and one event table, as native Word tables.
+    assert len(doc.tables) == 2
+    assert doc.tables[0].rows[1].cells[0].text == "E1"
+    event_rows = doc.tables[1].rows
+    assert event_rows[1].cells[0].text == "Hydrophone depth (m)"
+    # Trailing empty cells are merged.
+    assert event_rows[1].cells[2].text == event_rows[1].cells[-1].text
+    # Range figures and three figures for the event (no inventory, so no
+    # coverage figure).
+    assert len(doc.inline_shapes) == len(site.report.range_metrics) + 3
+    captions = [p for p in doc.paragraphs if p.style.name == "Caption"]
+    assert len(captions) == len(doc.inline_shapes) + len(doc.tables)
+    assert sum("SEQ Table" in p._p.xml for p in captions) == 2
+    # The event table sits on a landscape page between portrait ones.
+    widths = [s.page_width > s.page_height for s in doc.sections]
+    assert widths == [False, True, False]
+
+
+def test_report_without_titles(wf, site):
+    site.report.titles = False
+    wf.detect(plot=False)
+    wf.extract()
+    wf.metrics()
+    wf.report()
+    assert (site.report_dir / "figures" / "E1" / "metrics.png").exists()
+    assert (site.report_dir / "report.docx").exists()
+
+
+def test_rich_text(tmp_path):
+    doc = Document()
+    doc.paragraph("L_{p,pk} (dB re 1 µPa^{2} s)")
+    runs = doc.doc.paragraphs[-1].runs
+    assert [r.text for r in runs] == ["L", "p,pk", " (dB re 1 µPa", "2", " s)"]
+    assert runs[1].font.subscript and runs[3].font.superscript

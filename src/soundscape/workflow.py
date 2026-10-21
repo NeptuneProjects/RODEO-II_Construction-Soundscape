@@ -8,6 +8,7 @@ Stages, in order:
     metrics    per-pulse metrics; also writes the site-wide summary
     psd        power spectral density of each pulse
     ambient    ambient noise preceding each event
+    kurtosis   kurtosis of the recording in 60 s windows over each event
     report     figures, LaTeX tables, and a Word document
     run        all of the above
 
@@ -22,6 +23,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 from tritonoa.data.reader import NoDataError
 
@@ -30,6 +32,7 @@ from soundscape.compare import compare_sites
 from soundscape.config import SensorConfig, SiteConfig, load_site
 from soundscape.events import Event, load_events
 from soundscape.extract import extract
+from soundscape.kurtosis import windowed_kurtosis
 from soundscape.metrics import compute_metrics, read_table
 from soundscape.plotting import plot_detections
 from soundscape.report import make_report
@@ -58,6 +61,21 @@ def with_hydrophones(df: pl.DataFrame, sensor: SensorConfig) -> pl.DataFrame:
     at = cols.index("channel") + 1
     order = cols[:at] + ["depth_m", "serial_number"] + cols[at:]
     return df.join(info, on="channel", how="left").select(order)
+
+
+def _merge_table(site: SiteConfig, path: Path, new: pl.DataFrame) -> None:
+    """Write a site-wide table, keeping rows of events and sensors not in
+    `new` (i.e. not rerun this time)."""
+    if path.exists():
+        old = read_table(path).filter(
+            pl.col("sensor").is_in([s.name for s in site.sensors])
+        )
+        keys = new.select("event", "sensor").unique()
+        old = old.join(keys, on=["event", "sensor"], how="anti")
+        # Tables from earlier versions may lack newer columns.
+        new = pl.concat([old, new], how="diagonal_relaxed").select(new.columns)
+    time_col = next(c for c in ("interval_start", "window_start") if c in new.columns)
+    new.sort("event", "sensor", "channel", time_col).write_csv(path)
 
 
 class Workflow:
@@ -236,17 +254,32 @@ class Workflow:
 
         self._each(_ambient, "ambient")
         if tables:
-            path = self.site.ambient_spl_path
-            new = pl.concat(tables)
+            _merge_table(self.site, self.site.ambient_spl_path, pl.concat(tables))
+
+    def kurtosis(self) -> None:
+        tables = []
+
+        def _kurtosis(event: Event, sensor) -> None:
+            path = self.site.detections_path(event.name, sensor.name)
+            strikes = None
             if path.exists():
-                # Keep results for events/sensors not rerun this time.
-                old = read_table(path).filter(
-                    pl.col("sensor").is_in([s.name for s in self.site.sensors])
-                )
-                keys = new.select("event", "sensor").unique()
-                old = old.join(keys, on=["event", "sensor"], how="anti")
-                new = pl.concat([old, new], how="diagonal_relaxed").select(new.columns)
-            new.sort("event", "sensor", "channel", "interval_start").write_csv(path)
+                det = pl.read_csv(path, schema_overrides={"time": pl.Datetime("us")})
+                strikes = np.sort(det["time"].to_numpy())
+            table = windowed_kurtosis(
+                sensor,
+                self.site.inventory_path(sensor.name),
+                event,
+                self.site.kurtosis,
+                strikes,
+            )
+            if table.is_empty():
+                logger.warning(f"[kurtosis] {event.name}/{sensor.name}: no data")
+                return
+            tables.append(with_hydrophones(table, sensor))
+
+        self._each(_kurtosis, "kurtosis")
+        if tables:
+            _merge_table(self.site, self.site.kurtosis_path, pl.concat(tables))
 
     def report(self) -> None:
         make_report(self.site, self.events)
@@ -258,6 +291,7 @@ class Workflow:
         self.metrics()
         self.psd()
         self.ambient()
+        self.kurtosis()
         self.report()
 
 
@@ -281,6 +315,7 @@ COMMANDS = [
     "metrics",
     "psd",
     "ambient",
+    "kurtosis",
     "report",
     "run",
     "compare",

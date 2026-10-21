@@ -1,27 +1,29 @@
-"""Per-pulse soundscape metrics.
+"""Per-pulse metrics of pile-driving strikes.
 
-Definitions follow ISO 18405:2017 with a reference pressure of 1 uPa. For a
-pulse window p(t) sampled at fs, with T90 the interval holding 5-95% of the
-cumulative energy:
+Metrics follow ISO 18406:2017, with quantities and levels as defined in
+ISO 18405:2017 and a reference pressure p0 = 1 uPa. For a pulse window p(t)
+sampled at fs, the pulse duration T90 is the 90 % energy signal duration, the
+interval from 5 % to 95 % of the cumulative energy:
 
-    SPL_pk     20 log10(max|p|)                         dB re 1 uPa
-    SPL_pkpk   20 log10(max p - min p)                  dB re 1 uPa
-    SPL_rms    10 log10(mean p^2 over the whole window) dB re 1 uPa
-    SPL_rms90  10 log10(mean p^2 over T90)              dB re 1 uPa
-    SEL        10 log10(sum p^2 / fs)                   dB re 1 uPa^2 s
-    SEL_cum    10 log10(sum_i 10^(SEL_i/10)), running over strikes in time order
-    T90        duration of the 90% energy interval      s
-    t_rise     time from the start of T90 to the peak   s
-    t_decay    time from the peak to the end of T90     s
-    kurtosis   Pearson kurtosis (beta_2; 3 for Gaussian noise)
+    SPL_pk     10 log10(max p^2 / p0^2)                  dB re 1 uPa
+    SPL_pkpk   10 log10((max p - min p)^2 / p0^2)        dB re 1 uPa
+    SPL_rms90  10 log10(mean p^2 over T90 / p0^2)        dB re 1 uPa
+    SEL_ss     10 log10(sum p^2 / fs / E0), E0 = 1 uPa^2 s, over the whole
+               window, so 100 % of the pulse energy      dB re 1 uPa^2 s
+    SEL_cum    10 log10(sum_i 10^(SEL_ss,i / 10)), running over valid strikes
+               in time order                             dB re 1 uPa^2 s
+    T90        pulse duration                            s
+    t_rise     time from the start of T90 to the peak    s
+    t_decay    time from the peak to the end of T90      s
 
-The window is broadband apart from the extraction filter and includes ambient
-noise, which biases SPL_rms and SEL upward at low signal-to-noise ratio.
+The window (see ExtractConfig) is long enough to hold the whole pulse, so
+SEL_ss includes the ambient noise in it, which biases it upward at low
+signal-to-noise ratio. Kurtosis is computed over 60 s windows of the
+continuous recording instead of per pulse (see soundscape.kurtosis).
 """
 
 import numpy as np
 import polars as pl
-from scipy.stats import kurtosis as _kurtosis
 
 from soundscape.extract import iter_waveforms, read_pulses
 
@@ -30,14 +32,12 @@ REF_PRESSURE_UPA = 1.0
 METRIC_COLUMNS = [
     "SPL_pk",
     "SPL_pkpk",
-    "SPL_rms",
     "SPL_rms90",
-    "SEL",
+    "SEL_ss",
     "SEL_cum",
     "T90",
     "t_rise",
     "t_decay",
-    "kurtosis",
 ]
 
 
@@ -51,11 +51,6 @@ def read_table(path) -> pl.DataFrame:
 def _db_power(x: np.ndarray) -> np.ndarray:
     with np.errstate(divide="ignore"):
         return 10 * np.log10(x / REF_PRESSURE_UPA**2)
-
-
-def _db_amplitude(x: np.ndarray) -> np.ndarray:
-    with np.errstate(divide="ignore"):
-        return 20 * np.log10(x / REF_PRESSURE_UPA)
 
 
 def energy_interval(energy: np.ndarray, lower: float = 0.05, upper: float = 0.95):
@@ -87,15 +82,13 @@ def pulse_metrics(x: np.ndarray, fs: float) -> dict[str, np.ndarray]:
     i_pk = np.argmax(energy, axis=-1)
 
     return {
-        "SPL_pk": _db_amplitude(np.abs(x).max(axis=-1)),
-        "SPL_pkpk": _db_amplitude(x.max(axis=-1) - x.min(axis=-1)),
-        "SPL_rms": _db_power(energy.mean(axis=-1)),
+        "SPL_pk": _db_power(energy.max(axis=-1)),
+        "SPL_pkpk": _db_power((x.max(axis=-1) - x.min(axis=-1)) ** 2),
         "SPL_rms90": _db_power(e90 / n90),
-        "SEL": _db_power(cum[..., -1] / fs),
+        "SEL_ss": _db_power(cum[..., -1] / fs),
         "T90": (i1 - i0) / fs,
         "t_rise": (i_pk - i0) / fs,
         "t_decay": (i1 - i_pk) / fs,
-        "kurtosis": _kurtosis(x, axis=-1, fisher=False),
     }
 
 
@@ -115,9 +108,9 @@ def compute_metrics(pulses_path) -> pl.DataFrame:
     # Strikes are numbered in time order, so this is a running sum in time.
     if np.any(np.diff(arrays["time"]) < np.timedelta64(0, "us")):
         raise ValueError(f"Pulses in {pulses_path} are not in time order.")
-    m["SEL_cum"] = cumulative_sel(m["SEL"], arrays["valid"])
+    m["SEL_cum"] = cumulative_sel(m["SEL_ss"], arrays["valid"])
 
-    n_strikes, n_channels = m["SEL"].shape
+    n_strikes, n_channels = m["SEL_ss"].shape
     channels = np.array(attrs["channels"])
     df = pl.DataFrame(
         {

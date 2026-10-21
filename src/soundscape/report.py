@@ -25,6 +25,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+from matplotlib.ticker import NullFormatter, ScalarFormatter
 
 from soundscape.config import SiteConfig
 from soundscape.document import Document
@@ -34,17 +35,21 @@ from soundscape.sources import coverage, recorded_intervals
 
 logger = logging.getLogger(__name__)
 
-# Axis labels (matplotlib mathtext) and table labels (LaTeX) for each metric.
+DB = "dB re 1 $\\mathrm{\\mu Pa}$"
+DB_E = "dB re 1 $\\mathrm{\\mu Pa^2 s}$"
+
+# Axis labels (matplotlib mathtext) and table labels (LaTeX) for each metric,
+# named as in ISO 18406:2017 and ISO 18405:2017.
 METRIC_LABELS = {
-    "SPL_rms": ("$L_{p,\\mathrm{rms}}$", "dB re 1 $\\mathrm{\\mu Pa}$"),
-    "SPL_rms90": ("$L_{p,\\mathrm{rms},90}$", "dB re 1 $\\mathrm{\\mu Pa}$"),
-    "SPL_pk": ("$L_{p,\\mathrm{pk}}$", "dB re 1 $\\mathrm{\\mu Pa}$"),
-    "SPL_pkpk": ("$L_{p,\\text{pk-pk}}$", "dB re 1 $\\mathrm{\\mu Pa}$"),
-    "SEL": ("$L_{E,p}$", "dB re 1 $\\mathrm{\\mu Pa^2 s}$"),
-    "SEL_cum": ("cSEL", "dB re 1 $\\mathrm{\\mu Pa^2 s}$"),
-    "T90": ("$T_{90}$", "s"),
-    "t_rise": ("$t_\\mathrm{r}$", "s"),
-    "t_decay": ("$t_\\mathrm{d}$", "s"),
+    "SPL_pk": ("$L_{p,\\mathrm{pk}}$", DB),
+    "SPL_pkpk": ("$L_{p,\\text{pk-pk}}$", DB),
+    "SPL_rms90": ("$L_{p,90}$", DB),
+    "SPL_rms": ("$L_{p}$", DB),  # ambient: mean-square SPL over an interval
+    "SEL_ss": ("$\\mathrm{SEL}_\\mathrm{ss}$", DB_E),
+    "SEL_cum": ("$\\mathrm{SEL}_\\mathrm{cum}$", DB_E),
+    "T90": ("$T_{90}$", "ms"),
+    "t_rise": ("$t_\\mathrm{r}$", "ms"),
+    "t_decay": ("$t_\\mathrm{d}$", "ms"),
     "kurtosis": ("$\\beta_2$", ""),
     "WSPD": ("Wind speed", "m/s"),
     "WVHT": ("$H_{1/3}$", "m"),
@@ -52,19 +57,28 @@ METRIC_LABELS = {
 
 # The same labels for Word (see soundscape.document for the markup).
 WORD_LABELS = {
-    "SPL_rms": ("L_{p,rms}", "dB re 1 µPa"),
-    "SPL_rms90": ("L_{p,rms,90}", "dB re 1 µPa"),
     "SPL_pk": ("L_{p,pk}", "dB re 1 µPa"),
     "SPL_pkpk": ("L_{p,pk-pk}", "dB re 1 µPa"),
-    "SEL": ("L_{E,p}", "dB re 1 µPa^{2} s"),
-    "SEL_cum": ("cSEL", "dB re 1 µPa^{2} s"),
-    "T90": ("T_{90}", "s"),
-    "t_rise": ("t_{r}", "s"),
-    "t_decay": ("t_{d}", "s"),
+    "SPL_rms90": ("L_{p,90}", "dB re 1 µPa"),
+    "SPL_rms": ("L_{p}", "dB re 1 µPa"),
+    "SEL_ss": ("SEL_{ss}", "dB re 1 µPa^{2} s"),
+    "SEL_cum": ("SEL_{cum}", "dB re 1 µPa^{2} s"),
+    "T90": ("T_{90}", "ms"),
+    "t_rise": ("t_{r}", "ms"),
+    "t_decay": ("t_{d}", "ms"),
     "kurtosis": ("β_{2}", ""),
     "WSPD": ("Wind speed", "m/s"),
     "WVHT": ("H_{1/3}", "m"),
 }
+
+# Factors from the units in the metrics tables to the units shown, and the
+# decimals shown.
+SCALE = {"T90": 1e3, "t_rise": 1e3, "t_decay": 1e3}
+DIGITS = {"T90": 0, "t_rise": 0, "t_decay": 0}
+
+
+def scaled(metric: str) -> pl.Expr:
+    return pl.col(metric) * SCALE.get(metric, 1.0)
 
 
 def _word_label(metric: str) -> str:
@@ -107,7 +121,7 @@ def load_metrics(site: SiteConfig) -> pl.DataFrame:
 def total_sel() -> pl.Expr:
     """Cumulative SEL over all rows in a group, as column `SEL_total`
     (dB re 1 uPa^2 s); the last value of `SEL_cum` for valid pulses."""
-    return ((10 ** (pl.col("SEL") / 10)).sum().log10() * 10).alias("SEL_total")
+    return ((10 ** (pl.col("SEL_ss") / 10)).sum().log10() * 10).alias("SEL_total")
 
 
 def sensors_by_range(df: pl.DataFrame) -> list[tuple[str, float]]:
@@ -116,28 +130,34 @@ def sensors_by_range(df: pl.DataFrame) -> list[tuple[str, float]]:
     return list(rows.iter_rows())
 
 
+def _db_percentiles(psd: np.ndarray) -> dict[str, np.ndarray]:
+    """Median and 5th and 95th percentiles in dB along axis 0."""
+    level = 10 * np.log10(psd.astype(np.float64))
+    p5, med, p95 = np.percentile(level, [5, 50, 95], axis=0)
+    return {"median": med, "p5": p5, "p95": p95}
+
+
 def pulse_psd_stats(path: Path) -> dict:
-    """Mean and standard deviation of pulse PSDs in dB, per channel."""
+    """Median and 5th and 95th percentiles of the valid pulse PSDs in dB, per
+    channel (arrays of shape (n_channels, n_freqs))."""
     with h5py.File(path, "r") as f:
         freqs = f["freqs"][:]
         valid = f["valid"][:]
         channels = [int(c) for c in f.attrs["channels"]]
         dset = f["psd"]
-        mean, std = [], []
-        for c in range(dset.shape[1]):
-            level = 10 * np.log10(dset[:, c, :][valid].astype(np.float64))
-            mean.append(level.mean(axis=0))
-            std.append(level.std(axis=0))
+        per_ch = [_db_percentiles(dset[:, c, :][valid]) for c in range(dset.shape[1])]
     return {
         "freqs": freqs,
         "channels": channels,
-        "mean": np.array(mean),
-        "std": np.array(std),
+        **{k: np.array([p[k] for p in per_ch]) for k in ("median", "p5", "p95")},
         "n": int(valid.sum()),
     }
 
 
 def ambient_psd(path: Path, event: str, sensor: str) -> dict | None:
+    """Ambient PSD in dB per channel: `level` over the whole window, and, if
+    the ambient file has interval PSDs, their median and 5th and 95th
+    percentiles over valid intervals."""
     if not path.exists():
         return None
     with h5py.File(path, "r") as f:
@@ -145,11 +165,22 @@ def ambient_psd(path: Path, event: str, sensor: str) -> dict | None:
         if name not in f:
             return None
         g = f[name]
-        return {
+        out = {
             "freqs": g["freqs"][:],
             "channels": [int(c) for c in g.attrs["channels"]],
             "level": 10 * np.log10(g["psd"][:]),
         }
+        if "psd_intervals" in g:
+            psd, valid = g["psd_intervals"][:], g["interval_valid"][:]
+            per_ch = [
+                _db_percentiles(psd[c][valid[c]])
+                for c in range(psd.shape[0])
+                if valid[c].any()
+            ]
+            if len(per_ch) == psd.shape[0]:
+                for k in ("median", "p5", "p95"):
+                    out[k] = np.array([p[k] for p in per_ch])
+        return out
 
 
 # --------------------------------------------------------------------------
@@ -163,52 +194,107 @@ def channel_colors(df: pl.DataFrame) -> dict[int, str]:
     return {c: f"C{k}" for k, c in enumerate(channels)}
 
 
-def _channel_legend(fig: plt.Figure, colors: dict[int, str], **kwargs) -> None:
+def hydrophone_labels(df: pl.DataFrame) -> dict[tuple[str, int], str]:
+    """(sensor, channel) -> hydrophone depth label, with the channel number
+    where a sensor has several hydrophones at one depth."""
+    if "depth_m" not in df.columns:
+        return {
+            (s, c): f"Ch. {c}"
+            for s, c in df.select("sensor", "channel").unique().iter_rows()
+        }
+    rows = df.group_by("sensor", "channel").agg(pl.col("depth_m").first())
+    labels = {}
+    for (sensor,), g in rows.group_by("sensor"):
+        shared = g["depth_m"].n_unique() < len(g)
+        for _, c, d in g.sort("channel").iter_rows():
+            depth = "depth n/a" if d is None else f"{d:.1f} m"
+            labels[(sensor, c)] = f"Ch. {c}, {depth}" if shared or d is None else depth
+    return labels
+
+
+def _hydrophone_legend(
+    ax: plt.Axes, sensor: str, channels: list[int], colors, labels, **kwargs
+) -> None:
     handles = [
-        plt.Line2D([], [], ls="", marker="o", ms=4, color=color, label=f"Ch. {c}")
-        for c, color in colors.items()
+        plt.Line2D(
+            [], [], ls="", marker="o", ms=3, color=colors[c], label=labels[(sensor, c)]
+        )
+        for c in channels
     ]
-    fig.legend(handles=handles, loc="outside lower center", ncol=len(handles), **kwargs)
+    ax.legend(handles=handles, fontsize="x-small", handletextpad=0.2, **kwargs)
 
 
-def plot_event_metrics(df: pl.DataFrame, metrics: list[str], title: str) -> plt.Figure:
-    """Metric time series for one event: rows are metrics, columns sensors
-    (nearest first), points colored by channel."""
+def plot_event_metrics(
+    df: pl.DataFrame,
+    metrics: list[str],
+    title: str,
+    kurt: pl.DataFrame | None = None,
+    window_s: float = 60.0,
+) -> plt.Figure:
+    """Metric time series for one event: rows are metrics (and, given `kurt`,
+    kurtosis in windows of `window_s`), columns sensors (nearest first),
+    points colored by hydrophone."""
     sensors = sensors_by_range(df)
     colors = channel_colors(df)
+    labels = hydrophone_labels(df)
+    rows = metrics + (["kurtosis"] if kurt is not None and not kurt.is_empty() else [])
     fig, axs = plt.subplots(
-        nrows=len(metrics),
+        nrows=len(rows),
         ncols=len(sensors),
-        figsize=(2.4 * len(sensors) + 1.2, 1.35 * len(metrics) + 1.0),
+        figsize=(2.4 * len(sensors) + 1.2, 1.35 * len(rows) + 0.8),
         sharex=True,
         sharey="row",
         squeeze=False,
         layout="constrained",
     )
+    half = np.timedelta64(round(window_s * 5e5), "us")
     for j, (sensor, range_m) in enumerate(sensors):
         df_s = df.filter(pl.col("sensor") == sensor)
         axs[0, j].set_title(f"{sensor}, R = {range_m / 1e3:.1f} km")
-        for (channel,), df_c in df_s.sort("channel").group_by(
-            "channel", maintain_order=True
-        ):
+        channels = sorted(df_s["channel"].unique().to_list())
+        for channel in channels:
+            df_c = df_s.filter(pl.col("channel") == channel)
             for i, metric in enumerate(metrics):
                 axs[i, j].scatter(
                     df_c["time"],
-                    df_c[metric],
+                    df_c.select(scaled(metric)).to_series(),
                     s=0.5,
                     alpha=0.5,
                     color=colors[channel],
                     rasterized=True,
                 )
-    for i, metric in enumerate(metrics):
-        axs[i, 0].set_ylabel(_axis_label(metric))
+            if rows[-1] == "kurtosis":
+                k = kurt.filter(
+                    (pl.col("sensor") == sensor)
+                    & (pl.col("channel") == channel)
+                    & pl.col("valid")
+                ).sort("window_start")
+                axs[-1, j].plot(
+                    k["window_start"].to_numpy() + half,
+                    k["kurtosis"],
+                    marker=".",
+                    ms=3,
+                    lw=0.6,
+                    color=colors[channel],
+                )
+        _hydrophone_legend(axs[0, j], sensor, channels, colors, labels, ncol=2)
+    for i, metric in enumerate(rows):
+        label = _axis_label(metric)
+        if metric == "kurtosis":
+            label = f"{label} ({window_s:g} s)"
+            for ax in axs[i]:
+                # Gaussian noise has beta_2 = 3.
+                ax.axhline(3.0, color="0.5", lw=0.6, ls="--")
+                ax.set_yscale("log")
+                ax.yaxis.set_major_formatter(ScalarFormatter())
+                ax.yaxis.set_minor_formatter(NullFormatter())
+        axs[i, 0].set_ylabel(label)
         for ax in axs[i]:
             ax.grid(True, lw=0.3)
     for ax in axs[-1]:
         ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=2, maxticks=5))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
         ax.set_xlabel("Time (UTC)")
-    _channel_legend(fig, colors)
     fig.suptitle(title)
     return fig
 
@@ -218,10 +304,13 @@ def plot_pulse_psd(
     sensors: list[tuple[str, float]],
     stats: dict[str, dict],
     ambient: dict[str, dict | None],
+    labels: dict[tuple[str, int], str] | None = None,
     fmin: float = 10.0,
 ) -> plt.Figure:
-    """Pulse PSD (mean ± 2σ in dB) against ambient noise: rows are channels,
-    columns sensors (nearest first)."""
+    """Pulse PSD (median and 5th to 95th percentiles in dB) against ambient
+    noise (the same over intervals before the event, if available): rows are
+    hydrophones, columns sensors (nearest first)."""
+    labels = labels or {}
     n_rows = max(len(stats[s]["channels"]) for s, _ in sensors)
     fmax = min(s["freqs"][-1] for s in stats.values())
     fig, axs = plt.subplots(
@@ -246,56 +335,84 @@ def plot_pulse_psd(
                 ax.set_axis_off()
                 continue
             channel = st["channels"][i]
-            lower = st["mean"][i] - 2 * st["std"][i]
-            upper = st["mean"][i] + 2 * st["std"][i]
-            lo, hi = min(lo, lower[band].min()), max(hi, upper[band].max())
+            lo = min(lo, st["p5"][i][band].min())
+            hi = max(hi, st["p95"][i][band].max())
             ax.fill_between(
-                f, lower, upper, color="C3", alpha=0.25, lw=0, label="Pulses, mean ± 2σ"
+                f,
+                st["p5"][i],
+                st["p95"][i],
+                color="C3",
+                alpha=0.25,
+                lw=0,
+                label="Pulses, 5th–95th percentile",
             )
-            ax.plot(f, st["mean"][i], c="C3", lw=1, label="Pulses, mean")
+            ax.plot(f, st["median"][i], c="C3", lw=1, label="Pulses, median")
             if amb is not None and channel in amb["channels"]:
                 k = amb["channels"].index(channel)
-                ax.plot(amb["freqs"], amb["level"][k], c="C0", lw=0.8, label="Ambient")
-            ax.text(0.03, 0.05, f"Ch. {channel}", transform=ax.transAxes)
+                fa = amb["freqs"]
+                if "median" in amb:
+                    ax.fill_between(
+                        fa,
+                        amb["p5"][k],
+                        amb["p95"][k],
+                        color="C0",
+                        alpha=0.25,
+                        lw=0,
+                        label="Ambient, 5th–95th percentile",
+                    )
+                    ax.plot(
+                        fa, amb["median"][k], c="C0", lw=0.8, label="Ambient, median"
+                    )
+                    lo = min(lo, amb["p5"][k][(fa >= fmin) & (fa <= fmax)].min())
+                else:
+                    ax.plot(fa, amb["level"][k], c="C0", lw=0.8, label="Ambient")
+            ax.text(
+                0.03,
+                0.05,
+                labels.get((sensor, channel), f"Ch. {channel}"),
+                transform=ax.transAxes,
+            )
             ax.grid(True, which="both", lw=0.3)
             if i == n_ch - 1:
                 # The bottom panel of a short column carries its own x labels.
                 ax.xaxis.set_tick_params(labelbottom=True)
                 ax.set_xlabel("Frequency (Hz)")
     for row in axs:
-        # Label the first visible panel in each row (a short column may be empty).
-        first = next(ax for ax in row if ax.axison)
-        first.yaxis.set_tick_params(labelleft=True)
-        first.set_ylabel("PSD (dB re 1 $\\mathrm{\\mu Pa^2/Hz}$)")
+        # Tick labels on the first visible panel in each row (a short column
+        # may be empty).
+        next(ax for ax in row if ax.axison).yaxis.set_tick_params(labelleft=True)
+    fig.supylabel("PSD (dB re 1 $\\mathrm{\\mu Pa^2/Hz}$)")
     axs[0, 0].set_xscale("log")
     axs[0, 0].set_xlim(fmin, fmax)
     pad = 0.05 * (hi - lo)
     axs[0, 0].set_ylim(lo - pad, hi + pad)
-    handles, labels = axs[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="outside lower center", ncol=3)
+    handles, names = axs[0, 0].get_legend_handles_labels()
+    fig.legend(handles, names, loc="outside lower center", ncol=2)
     fig.suptitle(f"Event {event}")
     return fig
 
 
 def plot_level_histograms(df: pl.DataFrame, metric: str, title: str) -> plt.Figure:
-    """Distribution of a metric per channel, one panel per sensor."""
+    """Distribution of a metric per hydrophone, one panel per sensor."""
     sensors = sensors_by_range(df)
     colors = channel_colors(df)
+    labels = hydrophone_labels(df)
     fig, axs = plt.subplots(
         nrows=len(sensors),
-        figsize=(5.0, 1.3 * len(sensors) + 1.0),
+        figsize=(5.0, 1.3 * len(sensors) + 0.8),
         sharex=True,
         squeeze=False,
         layout="constrained",
     )
-    bins = np.histogram_bin_edges(df[metric].drop_nans().to_numpy(), bins=60)
+    values = df.select(scaled(metric)).to_series().drop_nans().to_numpy()
+    bins = np.histogram_bin_edges(values, bins=60)
     for ax, (sensor, range_m) in zip(axs[:, 0], sensors):
         df_s = df.filter(pl.col("sensor") == sensor)
-        for (channel,), df_c in df_s.sort("channel").group_by(
-            "channel", maintain_order=True
-        ):
+        channels = sorted(df_s["channel"].unique().to_list())
+        for channel in channels:
+            df_c = df_s.filter(pl.col("channel") == channel)
             ax.hist(
-                df_c[metric].to_numpy(),
+                df_c.select(scaled(metric)).to_series().to_numpy(),
                 bins=bins,
                 density=True,
                 histtype="step",
@@ -304,10 +421,10 @@ def plot_level_histograms(df: pl.DataFrame, metric: str, title: str) -> plt.Figu
         ax.text(
             0.02, 0.85, f"{sensor}, R = {range_m / 1e3:.1f} km", transform=ax.transAxes
         )
+        _hydrophone_legend(ax, sensor, channels, colors, labels, loc="upper right")
         ax.set_ylabel("Density")
         ax.grid(True, lw=0.3)
     axs[-1, 0].set_xlabel(_axis_label(metric).replace("\n", " "))
-    _channel_legend(fig, colors)
     fig.suptitle(title)
     return fig
 
@@ -459,137 +576,166 @@ def _num(v: float | None, digits: int) -> str:
     return f"{round(v, digits) + 0.0:.{digits}f}"
 
 
-def _fmt(values, digits: int = 1) -> str:
-    """One value per channel, separated by slashes."""
-    return "/".join(_num(v, digits) for v in values)
+def _stat(
+    median: float | None, p5: float | None, p95: float | None, digits: int
+) -> str:
+    """Median with the 5th and 95th percentiles in brackets."""
+    if median is None:
+        return "--"
+    return f"{_num(median, digits)} [{_num(p5, digits)}, {_num(p95, digits)}]"
 
 
-def _tabular(columns: list[str], rows: list[list[str]], align: str) -> str:
+def _percentiles(expr: pl.Expr, name: str) -> list[pl.Expr]:
+    return [
+        expr.median().alias(f"{name}_median"),
+        expr.quantile(0.05, interpolation="linear").alias(f"{name}_p5"),
+        expr.quantile(0.95, interpolation="linear").alias(f"{name}_p95"),
+    ]
+
+
+def _tabular(
+    columns: list[str], rows: list[list[str]], align: str, note: str | None = None
+) -> str:
     lines = [f"\\begin{{tabular}}{{{align}}}", "\\toprule"]
     lines.append(" & ".join(columns) + " \\\\")
     lines.append("\\midrule")
     lines += [" & ".join(r) + " \\\\" for r in rows]
+    if note:
+        lines += ["\\midrule", f"\\multicolumn{{{len(columns)}}}{{l}}{{{note}}} \\\\"]
     lines += ["\\bottomrule", "\\end{tabular}"]
     return "\n".join(lines) + "\n"
 
 
-def event_table(
-    event: str,
+def hydrophones(df: pl.DataFrame) -> pl.DataFrame:
+    """One row per sensor and channel: range_m, depth_m, serial_number,
+    ordered by range and then depth (or channel)."""
+    cols = [c for c in ("depth_m", "serial_number") if c in df.columns]
+    return _by_hydrophone(
+        df.group_by("sensor", "channel").agg(
+            pl.col("range_m").first(), *[pl.col(c).first() for c in cols]
+        )
+    )
+
+
+def _by_hydrophone(table: pl.DataFrame) -> pl.DataFrame:
+    """Sort by range, then depth (if known), then channel. Joins do not keep
+    row order, so this follows every join."""
+    order = ["range_m", "sensor", "depth_m", "channel"]
+    return table.sort([c for c in order if c in table.columns])
+
+
+def _hydrophone_cells(r: dict, text: Callable[[str], str]) -> list[str]:
+    return [text(r["sensor"]), f"{r['range_m'] / 1e3:.1f}", _num(r.get("depth_m"), 1)]
+
+
+def pulse_stats_rows(
     df: pl.DataFrame,
     metrics: list[str],
-    ambient_spl: pl.DataFrame | None = None,
-    weather: dict[str, float] | None = None,
-) -> str:
-    """Summary statistics for one event (LaTeX tabular); see `event_rows`."""
-    columns, rows = event_rows(
-        event, df, metrics, ambient_spl, weather, _tex_label, tex_escape
+    label: Callable[[str], str] = _tex_label,
+    text: Callable[[str], str] = tex_escape,
+) -> tuple[list[str], list[list[str]], str]:
+    """Columns, rows, and alignment of the per-pulse statistics for one
+    event: one row per hydrophone, and for each metric its median with the
+    5th and 95th percentiles over valid pulses in brackets. SEL_cum is left
+    out (see `event_rows`)."""
+    metrics = [m for m in metrics if m != "SEL_cum"]
+    stats = df.group_by("sensor", "channel").agg(
+        *[e for m in metrics for e in _percentiles(scaled(m), m)]
     )
-    return _tabular(columns, rows, EVENT_ALIGN)
-
-
-EVENT_ALIGN = "llrrrrr"
+    table = _by_hydrophone(hydrophones(df).join(stats, on=["sensor", "channel"]))
+    columns = ["Sensor", "Range (km)", "Depth (m)"] + [label(m) for m in metrics]
+    rows = [
+        _hydrophone_cells(r, text)
+        + [
+            _stat(r[f"{m}_median"], r[f"{m}_p5"], r[f"{m}_p95"], DIGITS.get(m, 1))
+            for m in metrics
+        ]
+        for r in table.iter_rows(named=True)
+    ]
+    return columns, rows, "lrr" + "r" * len(metrics)
 
 
 def event_rows(
     event: str,
     df: pl.DataFrame,
-    metrics: list[str],
     ambient_spl: pl.DataFrame | None = None,
-    weather: dict[str, float | None] | None = None,
+    kurt: pl.DataFrame | None = None,
     label: Callable[[str], str] = _tex_label,
     text: Callable[[str], str] = tex_escape,
-) -> tuple[list[str], list[list[str]]]:
-    """Columns and rows of the summary statistics for one event.
-
-    Each cell lists one value per channel, separated by slashes, in channel
-    order. Ambient SPL is the mean over valid intervals before the event.
-    `label` names a metric and `text` escapes other text for the output format.
-    """
-    sensors = sensors_by_range(df)
-    columns = ["Metric", "Sensor", "Mean", "Median", "Std", "Min", "Max"]
-    rows = []
-    if "depth_m" in df.columns:
-        for name, col, fmt in (
-            ("Hydrophone depth (m)", "depth_m", lambda v: _num(v, 1)),
-            ("Hydrophone S/N", "serial_number", lambda v: v or "--"),
-        ):
-            for k, (sensor, _) in enumerate(sensors):
-                per_ch = (
-                    df.filter(pl.col("sensor") == sensor)
-                    .group_by("channel")
-                    .agg(pl.col(col).first())
-                    .sort("channel")
-                )
-                rows.append(
-                    [name if k == 0 else "", text(sensor)]
-                    + ["/".join(fmt(v) for v in per_ch[col].to_list())]
-                    + [""] * 4
-                )
-    for metric in metrics:
-        digits = 1 if metric.startswith(("SPL", "SEL")) else 2
-        if metric == "SEL_cum":
-            # Statistics of a running sum mean little; give the event total.
-            for k, (sensor, _) in enumerate(sensors):
-                total = (
-                    df.filter(pl.col("sensor") == sensor)
-                    .group_by("channel")
-                    .agg(total_sel())
-                    .sort("channel")
-                )
-                rows.append(
-                    [f"Event total {label(metric)}" if k == 0 else "", text(sensor)]
-                    + [_fmt(total["SEL_total"].to_list(), digits)]
-                    + [""] * 4
-                )
-            continue
-        for k, (sensor, _) in enumerate(sensors):
-            by_ch = (
-                df.filter(pl.col("sensor") == sensor)
-                .group_by("channel")
-                .agg(
-                    pl.col(metric).mean().alias("mean"),
-                    pl.col(metric).median().alias("median"),
-                    pl.col(metric).std().alias("std"),
-                    pl.col(metric).min().alias("min"),
-                    pl.col(metric).max().alias("max"),
-                )
-                .sort("channel")
-            )
-            rows.append(
-                [label(metric) if k == 0 else "", text(sensor)]
-                + [
-                    _fmt(by_ch[c].to_list(), digits)
-                    for c in ("mean", "median", "std", "min", "max")
-                ]
-            )
-    if ambient_spl is not None:
-        name = f"Ambient {label('SPL_rms')}"
-        for sensor, _ in sensors:
-            amb = (
-                ambient_spl.filter(
-                    (pl.col("event") == event)
-                    & (pl.col("sensor") == sensor)
-                    & pl.col("valid")
-                )
-                .group_by("channel")
-                .agg(pl.col("SPL_rms").mean())
-                .sort("channel")
-            )
-            if not amb.is_empty():
-                rows.append(
-                    [
-                        name,
-                        text(sensor),
-                        _fmt(amb["SPL_rms"].to_list()),
-                    ]
-                    + [""] * 4
-                )
-                name = ""
-    for key, value in (weather or {}).items():
-        rows.append(
-            [label(key), "", "--" if value is None else f"{value:.1f}"] + [""] * 4
+) -> tuple[list[str], list[list[str]], str]:
+    """Columns, rows, and alignment of the event-level quantities for one
+    event, one row per hydrophone: serial number, number of valid pulses,
+    cumulative SEL over them, kurtosis in windows containing strikes, and the
+    ambient mean-square SPL and kurtosis before the event (median with the 5th
+    and 95th percentiles in brackets)."""
+    table = hydrophones(df).join(
+        df.group_by("sensor", "channel").agg(
+            pl.col("strike").n_unique().alias("pulses"), total_sel()
+        ),
+        on=["sensor", "channel"],
+    )
+    columns = ["Sensor", "Range (km)", "Depth (m)", "S/N", "Pulses", label("SEL_cum")]
+    extra: list[tuple[str, str]] = []  # (prefix, header)
+    if kurt is not None and not kurt.is_empty():
+        k = kurt.filter(
+            (pl.col("event") == event) & pl.col("valid") & (pl.col("n_strikes") > 0)
         )
-    return columns, rows
+        table = table.join(
+            k.group_by("sensor", "channel").agg(
+                *_percentiles(pl.col("kurtosis"), "kurt")
+            ),
+            on=["sensor", "channel"],
+            how="left",
+        )
+        extra.append(("kurt", f"{label('kurtosis')}, piling"))
+    if ambient_spl is not None:
+        a = ambient_spl.filter((pl.col("event") == event) & pl.col("valid"))
+        aggs = _percentiles(pl.col("SPL_rms"), "amb")
+        has_kurt = "kurtosis" in a.columns
+        if has_kurt:
+            aggs += _percentiles(pl.col("kurtosis"), "ambkurt")
+        table = table.join(
+            a.group_by("sensor", "channel").agg(*aggs),
+            on=["sensor", "channel"],
+            how="left",
+        )
+        extra.append(("amb", f"Ambient {label('SPL_rms')}"))
+        if has_kurt:
+            extra.append(("ambkurt", f"Ambient {label('kurtosis')}"))
+    columns += [h for _, h in extra]
+    table = _by_hydrophone(table)
+    rows = []
+    for r in table.iter_rows(named=True):
+        rows.append(
+            _hydrophone_cells(r, text)
+            + [
+                text(r.get("serial_number") or "--"),
+                f"{r['pulses']:,}",
+                _num(r["SEL_total"], 1),
+            ]
+            + [
+                _stat(
+                    r[f"{x}_median"],
+                    r[f"{x}_p5"],
+                    r[f"{x}_p95"],
+                    1,
+                )
+                for x, _ in extra
+            ]
+        )
+    return columns, rows, "lrrlrr" + "r" * len(extra)
+
+
+def weather_note(
+    weather: dict[str, float | None] | None, label: Callable[[str], str]
+) -> str | None:
+    """Mean wind speed and significant wave height over the event."""
+    if not weather:
+        return None
+    parts = [
+        f"{label(k)}: {'--' if v is None else f'{v:.1f}'}" for k, v in weather.items()
+    ]
+    return "Means over the event: " + "; ".join(parts)
 
 
 def detections_table(site: SiteConfig, events: list) -> str:
@@ -671,7 +817,10 @@ def pulses_longtable(df: pl.DataFrame, metrics: list[str]) -> str:
             f"{r['range_m'] / 1e3:.2f}",
             str(r["strike"]),
             r["time_str"],
-        ] + [_num(r[m], 2) for m in metrics]
+        ] + [
+            _num(None if r[m] is None else r[m] * SCALE.get(m, 1.0), DIGITS.get(m, 2))
+            for m in metrics
+        ]
         lines.append(" & ".join(cells) + " \\\\")
     lines.append("\\end{longtable}")
     return "\n".join(lines) + "\n"
@@ -758,9 +907,17 @@ def make_report(site: SiteConfig, events: list) -> None:
         return
     names = [e.name for e in events]
     df = load_metrics(site).filter(pl.col("event").is_in(names))
+    missing = [m for m in cfg.metrics if m not in df.columns]
+    if missing:
+        raise ValueError(
+            f"{site.metrics_summary_path} has no {missing}; rerun the metrics stage"
+        )
     ambient_spl = (
         read_table(site.ambient_spl_path) if site.ambient_spl_path.exists() else None
     )
+    kurt = read_table(site.kurtosis_path) if site.kurtosis_path.exists() else None
+    if kurt is None:
+        logger.warning(f"[report] missing {site.kurtosis_path}; run kurtosis first")
     met = pl.read_csv(cfg.met, try_parse_dates=True) if cfg.met is not None else None
 
     for event in events:
@@ -768,9 +925,14 @@ def make_report(site: SiteConfig, events: list) -> None:
         if df_e.is_empty():
             logger.warning(f"[report] {event.name}: no metrics")
             continue
+        kurt_e = (
+            kurt.filter(pl.col("event") == event.name) if kurt is not None else None
+        )
         title = f"Event {event.name} (pile {event.pile}), {_window(event)} UTC"
         _save(
-            plot_event_metrics(df_e, cfg.metrics, title),
+            plot_event_metrics(
+                df_e, cfg.metrics, title, kurt_e, site.kurtosis.window_s
+            ),
             figs / event.name / "metrics.png",
             cfg.dpi,
             cfg.titles,
@@ -794,7 +956,9 @@ def make_report(site: SiteConfig, events: list) -> None:
                 s: ambient_psd(site.ambient_path, event.name, s) for s, _ in sensors
             }
             _save(
-                plot_pulse_psd(event.name, sensors, stats, ambient),
+                plot_pulse_psd(
+                    event.name, sensors, stats, ambient, hydrophone_labels(df_e)
+                ),
                 figs / event.name / "psd.png",
                 cfg.dpi,
                 cfg.titles,
@@ -804,7 +968,11 @@ def make_report(site: SiteConfig, events: list) -> None:
             event_weather(met, event.start, event.end) if met is not None else None
         )
         (tables / f"{event.name}.tex").write_text(
-            event_table(event.name, df_e, cfg.metrics, ambient_spl, weather)
+            _tabular(*pulse_stats_rows(df_e, cfg.metrics))
+        )
+        columns, rows, align = event_rows(event.name, df_e, ambient_spl, kurt_e)
+        (tables / f"{event.name}_event.tex").write_text(
+            _tabular(columns, rows, align, weather_note(weather, _tex_label))
         )
 
     for metric in cfg.range_metrics:
@@ -819,7 +987,7 @@ def make_report(site: SiteConfig, events: list) -> None:
     (tables / "pulses.tex").write_text(pulses_longtable(df, cfg.metrics))
     logger.info(f"[report] tables -> {tables}")
 
-    write_document(site, events, df, ambient_spl, met)
+    write_document(site, events, df, ambient_spl, met, kurt)
 
 
 def detection_channels(site: SiteConfig, df: pl.DataFrame) -> pl.DataFrame:
@@ -830,12 +998,17 @@ def detection_channels(site: SiteConfig, df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def _word_name(metric: str) -> str:
+    return WORD_LABELS.get(metric, (metric,))[0]
+
+
 def write_document(
     site: SiteConfig,
     events: list,
     df: pl.DataFrame,
     ambient_spl: pl.DataFrame | None = None,
     met: pl.DataFrame | None = None,
+    kurt: pl.DataFrame | None = None,
 ) -> Path:
     """Word document of the figures (as already written to the report
     directory) and tables, with captions, for pasting into a shared report.
@@ -846,6 +1019,8 @@ def write_document(
     cfg = site.report
     figs = site.report_dir / "figures"
     doc = Document(cfg.docx_template)
+    a = site.ambient
+    k_win = site.kurtosis.window_s
 
     def figure(path: Path, caption: str) -> None:
         if path.exists():
@@ -861,9 +1036,10 @@ def write_document(
     doc.paragraph(
         f"Figures and tables generated by soundscape report on "
         f"{date.today():%Y-%m-%d} from {len(df):,} valid pulse records "
-        f"(all channels) in {n_events} event{'s' * (n_events != 1)}. "
-        f"Where a sensor has several channels, a table cell lists one value "
-        f"per channel, in channel order, separated by slashes."
+        f"(all hydrophones) in {n_events} event{'s' * (n_events != 1)}. Metrics "
+        f"follow ISO 18406:2017, with quantities and levels defined in ISO "
+        f"18405:2017. Statistics are medians with the 5th and 95th percentiles "
+        f"in brackets. Depths are hydrophone depths below the sea surface."
     )
 
     doc.heading("Data coverage", 2)
@@ -891,69 +1067,91 @@ def write_document(
     for metric in cfg.range_metrics:
         figure(
             figs / f"{metric}_vs_range.png",
-            f"{WORD_LABELS.get(metric, (metric,))[0]} versus range for all "
-            f"events at {site.name}, on each sensor's detection channel. Points "
-            f"are individual pulses colored by strike number; black markers are "
-            f"the median and interquartile range for each event and sensor.",
+            f"{_word_name(metric)} versus range for all events at {site.name}, on "
+            f"each sensor's detection channel. Points are individual pulses "
+            f"colored by strike number; black markers are the median and "
+            f"interquartile range for each event and sensor.",
         )
 
+    per_pulse = [m for m in cfg.metrics if m != "SEL_cum"]
     for event in events:
         df_e = df.filter(pl.col("event") == event.name)
         if df_e.is_empty():
             continue
+        kurt_e = (
+            kurt.filter(pl.col("event") == event.name) if kurt is not None else None
+        )
         sensors = sensors_by_range(df_e)
-        n = {
-            s: df_e.filter(pl.col("sensor") == s)["strike"].n_unique()
-            for s, _ in sensors
-        }
         weather = (
             event_weather(met, event.start, event.end) if met is not None else None
         )
+        when = f"event {event.name} (pile {event.pile}), {_window(event)} UTC"
 
         doc.orientation(landscape=True)
         doc.heading(f"Event {event.name}", 2)
-        caption = (
-            f"Statistics of pulse metrics for event {event.name} (pile "
-            f"{event.pile}), {_window(event)} UTC, from "
-            + _and([f"{n[s]:,} pulses at {s} ({r / 1e3:.1f} km)" for s, r in sensors])
-            + "."
+        columns, rows, align = pulse_stats_rows(df_e, cfg.metrics, _word_label, str)
+        doc.table(
+            columns,
+            rows,
+            f"Per-pulse metrics for {when}, for each hydrophone: median, with the "
+            f"5th and 95th percentiles over valid pulses in brackets. Range is "
+            f"from the pile to the sensor. "
+            + _and([f"{_word_name(m)}" for m in per_pulse])
+            + " are as defined in ISO 18406:2017; SEL_{ss} is over the whole "
+            f"{site.extract.pre_s + site.extract.post_s:g}-s pulse window, which "
+            f"holds 100 % of the pulse energy, and L_{{p,90}} is the mean-square "
+            f"SPL over the pulse duration T_{{90}}.",
+            align,
+            font_pt=7.5,
         )
-        if ambient_spl is not None:
-            a = site.ambient
+        caption = (
+            f"Event-level quantities for {when}, for each hydrophone: number of "
+            f"valid pulses, and their cumulative sound exposure level SEL_{{cum}}."
+        )
+        if kurt_e is not None and not kurt_e.is_empty():
             caption += (
-                f" Ambient L_{{p,rms}} is the mean over {a.interval_s:g}-s "
-                f"intervals in the {a.duration_s / 60:g} min starting "
-                f"{a.offset_s / 60:g} min before the event."
+                f" Kurtosis β_{{2}} is computed in {k_win:g}-s windows (Martin et "
+                f"al. 2020) and summarized over the windows containing strikes."
+            )
+        if ambient_spl is not None:
+            caption += (
+                f" Ambient mean-square SPL L_{{p}} and kurtosis are computed in "
+                f"{a.interval_s:g}-s intervals over the {a.duration_s / 60:g} min "
+                f"starting {a.offset_s / 60:g} min before the event."
             )
         if weather is not None:
             caption += (
-                " Wind speed and significant wave height H_{1/3} are means over "
-                "the event."
+                " "
+                + weather_note(weather, _word_label)
+                + (" (H_{1/3}: significant wave height).")
             )
-        columns, rows = event_rows(
-            event.name, df_e, cfg.metrics, ambient_spl, weather, _word_label, str
+        caption += " Values are medians with the 5th and 95th percentiles in brackets."
+        columns, rows, align = event_rows(
+            event.name, df_e, ambient_spl, kurt_e, _word_label, str
         )
-        doc.table(columns, rows, caption, EVENT_ALIGN, font_pt=7.5)
+        doc.table(columns, rows, caption, align, font_pt=7.5)
 
         doc.orientation(landscape=False)
         event_figs = figs / event.name
+        rows_text = ", ".join(_word_name(m) for m in cfg.metrics)
+        if kurt_e is not None and not kurt_e.is_empty():
+            rows_text += f", and kurtosis β_{{2}} in {k_win:g}-s windows"
         figure(
             event_figs / "metrics.png",
-            f"Pulse metrics for event {event.name} versus time at "
-            f"{at_range(sensors)}, colored by channel. From top: "
-            + ", ".join(WORD_LABELS.get(m, (m,))[0] for m in cfg.metrics)
-            + ".",
+            f"Pulse metrics for {when} versus time at {at_range(sensors)}, colored "
+            f"by hydrophone depth. From top: {rows_text}.",
         )
         figure(
             event_figs / "psd.png",
-            f"Power spectral density of the pulses for event {event.name} "
-            f"(red: mean ± 2σ in dB) and of ambient noise before the event "
-            f"(blue) at {at_range(sensors)} (columns), by channel (rows).",
+            f"Power spectral density of the pulses for {when} (red) and of "
+            f"ambient noise in {a.interval_s:g}-s intervals before the event (blue): "
+            f"median (line) and 5th to 95th percentiles (shaded), at "
+            f"{at_range(sensors)} (columns), by hydrophone depth (rows).",
         )
         figure(
             event_figs / "levels.png",
-            f"Distribution of {_word_label(cfg.histogram_metric)} for event "
-            f"{event.name} at {at_range(sensors)}, by channel.",
+            f"Distribution of {_word_label(cfg.histogram_metric)} for {when} at "
+            f"{at_range(sensors)}, by hydrophone depth.",
         )
 
     path = site.report_dir / "report.docx"

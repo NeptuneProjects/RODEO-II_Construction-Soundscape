@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from soundscape import detect, extract, spectra, workflow
+from soundscape import detect, extract, kurtosis, spectra, workflow
 from soundscape.compare import compare_sites
 from soundscape.config import Exclusion
 from soundscape.document import Document
@@ -22,7 +22,7 @@ from tests.conftest import FS, T0, SyntheticRecording
 @pytest.fixture
 def wf(site, monkeypatch):
     rec = SyntheticRecording(duration_s=900.0, gap=(300.5, 330.0))
-    for module in (detect, extract, spectra):
+    for module in (detect, extract, kurtosis, spectra):
         monkeypatch.setattr(module, "read_segment", rec.read)
     w = workflow.Workflow(site)
     w.recording = rec
@@ -176,6 +176,7 @@ def test_report(wf, site):
     wf.metrics()
     wf.psd()
     wf.ambient()
+    wf.kurtosis()
     wf.report()
 
     figs = site.report_dir / "figures"
@@ -185,15 +186,17 @@ def test_report(wf, site):
         assert (figs / f"{metric}_vs_range.png").exists()
 
     tables = site.report_dir / "tables"
-    event = (tables / "E1.tex").read_text()
-    assert event.startswith("\\begin{tabular}") and "\\bottomrule" in event
-    # One row per metric and sensor, plus ambient.
-    # Header, depth and S/N, one row per metric (one sensor), ambient.
-    assert event.count("\\\\") == 1 + 2 + len(site.report.metrics) + 1
-    assert "Ambient" in event
-    assert "Event total cSEL" in event
-    assert "Hydrophone depth (m) & VLA1 & 16.2/17.7" in event
-    assert "Hydrophone S/N & VLA1 & 722013/722014" in event
+    pulses_stats = (tables / "E1.tex").read_text()
+    assert pulses_stats.startswith("\\begin{tabular}")
+    # Header and one row per hydrophone, shallowest first.
+    assert pulses_stats.count("\\\\") == 1 + 2
+    lines = [x for x in pulses_stats.splitlines() if x.startswith("VLA1 &")]
+    assert [x.split(" & ")[2] for x in lines] == ["16.2", "17.7"]
+    # Median [5th, 95th percentile] cells.
+    assert " [" in lines[0] and "SEL}_\\mathrm{ss}" in pulses_stats
+    event = (tables / "E1_event.tex").read_text()
+    assert "722013" in event and "Ambient" in event
+    assert "\\beta_2$, piling" in event
     detections = (tables / "detections.tex").read_text()
     assert "E1 & P1 & VLA1" in detections
     pulses = (tables / "pulses.tex").read_text()
@@ -201,22 +204,22 @@ def test_report(wf, site):
     assert (
         sum(line.startswith("E1 & VLA1 &") for line in pulses.splitlines()) == n_pulses
     )
-    assert pulses.count("\\makecell") == 2 * (len(site.report.metrics) - 1)
+    # Every metric has a unit, so every header is stacked.
+    assert pulses.count("\\makecell") == 2 * len(site.report.metrics)
 
     doc = docx.Document(str(site.report_dir / "report.docx"))
-    # Detections and one event table, as native Word tables.
-    assert len(doc.tables) == 2
+    # Detections and two event tables, as native Word tables.
+    assert len(doc.tables) == 3
     assert doc.tables[0].rows[1].cells[0].text == "E1"
-    event_rows = doc.tables[1].rows
-    assert event_rows[1].cells[0].text == "Hydrophone depth (m)"
-    # Trailing empty cells are merged.
-    assert event_rows[1].cells[2].text == event_rows[1].cells[-1].text
+    stats_rows = doc.tables[1].rows
+    assert [r.cells[2].text for r in stats_rows[1:]] == ["16.2", "17.7"]
+    assert stats_rows[0].cells[3].text.startswith("Lp,pk")
     # Range figures and three figures for the event (no inventory, so no
     # coverage figure).
     assert len(doc.inline_shapes) == len(site.report.range_metrics) + 3
     captions = [p for p in doc.paragraphs if p.style.name == "Caption"]
     assert len(captions) == len(doc.inline_shapes) + len(doc.tables)
-    assert sum("SEQ Table" in p._p.xml for p in captions) == 2
+    assert sum("SEQ Table" in p._p.xml for p in captions) == 3
     # The event table sits on a landscape page between portrait ones.
     widths = [s.page_width > s.page_height for s in doc.sections]
     assert widths == [False, True, False]
@@ -262,3 +265,22 @@ def test_compare(wf, site, tmp_path):
         assert (out / "figures" / f"{name}.png").exists()
     doc = docx.Document(str(out / "compare.docx"))
     assert len(doc.tables) == 1 and len(doc.inline_shapes) == 3
+
+
+def test_kurtosis(wf, site):
+    wf.detect(plot=False)
+    wf.kurtosis()
+    k = read_table(site.kurtosis_path)
+    # A 15 min event in 60 s windows, on both channels.
+    assert len(k) == 2 * 15
+    assert k.columns[:4] == ["event", "sensor", "range_m", "channel"]
+    assert "depth_m" in k.columns
+    # The window holding the gap (300.5-330 s) is invalid.
+    gap = T0 + np.timedelta64(300, "s")
+    assert not k.filter(pl.col("window_start") == gap)["valid"].any()
+    # Windows with strikes are impulsive; strikes are counted per window.
+    piling = k.filter("valid", pl.col("n_strikes") > 30)
+    assert len(piling) > 0 and (piling["kurtosis"] > 10).all()
+    assert k.filter(pl.col("channel") == 0)["n_strikes"].sum() == len(
+        pl.read_csv(site.detections_path("E1", "VLA1"))
+    )

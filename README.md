@@ -22,9 +22,11 @@ graph LR
    A[inventory] --> B[detect] --> C[extract] --> D[metrics]
    C --> E[psd]
    A --> F[ambient]
+   B --> H[kurtosis]
    D --> G[report]
    E --> G
    F --> G
+   H --> G
 ```
 
 | Stage       | What it does                                                                 |
@@ -34,7 +36,8 @@ graph LR
 | `extract`   | Window every channel around each strike, calibrated to uPa.                  |
 | `metrics`   | Per-pulse metrics for each channel; writes a site-wide summary table.        |
 | `psd`       | Power spectral density of each pulse.                                        |
-| `ambient`   | SPL and PSD of ambient noise in a window preceding each event.               |
+| `ambient`   | SPL, kurtosis, and PSD of ambient noise in a window preceding each event.    |
+| `kurtosis`  | Kurtosis of the recording in 60 s windows over each event (Martin et al. 2020). |
 | `report`    | Figures, LaTeX tables, and a Word document (see [Figures and tables](#figures-and-tables)). |
 
 Run from the repository root:
@@ -153,7 +156,8 @@ results/<site>/
 │   └── psd_<sensor>.h5
 ├── metrics.csv                     # all events, sensors, channels
 ├── ambient.h5                      # ambient PSD per event/sensor
-├── ambient_spl.csv                 # ambient SPL per interval
+├── ambient_spl.csv                 # ambient SPL and kurtosis per interval
+├── kurtosis.csv                    # kurtosis per 60 s window of each event
 ├── logs/<command>_<time>.log       # one log per run, as printed to the terminal
 └── report/                         # figures and LaTeX tables
 ```
@@ -162,10 +166,11 @@ results/<site>/
 
 `soundscape report` writes, for each event:
 
-- `figures/<event>/metrics.png`: metric time series, one column per sensor (nearest first), colored by channel.
-- `figures/<event>/psd.png`: pulse PSD (mean ± 2σ, in dB) against the ambient PSD, per sensor and channel.
-- `figures/<event>/levels.png`: distribution of `histogram_metric` per channel and sensor.
-- `tables/<event>.tex`: mean, median, standard deviation, minimum, and maximum of each metric per sensor (for `SEL_cum`, only the event total, the cumulative SEL of all valid pulses), one value per channel separated by slashes, with the ambient SPL and, if configured, the mean wind speed and significant wave height.
+- `figures/<event>/metrics.png`: metric time series, one column per sensor (nearest first), colored by hydrophone depth, with kurtosis in 60 s windows in the bottom row.
+- `figures/<event>/psd.png`: pulse PSD and ambient PSD (over 1 min intervals before the event), each as the median and 5th to 95th percentiles in dB, per sensor and hydrophone.
+- `figures/<event>/levels.png`: distribution of `histogram_metric` per hydrophone and sensor.
+- `tables/<event>.tex`: per-pulse metrics, one row per hydrophone (sensor, range, depth), each as the median with the 5th and 95th percentiles in brackets. Times are in ms.
+- `tables/<event>_event.tex`: event-level quantities per hydrophone: serial number, valid pulses, SEL_cum over them, kurtosis over the 60 s windows that contain strikes, and ambient SPL and kurtosis (median [5th, 95th percentile]), with the mean wind speed and significant wave height if configured.
 
 and for the whole site:
 
@@ -175,7 +180,7 @@ and for the whole site:
 - `tables/pulses.tex`: every pulse and channel, as a `longtable` for an appendix.
 
 It also writes `report.docx`, which collects the figures and tables (except `pulses.tex`) with captions written from the data, for pasting into a shared Word report.
-Tables are native Word tables, with each event table on a landscape page, and captions are numbered with Word fields, so they renumber in the document they are pasted into (select all and press F9).
+Tables are native Word tables, with each event's tables on a landscape page, and captions are numbered with Word fields, so they renumber in the document they are pasted into (select all and press F9).
 `metrics.csv` stands in for the pulse-by-pulse table as a data supplement.
 
 ### Comparing sites
@@ -186,10 +191,10 @@ soundscape compare --site config/sites/southfork.toml --site config/sites/vineya
 
 reads each site's results (valid pulses from events it does not exclude) and writes:
 
-- `figures/levels_vs_range.png`: median and interquartile range of each of `range_metrics` per event and sensor against range (log scale), with a least-squares fit of a − b log10 R for each site, and the event total cSEL.
+- `figures/levels_vs_range.png`: median and interquartile range of each of `range_metrics` per event and sensor against range (log scale), with a least-squares fit of a − b log10 R for each site, and the event total SEL_cum.
 - `figures/depth.png`: median level on each hydrophone relative to the mean over its sensor, against hydrophone depth, for sensors with hydrophones at more than one depth.
-- `figures/psd.png`: mean pulse PSD for each event and sensor, colored by range, one panel per site, with the ambient PSD.
-- `tables/summary.{csv,tex}`: per site, event, and sensor, the range, hydrophone depth, pulses, median of each of `range_metrics`, event total cSEL, and mean ambient SPL.
+- `figures/psd.png`: median pulse PSD for each event and sensor, colored by range, one panel per site, with the ambient PSD.
+- `tables/summary.{csv,tex}`: per site, event, and sensor, the range, hydrophone depth, pulses, median of each of `range_metrics`, event total SEL_cum, and mean ambient SPL.
 - `tables/range_fits.csv`: the fit coefficients.
 - `compare.docx`: the above with captions.
 
@@ -204,9 +209,9 @@ Figures and tables use valid pulses only. Configure them in `[report]`:
 [report]
 style = "config/jasa_fig_style.mplstyle"  # optional matplotlib style
 met = "data/met/data.csv"                 # optional: datetime, WSPD, WVHT columns
-metrics = ["SPL_rms", "SPL_pk", "SPL_pkpk", "SEL", "SEL_cum", "t_rise", "t_decay", "kurtosis"]
+metrics = ["SPL_pk", "SPL_pkpk", "SPL_rms90", "SEL_ss", "SEL_cum", "T90", "t_rise", "t_decay"]
 histogram_metric = "SPL_pk"
-range_metrics = ["SPL_pk", "SPL_pkpk", "SEL"]
+range_metrics = ["SPL_pk", "SPL_pkpk", "SEL_ss"]
 dpi = 300
 titles = true                             # false leaves titles off figures, for captioned documents
 docx_template = "shared_report.docx"      # optional: styles for report.docx, e.g. the shared report downloaded as .docx
@@ -216,28 +221,33 @@ The tables need `\usepackage{booktabs, longtable, makecell}`.
 
 ## Metrics
 
-Following ISO 18405, referenced to 1 uPa, for each pulse window p(t):
+Per-pulse metrics follow ISO 18406:2017 (*Measurement of radiated underwater sound from percussive pile driving*), whose quantities and levels are defined in ISO 18405:2017, with p₀ = 1 uPa and E₀ = 1 uPa² s.
+For each pulse window p(t), the pulse duration T90 is the 90 % energy signal duration, from 5 % to 95 % of the cumulative energy:
 
-| Column      | Definition                                                         |
-| ----------- | ------------------------------------------------------------------ |
-| `SPL_pk`    | 20 log10 max\|p\| (dB re 1 uPa)                                    |
-| `SPL_pkpk`  | 20 log10 (max p − min p) (dB re 1 uPa)                             |
-| `SPL_rms`   | mean-square pressure over the whole window (dB re 1 uPa)           |
-| `SPL_rms90` | mean-square pressure over T90, the 5–95% cumulative-energy interval |
-| `SEL`       | 10 log10 (∫p² dt) over the window (dB re 1 uPa² s)                 |
-| `SEL_cum`   | running energy sum of `SEL` over strikes in time order             |
-| `T90`, `t_rise`, `t_decay` | duration of T90; start of T90 to peak; peak to end of T90 (s) |
-| `kurtosis`  | Pearson kurtosis β₂ (3 for Gaussian noise)                          |
+| Column      | Symbol | Definition                                                         |
+| ----------- | ------ | ------------------------------------------------------------------ |
+| `SPL_pk`    | L<sub>p,pk</sub> | 10 log10 (max p² / p₀²) (dB re 1 uPa)                    |
+| `SPL_pkpk`  | L<sub>p,pk-pk</sub> | 10 log10 ((max p − min p)² / p₀²) (dB re 1 uPa)       |
+| `SPL_rms90` | L<sub>p,90</sub> | mean-square SPL over T90 (dB re 1 uPa)                   |
+| `SEL_ss`    | SEL<sub>ss</sub> | single-strike SEL, 10 log10 (∫p² dt / E₀) over the whole window, i.e. 100 % of the pulse energy (dB re 1 uPa² s) |
+| `SEL_cum`   | SEL<sub>cum</sub> | running energy sum of `SEL_ss` over valid strikes in time order |
+| `T90`, `t_rise`, `t_decay` | T<sub>90</sub>, t<sub>r</sub>, t<sub>d</sub> | pulse duration; start of T90 to peak; peak to end of T90 (s; reported in ms) |
 
-Windows include ambient noise, so `SPL_rms`, `SEL`, and the T90-based quantities are biased at low signal-to-noise ratio.
+The window (`[extract] pre_s + post_s`, 1.2 s) is long enough to hold the whole pulse, so `SEL_ss` includes the ambient noise in it and is biased upward at low signal-to-noise ratio.
+
+Kurtosis β₂ (Pearson; 3 for Gaussian noise) is computed by the `kurtosis` stage over consecutive 60 s windows of the continuous recording on every channel, following Martin et al. (2020), not per pulse.
+`kurtosis.csv` gives each window's start, whether it is free of gaps, and the number of detected strikes in it; the event tables summarize the windows that contain strikes.
+The `ambient` stage gives the same statistic over its 1 min intervals before each event.
+Configure it in `[kurtosis]` (`window_s`, `chunk_windows`, `filter`).
 
 ### Differences from the 2025 South Fork analysis
 
 Checked on 1,200 A10-B Tetra pulses from the earlier analysis:
 
-- `SPL_pk`, `SPL_pkpk`, `SPL_rms`, `t_rise`, and `t_decay` reproduce the earlier values.
-- The earlier `SEL` was the mean-square level over T90 (now `SPL_rms90`), not an exposure. The new `SEL` is 2.1 dB lower on average (−3.2 to +0.2 dB), and `SEL_cum` changes accordingly.
-- The earlier `kurtosis` was excess kurtosis (β₂ − 3); it is now β₂.
+- `SPL_pk`, `SPL_pkpk`, `t_rise`, and `t_decay` reproduce the earlier values.
+- The earlier `SEL` was the mean-square level over T90 (now `SPL_rms90`), not an exposure. The single-strike `SEL_ss` is 2.1 dB lower on average (−3.2 to +0.2 dB), and `SEL_cum` changes accordingly.
+- The earlier `kurtosis` was excess kurtosis (β₂ − 3) of each pulse; it is now β₂ over 60 s windows.
+- The mean-square SPL over the whole window (`SPL_rms`), which depended on the window length, is no longer computed.
 - Strike detection was an STA/LTA detector tuned by hand per event and channel. It is now automatic.
 
 ## Adding a site

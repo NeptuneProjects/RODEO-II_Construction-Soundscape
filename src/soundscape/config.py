@@ -202,6 +202,14 @@ class AmbientConfig(StrictModel):
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
 
 
+class KurtosisConfig(StrictModel):
+    """Kurtosis over consecutive windows of each event (Martin et al. 2020)."""
+
+    window_s: float = Field(default=60.0, gt=0.0)
+    chunk_windows: int = Field(default=5, ge=1)
+    filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
+
+
 class PulsePSDConfig(StrictModel):
     nperseg: int = 2**14
     overlap: float = Field(default=0.95, ge=0.0, lt=1.0)
@@ -224,18 +232,20 @@ class ReportConfig(StrictModel):
     docx_template: Path | None = None
     dpi: int = 300
     met: Path | None = None
+    # Per-pulse metrics in the event figures and tables (SEL_cum is given as
+    # an event total in the tables).
     metrics: list[str] = [
-        "SPL_rms",
         "SPL_pk",
         "SPL_pkpk",
-        "SEL",
+        "SPL_rms90",
+        "SEL_ss",
         "SEL_cum",
+        "T90",
         "t_rise",
         "t_decay",
-        "kurtosis",
     ]
     histogram_metric: str = "SPL_pk"
-    range_metrics: list[str] = ["SPL_pk", "SPL_pkpk", "SEL"]
+    range_metrics: list[str] = ["SPL_pk", "SPL_pkpk", "SEL_ss"]
 
 
 # --------------------------------------------------------------------------
@@ -323,6 +333,7 @@ class SiteConfig(StrictModel):
     extract: ExtractConfig = ExtractConfig()
     ambient: AmbientConfig = AmbientConfig()
     pulse_psd: PulsePSDConfig = PulsePSDConfig()
+    kurtosis: KurtosisConfig = KurtosisConfig()
     report: ReportConfig = ReportConfig()
 
     @model_validator(mode="after")
@@ -406,6 +417,10 @@ class SiteConfig(StrictModel):
     @property
     def ambient_spl_path(self) -> Path:
         return self.output_dir / "ambient_spl.csv"
+
+    @property
+    def kurtosis_path(self) -> Path:
+        return self.output_dir / "kurtosis.csv"
 
 
 def load_site(path: Path) -> SiteConfig:

@@ -12,6 +12,7 @@ from scipy.signal import welch
 from soundscape.config import AmbientConfig, PulsePSDConfig, SensorConfig
 from soundscape.events import Event, source_range
 from soundscape.extract import apply_filter, iter_waveforms, read_pulses
+from soundscape.kurtosis import beta2
 from soundscape.metrics import _db_power
 from soundscape.sources import read_segment
 
@@ -28,10 +29,13 @@ def ambient_window(
 def ambient_noise(
     sensor: SensorConfig, inventory: Path, event: Event, config: AmbientConfig
 ) -> tuple[pl.DataFrame, dict[str, np.ndarray]]:
-    """SPL_rms over consecutive intervals and the Welch PSD of the whole window.
+    """Mean-square SPL and kurtosis over consecutive intervals, and Welch PSDs
+    of the whole window and of each interval.
 
     Returns:
-        A tidy table of interval SPLs, and {"freqs", "psd" (n_channels, n_freqs)}.
+        A tidy table of interval SPLs and kurtosis, and {"freqs", "psd"
+        (n_channels, n_freqs), "psd_intervals" (n_channels, n_intervals,
+        n_freqs), "interval_valid" (n_channels, n_intervals)}.
     """
     start, end = ambient_window(event, config)
     seg = read_segment(sensor, inventory, start, end)
@@ -47,6 +51,7 @@ def ambient_noise(
     data = apply_filter(seg.data, fs, config.filter)
     blocks = _blocks(data)
     spl = _db_power(np.mean(blocks**2, axis=-1))
+    kurt = beta2(blocks)
 
     nperseg = round(config.psd_segment_s * fs)
     freqs, psd = welch(
@@ -55,6 +60,15 @@ def ambient_noise(
         window="hann",
         nperseg=nperseg,
         noverlap=int(nperseg * config.psd_overlap),
+        scaling="density",
+        axis=-1,
+    )
+    _, psd_intervals = welch(
+        blocks,
+        fs=fs,
+        window="hann",
+        nperseg=min(nperseg, n_int),
+        noverlap=int(min(nperseg, n_int) * config.psd_overlap),
         scaling="density",
         axis=-1,
     )
@@ -69,9 +83,15 @@ def ambient_noise(
             "interval_start": np.tile(interval_start, len(seg.channels)),
             "valid": recorded.reshape(-1),
             "SPL_rms": spl.reshape(-1),
+            "kurtosis": kurt.reshape(-1),
         }
     )
-    return table, {"freqs": freqs, "psd": psd}
+    return table, {
+        "freqs": freqs,
+        "psd": psd,
+        "psd_intervals": psd_intervals,
+        "interval_valid": recorded,
+    }
 
 
 def write_ambient_psd(
@@ -85,6 +105,11 @@ def write_ambient_psd(
         g = f.create_group(name)
         g.create_dataset("freqs", data=spectra["freqs"])
         g.create_dataset("psd", data=spectra["psd"])
+        if "psd_intervals" in spectra:
+            g.create_dataset(
+                "psd_intervals", data=spectra["psd_intervals"].astype(np.float32)
+            )
+            g.create_dataset("interval_valid", data=spectra["interval_valid"])
         start, end = ambient_window(event, config)
         g.attrs.update(
             {

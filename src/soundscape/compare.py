@@ -306,7 +306,7 @@ def plot_depth(data: list[SiteData], metrics: list[str]) -> plt.Figure | None:
 
 
 def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
-    """Mean pulse PSD on the detection channel for each event and sensor,
+    """Median pulse PSD on the detection channel for each event and sensor,
     colored by range, one panel per site, with the ambient PSD before each
     event in gray."""
     curves = []  # (site index, range km, freqs, mean dB)
@@ -322,7 +322,7 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
             if det_ch[sensor] not in st["channels"]:
                 continue
             i = st["channels"].index(det_ch[sensor])
-            curves.append((k, range_m / 1e3, st["freqs"], st["mean"][i]))
+            curves.append((k, range_m / 1e3, st["freqs"], st["median"][i]))
             amb = ambient_psd(d.site.ambient_path, event, sensor)
             if amb is not None and det_ch[sensor] in amb["channels"]:
                 j = amb["channels"].index(det_ch[sensor])
@@ -364,7 +364,7 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
     fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axs[0, -1], label="Range (km)"
     )
-    fig.suptitle("Mean pulse spectra on detection channels")
+    fig.suptitle("Median pulse spectra on detection channels")
     return fig
 
 
@@ -474,7 +474,7 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
         doc.heading("Pulse spectra", 2)
         doc.figure(
             figs / "psd.png",
-            "Mean power spectral density of the pulses on the detection channel "
+            "Median power spectral density of the pulses on the detection channel "
             "for each event and sensor, colored by range, with the ambient noise "
             "spectrum before each event in gray.",
         )

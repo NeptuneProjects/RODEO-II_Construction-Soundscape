@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from soundscape.kurtosis import beta2
 from soundscape.metrics import cumulative_sel, pulse_metrics
 
 FS = 10_000.0
@@ -13,9 +14,10 @@ def test_sine_levels():
     m = pulse_metrics(x, FS)
     assert m["SPL_pk"] == pytest.approx(20 * np.log10(a), abs=1e-3)
     assert m["SPL_pkpk"] == pytest.approx(20 * np.log10(2 * a), abs=1e-3)
-    assert m["SPL_rms"] == pytest.approx(20 * np.log10(a / np.sqrt(2)), abs=1e-3)
-    # One second of signal: SEL equals SPL_rms.
-    assert m["SEL"] == pytest.approx(m["SPL_rms"], abs=1e-3)
+    # Mean square over T90 of a long sine is a^2 / 2.
+    assert m["SPL_rms90"] == pytest.approx(20 * np.log10(a / np.sqrt(2)), abs=0.05)
+    # One second of signal: SEL_ss equals the mean-square level of the window.
+    assert m["SEL_ss"] == pytest.approx(20 * np.log10(a / np.sqrt(2)), abs=1e-3)
     assert m["T90"] == pytest.approx(0.9, abs=0.01)
 
 
@@ -23,7 +25,19 @@ def test_sel_scales_with_duration():
     x = np.ones((2, int(2 * FS)))
     x[1, int(FS) :] = 0.0
     m = pulse_metrics(x, FS)
-    assert m["SEL"][0] - m["SEL"][1] == pytest.approx(10 * np.log10(2), abs=1e-6)
+    assert m["SEL_ss"][0] - m["SEL_ss"][1] == pytest.approx(10 * np.log10(2), abs=1e-6)
+
+
+def test_sel_ss_holds_all_pulse_energy():
+    # SEL_ss integrates the whole window, so it exceeds the energy within T90
+    # by 10 log10(1 / 0.9).
+    x = np.zeros(int(FS))
+    x[1000:3000] = np.random.default_rng(1).standard_normal(2000)
+    m = pulse_metrics(x, FS)
+    e90 = 10 ** (m["SPL_rms90"] / 10) * m["T90"]
+    assert m["SEL_ss"] - 10 * np.log10(e90) == pytest.approx(
+        10 * np.log10(1 / 0.9), abs=0.05
+    )
 
 
 def test_rise_and_decay():
@@ -37,7 +51,13 @@ def test_rise_and_decay():
 
 def test_gaussian_kurtosis_is_three():
     x = np.random.default_rng(0).standard_normal(200_000)
-    assert pulse_metrics(x, FS)["kurtosis"] == pytest.approx(3.0, abs=0.05)
+    assert beta2(x) == pytest.approx(3.0, abs=0.05)
+
+
+def test_impulsive_kurtosis_is_high():
+    x = np.random.default_rng(0).standard_normal(60_000)
+    x[::6000] += 200.0
+    assert beta2(x) > 30
 
 
 def test_batched_shapes():

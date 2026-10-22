@@ -19,7 +19,6 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-from scipy.stats import kurtosis as _kurtosis
 from tritonoa.data.reader import NoDataError
 
 from soundscape.config import KurtosisConfig, SensorConfig
@@ -37,8 +36,14 @@ _GAP_FRACTION = 0.01
 
 
 def beta2(blocks: np.ndarray) -> np.ndarray:
-    """Pearson kurtosis along the last axis."""
-    return _kurtosis(blocks, axis=-1, fisher=False)
+    """Pearson kurtosis along the last axis; NaN where the variance is zero
+    (e.g. a zero-filled gap)."""
+    x = blocks - blocks.mean(axis=-1, keepdims=True)
+    x2 = x * x
+    m2 = x2.mean(axis=-1)
+    m4 = (x2 * x2).mean(axis=-1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(m2 > 0, m4 / (m2 * m2), np.nan)
 
 
 def windowed_kurtosis(
@@ -94,7 +99,8 @@ def windowed_kurtosis(
                     "window_start": np.tile(starts, n_ch),
                     "valid": valid.reshape(-1),
                     "n_strikes": np.tile(counts, n_ch),
-                    "kurtosis": beta2(blocks).reshape(-1),
+                    # Windows in gaps get no value.
+                    "kurtosis": np.where(valid, beta2(blocks), np.nan).reshape(-1),
                 }
             )
         )

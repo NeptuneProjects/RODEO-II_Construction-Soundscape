@@ -54,6 +54,19 @@ def test_gaussian_kurtosis_is_three():
     assert beta2(x) == pytest.approx(3.0, abs=0.05)
 
 
+def test_kurtosis_of_flat_window_is_nan(recwarn):
+    k = beta2(np.zeros((2, 1000)))
+    assert np.isnan(k).all()
+    assert len(recwarn) == 0
+
+
+def test_kurtosis_matches_scipy():
+    from scipy.stats import kurtosis
+
+    x = np.random.default_rng(2).standard_t(5, size=(3, 5000))
+    assert beta2(x) == pytest.approx(kurtosis(x, axis=-1, fisher=False))
+
+
 def test_impulsive_kurtosis_is_high():
     x = np.random.default_rng(0).standard_normal(60_000)
     x[::6000] += 200.0

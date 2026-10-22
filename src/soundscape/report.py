@@ -155,9 +155,10 @@ def pulse_psd_stats(path: Path) -> dict:
 
 
 def ambient_psd(path: Path, event: str, sensor: str) -> dict | None:
-    """Ambient PSD in dB per channel: `level` over the whole window, and, if
-    the ambient file has interval PSDs, their median and 5th and 95th
-    percentiles over valid intervals."""
+    """Ambient PSD in dB per channel: `level` over the whole window (NaN where
+    it is zero), and, if the ambient file has interval PSDs, their median and
+    5th and 95th percentiles over valid intervals. None if the window holds
+    no recorded data."""
     if not path.exists():
         return None
     with h5py.File(path, "r") as f:
@@ -165,10 +166,16 @@ def ambient_psd(path: Path, event: str, sensor: str) -> dict | None:
         if name not in f:
             return None
         g = f[name]
+        psd = g["psd"][:]
+        # A spectrum of zeros means the window was a recording gap.
+        if not (psd > 0).any():
+            return None
+        with np.errstate(divide="ignore"):
+            level = np.where(psd > 0, 10 * np.log10(psd), np.nan)
         out = {
             "freqs": g["freqs"][:],
             "channels": [int(c) for c in g.attrs["channels"]],
-            "level": 10 * np.log10(g["psd"][:]),
+            "level": level,
         }
         if "psd_intervals" in g:
             psd, valid = g["psd_intervals"][:], g["interval_valid"][:]

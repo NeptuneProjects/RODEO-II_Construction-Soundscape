@@ -284,3 +284,18 @@ def test_kurtosis(wf, site):
     assert k.filter(pl.col("channel") == 0)["n_strikes"].sum() == len(
         pl.read_csv(site.detections_path("E1", "VLA1"))
     )
+
+
+def test_ambient_psd_of_gap_is_none(tmp_path):
+    from soundscape.report import ambient_psd
+
+    path = tmp_path / "ambient.h5"
+    with h5py.File(path, "w") as f:
+        for name, psd in (("E1/GAP", np.zeros((2, 5))), ("E1/OK", np.ones((2, 5)))):
+            g = f.create_group(name)
+            g.create_dataset("freqs", data=np.arange(5.0))
+            g.create_dataset("psd", data=psd)
+            g.attrs["channels"] = [0, 1]
+    assert ambient_psd(path, "E1", "GAP") is None
+    ok = ambient_psd(path, "E1", "OK")
+    assert np.all(ok["level"] == 0.0)

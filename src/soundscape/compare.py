@@ -326,7 +326,8 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
             amb = ambient_psd(d.site.ambient_path, event, sensor)
             if amb is not None and det_ch[sensor] in amb["channels"]:
                 j = amb["channels"].index(det_ch[sensor])
-                ambient.append((k, amb["freqs"], amb["level"][j]))
+                level = amb["median"][j] if "median" in amb else amb["level"][j]
+                ambient.append((k, amb["freqs"], level))
     if not curves:
         return None
     norm = Normalize(min(c[1] for c in curves), max(c[1] for c in curves))
@@ -346,12 +347,10 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
         axs[0, k].plot(f, level, color="0.6", lw=0.6)
     for k, r, f, level in sorted(curves, key=lambda c: -c[1]):
         axs[0, k].plot(f, level, color=cmap(norm(r)), lw=0.8)
-    for _, f, level in ambient:
-        band = (f >= fmin) & (f <= fmax)
-        lo, hi = min(lo, level[band].min()), max(hi, level[band].max())
-    for _, _, f, level in curves:
-        band = (f >= fmin) & (f <= fmax)
-        lo, hi = min(lo, level[band].min()), max(hi, level[band].max())
+    for f, level in [(c[1], c[2]) for c in ambient] + [(c[2], c[3]) for c in curves]:
+        band = (f >= fmin) & (f <= fmax) & np.isfinite(level)
+        if band.any():
+            lo, hi = min(lo, level[band].min()), max(hi, level[band].max())
     for k, d in enumerate(data):
         axs[0, k].set_title(d.site.name)
         axs[0, k].set_xlabel("Frequency (Hz)")

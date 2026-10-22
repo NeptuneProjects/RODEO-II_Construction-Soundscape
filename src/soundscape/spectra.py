@@ -51,7 +51,7 @@ def ambient_noise(
     data = apply_filter(seg.data, fs, config.filter)
     blocks = _blocks(data)
     spl = _db_power(np.mean(blocks**2, axis=-1))
-    kurt = beta2(blocks)
+    kurt = np.where(recorded, beta2(blocks), np.nan)
 
     nperseg = round(config.psd_segment_s * fs)
     freqs, psd = welch(

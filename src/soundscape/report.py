@@ -30,7 +30,7 @@ from matplotlib.ticker import NullFormatter, ScalarFormatter
 from soundscape.bands import band_sum, band_weights
 from soundscape.config import SiteConfig
 from soundscape.document import Document
-from soundscape.events import load_events, source_range
+from soundscape.events import distance_m, load_events, source_range
 from soundscape.metrics import read_table
 from soundscape.sources import coverage, recorded_intervals
 
@@ -955,6 +955,27 @@ def weather_note(
     return "Means over the event: " + "; ".join(parts)
 
 
+MET_NAMES = {"WSPD": "wind speed", "WVHT": "significant wave height"}
+
+
+def station_note(site: SiteConfig) -> str | None:
+    """Which station each weather variable is from, and its distance from
+    the site's sensors (km, as a range over sensors)."""
+    parts = []
+    for st in site.report.met_stations:
+        km = [
+            distance_m(st.latitude, st.longitude, s.latitude, s.longitude) / 1e3
+            for s in site.sensors
+        ]
+        lo, hi = round(min(km)), round(max(km))
+        dist = f"{lo} km" if lo == hi else f"{lo}–{hi} km"
+        what = _and([MET_NAMES.get(v, v) for v in st.variables])
+        parts.append(f"{what} from station {st.name} ({dist} from the sensors)")
+    if not parts:
+        return None
+    return "Data: " + "; ".join(parts) + "."
+
+
 def detections_table(site: SiteConfig, events: list) -> str:
     """Detections per event and sensor (LaTeX tabular)."""
     return _tabular(*detection_rows(site, events, tex_escape), DETECTIONS_ALIGN)
@@ -1388,6 +1409,8 @@ def write_document(
                 + weather_note(weather, _word_label)
                 + (" (H_{1/3}: significant wave height).")
             )
+            if note := station_note(site):
+                caption += " " + note
         caption += " Values are medians with the 5th and 95th percentiles in brackets."
         columns, rows, align = event_rows(
             event.name, df_e, ambient_spl, kurt_e, _word_label, str

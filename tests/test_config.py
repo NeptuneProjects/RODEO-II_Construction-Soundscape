@@ -209,3 +209,14 @@ def test_other_read_errors_are_raised(tmp_path, monkeypatch):
     source = sources.GlobSource(GlobSourceConfig(directory=tmp_path, pattern="*.D23"))
     with pytest.raises(OSError, match="share unavailable"):
         source.prepare(tmp_path / "inv.csv")
+
+
+def test_met_stations_in_site_files():
+    from soundscape.config import load_site
+    from soundscape.report import station_note
+
+    for name in ("southfork", "vineyard"):
+        site = load_site(f"config/sites/{name}.toml")
+        assert {s.name for s in site.report.met_stations} == {"BUZM3", "44097"}
+        note = station_note(site)
+        assert "BUZM3" in note and "km from the sensors" in note

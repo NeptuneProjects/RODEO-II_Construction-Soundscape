@@ -210,7 +210,7 @@ Figures and tables use valid pulses only. Configure them in `[report]`:
 ```toml
 [report]
 style = "config/jasa_fig_style.mplstyle"  # optional matplotlib style
-met = "data/met/data.csv"                 # optional: datetime, WSPD, WVHT columns
+met = "data/met/met_2023.csv"             # optional: datetime, WSPD, WVHT columns (scripts/data/met_data.py)
 metrics = ["SPL_pk", "SPL_pkpk", "SPL_rms90", "SEL_ss", "SEL_cum", "T90", "t_rise", "t_decay"]
 histogram_metric = "SPL_pk"
 range_metrics = ["SPL_pk", "SPL_pkpk", "SEL_ss"]
@@ -218,6 +218,21 @@ dpi = 300
 titles = true                             # false leaves titles off figures, for captioned documents
 docx_template = "shared_report.docx"      # optional: styles for report.docx, e.g. the shared report downloaded as .docx
 ```
+
+The stations behind `met` are recorded under `[report]`, with their positions, so captions can give their distance from the sensors:
+
+```toml
+[[report.met_stations]]
+name = "44097"
+description = "Block Island, RI (CDIP 154) Waverider buoy"
+latitude = 40.966
+longitude = -71.123
+variables = ["WVHT"]
+source = "https://www.ndbc.noaa.gov/station_page.php?station=44097"
+```
+
+`met` is built from NDBC standard meteorological files with `scripts/data/met_data.py --wind <file> --wave <file> --output <csv>`, which treats NDBC's missing-value codes (99, 999, 9999) as missing.
+Both sites use BUZM3 wind and 44097 waves for 2023 (`data/met/met_2023.csv`).
 
 The tables need `\usepackage{booktabs, longtable, makecell}`.
 

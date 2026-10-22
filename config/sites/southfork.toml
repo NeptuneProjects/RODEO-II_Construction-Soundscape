@@ -41,7 +41,24 @@ overlap = 0.95
 
 [report]
 style = "config/jasa_fig_style.mplstyle"
-met = "data/met/data.csv" # NDBC 44085 waves and BUZM3 wind (scripts/data/met_data.py)
+met = "data/met/met_2023.csv" # BUZM3 wind and 44097 waves, 2023 (scripts/data/met_data.py)
+
+# Stations supplying `met` (positions from the NDBC station pages).
+[[report.met_stations]]
+name = "BUZM3"
+description = "NDBC C-MAN station, Buzzards Bay, MA; anemometer 24.8 m above mean sea level"
+latitude = 41.397
+longitude = -71.033
+variables = ["WSPD"]
+source = "https://www.ndbc.noaa.gov/station_page.php?station=buzm3"
+
+[[report.met_stations]]
+name = "44097"
+description = "Block Island, RI (CDIP 154) Waverider buoy, Scripps Institution of Oceanography; 49.4 m water depth"
+latitude = 40.966
+longitude = -71.123
+variables = ["WVHT"]
+source = "https://www.ndbc.noaa.gov/station_page.php?station=44097"
 
 # ---------------------------------------------------------------------------
 # Sensors. Channels are hydrophone channels on each SHRU; strikes are detected

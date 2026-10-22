@@ -229,12 +229,28 @@ class PulsePSDConfig(StrictModel):
     overlap: float = Field(default=0.95, ge=0.0, lt=1.0)
 
 
+class MetStationConfig(StrictModel):
+    """A weather or wave station whose observations are in `[report] met`.
+
+    `variables` names the `met` columns it supplies (e.g. ["WSPD"]). The
+    position is used to give the distance from the station to the sensors.
+    """
+
+    name: str
+    description: str | None = None
+    latitude: float = Field(ge=-90.0, le=90.0)
+    longitude: float = Field(ge=-180.0, le=180.0)
+    variables: list[str]
+    source: str | None = None  # e.g. the NDBC station page
+
+
 class ReportConfig(StrictModel):
     """Figures and LaTeX tables.
 
     `met` is an optional CSV of weather observations with columns `datetime`,
     `WSPD` (wind speed, m/s) and `WVHT` (significant wave height, m), averaged
-    over each event in the event tables.
+    over each event in the event tables. `met_stations` records where they
+    were measured.
 
     `titles = false` leaves titles off the figures, for documents whose
     captions say the same. `docx_template` is a .docx whose styles the Word
@@ -246,6 +262,7 @@ class ReportConfig(StrictModel):
     docx_template: Path | None = None
     dpi: int = 300
     met: Path | None = None
+    met_stations: list[MetStationConfig] = Field(default_factory=list)
     # Per-pulse metrics in the event figures and tables (SEL_cum is given as
     # an event total in the tables).
     metrics: list[str] = [

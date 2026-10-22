@@ -57,6 +57,11 @@ def load_events(site: SiteConfig, names: list[str] | None = None) -> list[Event]
     return out
 
 
+def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Geodesic distance (m) between two positions."""
+    return float(_GEOD.inv(lon1, lat1, lon2, lat2)[2])
+
+
 def source_range(event: Event, sensor: SensorConfig) -> float:
     """Geodesic distance (m) between the pile and the sensor."""
     _, _, dist = _GEOD.inv(

@@ -141,7 +141,7 @@ def pulse_psd(
     bands = bands or BandsConfig()
     _, arrays, attrs = read_pulses(pulses_path, waveforms=False)
     fs = attrs["sampling_rate"]
-    edges = decidecade_bands(bands.fmin, bands.fmax or fs / 2)
+    edges = decidecade_bands(bands.fmin, bands.upper_limit(fs))
     psds, band_exposure = [], []
     freqs = weights = None
     for w in iter_waveforms(pulses_path):

@@ -248,7 +248,7 @@ Pulses and ambient noise are compared in decidecade bands: base-10 one-third oct
 The `psd` stage computes each pulse's sound exposure in every band from the DFT of the whole window (`band_exposure` in `psd_<sensor>.h5`). By Parseval's theorem the bands sum to the exposure behind `SEL_ss`.
 Ambient band levels are computed at report time from the 1 min interval PSDs in `ambient.h5`.
 They are shown as the exposure the ambient noise gives over the pulse window length (1.2 s), so both curves are in dB re 1 uPa² s.
-Bands lie between `[bands] fmin` (default 10 Hz, the high-pass corner) and `fmax` (default the Nyquist frequency).
+Bands lie between `[bands] fmin` (default 10 Hz, the high-pass corner) and `fmax`, which defaults to `nyquist_fraction` (0.8) of the Nyquist frequency so the top band stays clear of the recorders' anti-aliasing roll-off. At the 19.5 kHz sampling rate of both sites the top band is 6.3 kHz (upper edge 7.1 kHz); the 8 kHz band (7.9–8.9 kHz) is left out.
 
 Ambient noise is not reported as one broadband level: half its power lies below about 25–35 Hz, where flow noise and cable strum contaminate moored measurements (ISO 18406, §4.2.2). `ambient_spl.csv` keeps the broadband `SPL_rms` per interval for reference.
 

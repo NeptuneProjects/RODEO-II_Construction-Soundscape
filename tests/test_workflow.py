@@ -202,15 +202,17 @@ def test_report(wf, site):
     bands = pl.read_csv(tables / "E1_bands.csv")
     assert set(bands["channel"]) == {0, 1}
     assert bands["band_hz"].min() == 12.5
+    # fs = 2 kHz: bands stop below 0.8 x Nyquist (800 Hz), so 630 Hz is the
+    # top band (upper edge 707 Hz) and 800 Hz (to 891 Hz) is left out.
+    assert bands["band_hz"].max() == 630
     assert bands["ambient_E_window_median"].is_not_null().all()
-    # The band exposures of a pulse sum to SEL_ss, apart from energy outside
-    # the bands (below 11.2 Hz and above the top band).
+    # The band exposures of a strong pulse sum to SEL_ss, apart from the
+    # little energy outside the bands (below 11.2 Hz and above 707 Hz).
+    m = read_table(site.metrics_path("E1", "VLA1")).filter(pl.col("channel") == 0)
+    i = int(m["SEL_ss"].arg_max())
     with h5py.File(site.pulse_psd_path("E1", "VLA1")) as f:
-        total = 10 * np.log10(f["band_exposure"][0, 0, :].sum())
-    sel = read_table(site.metrics_path("E1", "VLA1")).filter(pl.col("channel") == 0)[
-        "SEL_ss"
-    ][0]
-    assert total == pytest.approx(sel, abs=0.2)
+        total = 10 * np.log10(f["band_exposure"][i, 0, :].sum())
+    assert total == pytest.approx(m["SEL_ss"][i], abs=0.2)
     detections = (tables / "detections.tex").read_text()
     assert "E1 & P1 & VLA1" in detections
     pulses = (tables / "pulses.tex").read_text()

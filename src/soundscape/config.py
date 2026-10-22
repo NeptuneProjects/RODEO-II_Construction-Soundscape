@@ -212,10 +212,16 @@ class KurtosisConfig(StrictModel):
 
 class BandsConfig(StrictModel):
     """Decidecade bands for band levels: those with lower edge at least
-    `fmin` and upper edge at most `fmax` (default: the Nyquist frequency)."""
+    `fmin` and upper edge at most `fmax`. By default `fmax` is
+    `nyquist_fraction` of the Nyquist frequency, which keeps bands clear of the
+    recorders' anti-aliasing filter roll-off just below Nyquist."""
 
     fmin: float = Field(default=10.0, gt=0.0)
     fmax: float | None = Field(default=None, gt=0.0)
+    nyquist_fraction: float = Field(default=0.8, gt=0.0, le=1.0)
+
+    def upper_limit(self, fs: float) -> float:
+        return self.fmax or self.nyquist_fraction * fs / 2
 
 
 class PulsePSDConfig(StrictModel):

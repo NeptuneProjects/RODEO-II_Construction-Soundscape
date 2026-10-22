@@ -10,6 +10,7 @@ Stages, in order:
     ambient    ambient noise preceding each event
     kurtosis   kurtosis of the recording in 60 s windows over each event
     report     figures, LaTeX tables, and a Word document
+    supplement PDF table of every pulse (data supplement)
     run        all of the above
 
     compare    figures and tables comparing sites (--site repeated)
@@ -38,6 +39,7 @@ from soundscape.plotting import plot_detections
 from soundscape.report import make_report
 from soundscape.sources import coverage, get_source
 from soundscape.spectra import ambient_noise, pulse_psd, write_ambient_psd
+from soundscape.supplement import write_supplement
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +287,9 @@ class Workflow:
     def report(self) -> None:
         make_report(self.site, self.events)
 
+    def supplement(self) -> None:
+        write_supplement(self.site, self.events)
+
     def run(self) -> None:
         self.inventory()
         self.detect()
@@ -294,6 +299,7 @@ class Workflow:
         self.ambient()
         self.kurtosis()
         self.report()
+        self.supplement()
 
 
 def log_to_file(log_dir: Path, command: str) -> Path:
@@ -318,6 +324,7 @@ COMMANDS = [
     "ambient",
     "kurtosis",
     "report",
+    "supplement",
     "run",
     "compare",
 ]

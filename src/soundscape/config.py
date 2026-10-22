@@ -262,6 +262,8 @@ class ReportConfig(StrictModel):
     docx_template: Path | None = None
     dpi: int = 300
     met: Path | None = None
+    author: str | None = None  # title page of the data supplement
+    affiliation: str | None = None
     met_stations: list[MetStationConfig] = Field(default_factory=list)
     # Per-pulse metrics in the event figures and tables (SEL_cum is given as
     # an event total in the tables).

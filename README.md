@@ -39,6 +39,7 @@ graph LR
 | `ambient`   | SPL, kurtosis, and PSD of ambient noise in a window preceding each event.    |
 | `kurtosis`  | Kurtosis of the recording in 60 s windows over each event (Martin et al. 2020). |
 | `report`    | Figures, LaTeX tables, and a Word document (see [Figures and tables](#figures-and-tables)). |
+| `supplement` | PDF data supplement tabulating every pulse (see [Data supplement](#data-supplement)). |
 
 Run from the repository root:
 
@@ -179,11 +180,28 @@ and for the whole site:
 - `figures/coverage.png`: when each sensor was recording, with every event in the site file on the same time axis, its window, and the sensors that recorded it. It is drawn from the inventories, so it needs no metrics.
 - `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
 - `tables/detections.tex`: strikes and median SNR per event and sensor.
-- `tables/pulses.tex`: every pulse and channel, as a `longtable` for an appendix.
 
-It also writes `report.docx`, which collects the figures and tables (except `pulses.tex`) with captions written from the data, for pasting into a shared Word report.
+It also writes `report.docx`, which collects the figures and tables with captions written from the data, for pasting into a shared Word report.
 Tables are native Word tables, with each event's tables on a landscape page, and captions are numbered with Word fields, so they renumber in the document they are pasted into (select all and press F9).
-`metrics.csv` stands in for the pulse-by-pulse table as a data supplement.
+
+### Data supplement
+
+```bash
+soundscape supplement --site config/sites/southfork.toml
+```
+
+writes `report/supplement.pdf`, a stand-alone PDF tabulating every valid pulse on every hydrophone. It's separate from `report.docx`.
+The PDF contains:
+
+- a title page (with `[report] author` and `affiliation`) and a contents table linking to each event;
+- a page defining the columns;
+- one table per event, in chronological order. Rows are ordered by sensor (nearest first), hydrophone (shallowest first), and strike, and each row gives the hydrophone's serial number and depth.
+
+Column headers repeat on every page, the page header names the event, and PDF bookmarks lead to each event and sensor.
+
+The LaTeX source is written to `report/supplement/supplement.tex` and compiled there with `latexmk` (or `pdflatex` twice). Without LaTeX, only the `.tex` is written.
+It needs the `geometry`, `lmodern`, `longtable`, `booktabs`, `makecell`, `array`, `fancyhdr`, `lastpage`, and `hyperref` packages. On Debian/Ubuntu these are in `texlive-latex-recommended`, `texlive-latex-extra`, `texlive-fonts-recommended`, and `lmodern`, plus `latexmk`.
+A site of about 400,000 pulse records gives a PDF of several thousand pages and takes a while to compile; `run` includes this stage.
 
 ### Comparing sites
 

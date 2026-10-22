@@ -1,18 +1,19 @@
 """Figures, LaTeX tables, and a Word document from the workflow outputs.
 
-Figures (data coverage, event metrics, pulse PSD distributions, channel level
-histograms, metrics versus range) and tables (event summaries, pulse-by-pulse
-appendix) for any site. The Word document collects the figures and tables
-(except the pulse-by-pulse table) with captions.
+Figures (data coverage, event metrics, pulse PSD distributions, decidecade
+band levels, level histograms, metrics versus range) and tables (event
+summaries) for any site. The Word document collects them with captions. The
+pulse-by-pulse table is a separate PDF (see soundscape.supplement).
 
 Output layout:
 
     report/
     ├── report.docx
-    ├── figures/<event>/{metrics,psd,levels}.png
+    ├── supplement.pdf                      (soundscape.supplement)
+    ├── figures/<event>/{metrics,psd,bands,levels}.png
     ├── figures/<metric>_vs_range.png
     ├── figures/coverage.png
-    └── tables/{detections,pulses,<event>}.tex
+    └── tables/{detections,<event>,<event>_event}.tex, <event>_bands.csv
 """
 
 import logging
@@ -1044,49 +1045,6 @@ def detection_rows(
     return columns, rows
 
 
-def pulses_longtable(df: pl.DataFrame, metrics: list[str]) -> str:
-    """Every pulse and channel (LaTeX longtable, needs the longtable,
-    booktabs, and makecell packages)."""
-    columns = ["Event", "Sensor", "Ch.", "Depth (m)", "R (km)", "Strike"]
-    columns += ["Time (UTC)"] + [_tex_label(m, stacked=True) for m in metrics]
-    header = " & ".join(columns) + " \\\\"
-    lines = [
-        f"\\begin{{longtable}}{{lllrrrl{'r' * len(metrics)}}}",
-        "\\toprule",
-        header,
-        "\\midrule",
-        "\\endfirsthead",
-        "\\toprule",
-        header,
-        "\\midrule",
-        "\\endhead",
-        "\\midrule",
-        f"\\multicolumn{{{len(columns)}}}{{r}}{{Continued on next page}} \\\\",
-        "\\endfoot",
-        "\\bottomrule",
-        "\\endlastfoot",
-    ]
-    df = df.sort("event", "sensor", "channel", "strike").with_columns(
-        pl.col("time").dt.strftime("%Y-%m-%d %H:%M:%S%.3f").alias("time_str")
-    )
-    for r in df.iter_rows(named=True):
-        cells = [
-            tex_escape(r["event"]),
-            tex_escape(r["sensor"]),
-            str(r["channel"]),
-            _num(r.get("depth_m"), 1),
-            f"{r['range_m'] / 1e3:.2f}",
-            str(r["strike"]),
-            r["time_str"],
-        ] + [
-            _num(None if r[m] is None else r[m] * SCALE.get(m, 1.0), DIGITS.get(m, 2))
-            for m in metrics
-        ]
-        lines.append(" & ".join(cells) + " \\\\")
-    lines.append("\\end{longtable}")
-    return "\n".join(lines) + "\n"
-
-
 def event_weather(met: pl.DataFrame, start, end) -> dict[str, float | None]:
     sub = met.filter((pl.col("datetime") >= start) & (pl.col("datetime") <= end))
     return {key: sub[key].mean() if len(sub) else None for key in ("WSPD", "WVHT")}
@@ -1246,7 +1204,6 @@ def make_report(site: SiteConfig, events: list) -> None:
         )
 
     (tables / "detections.tex").write_text(detections_table(site, events))
-    (tables / "pulses.tex").write_text(pulses_longtable(df, cfg.metrics))
     logger.info(f"[report] tables -> {tables}")
 
     write_document(site, events, df, ambient_spl, met, kurt)
@@ -1320,8 +1277,8 @@ def write_document(
     """Word document of the figures (as already written to the report
     directory) and tables, with captions, for pasting into a shared report.
 
-    Event tables are on landscape pages. The pulse-by-pulse table is left out;
-    `metrics.csv` serves as the data supplement.
+    Event tables are on landscape pages. The pulse-by-pulse table is the
+    separate data supplement (`supplement.pdf`).
     """
     cfg = site.report
     figs = site.report_dir / "figures"

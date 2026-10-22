@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from soundscape import detect, extract, kurtosis, spectra, workflow
+from soundscape import detect, extract, kurtosis, spectra, supplement, workflow
 from soundscape.compare import compare_sites
 from soundscape.config import Exclusion
 from soundscape.document import Document
@@ -219,13 +219,7 @@ def test_report(wf, site):
     assert total == pytest.approx(m["SEL_ss"][i], abs=0.2)
     detections = (tables / "detections.tex").read_text()
     assert "E1 & P1 & VLA1" in detections
-    pulses = (tables / "pulses.tex").read_text()
-    n_pulses = len(pl.read_csv(site.metrics_path("E1", "VLA1")).filter("valid"))
-    assert (
-        sum(line.startswith("E1 & VLA1 &") for line in pulses.splitlines()) == n_pulses
-    )
-    # Every metric has a unit, so every header is stacked.
-    assert pulses.count("\\makecell") == 2 * len(site.report.metrics)
+    assert not (tables / "pulses.tex").exists()
 
     doc = docx.Document(str(site.report_dir / "report.docx"))
     # Detections and two event tables, as native Word tables.
@@ -340,3 +334,26 @@ def test_hydrophone_labels():
         ("Tetra", 0): "Tetra Serial 722010 (33.7 m)",
         ("Tetra", 1): "Tetra Serial 722012 (33.7 m)",
     }
+
+
+def test_supplement(wf, site):
+    import shutil
+
+    wf.detect(plot=False)
+    wf.extract()
+    wf.metrics()
+    tex = supplement.write_supplement(site, wf.events, build=False)
+    text = tex.read_text()
+    m = read_table(site.metrics_path("E1", "VLA1")).filter("valid")
+    # One row per valid pulse and hydrophone, with its serial and depth.
+    rows = [
+        x for x in text.splitlines() if "722013 & 16.2" in x or "722014 & 17.7" in x
+    ]
+    assert len(rows) == len(m)
+    assert text.count("\\pdfbookmark[0]{Event E1}") == 1
+    assert text.count("\\begin{longtable}") == 1
+    assert "\\renewcommand{\\eventmark}{Event E1 (pile P1)" in text
+    if shutil.which("pdflatex"):
+        pdf = supplement.write_supplement(site, wf.events)
+        assert pdf == site.report_dir / "supplement.pdf"
+        assert pdf.read_bytes().startswith(b"%PDF")

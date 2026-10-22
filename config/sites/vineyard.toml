@@ -45,6 +45,8 @@ overlap = 0.95
 
 [report]
 style = "config/jasa_fig_style.mplstyle"
+author = "William F. Jenkins, Ph.D."
+affiliation = "Scripps Institution of Oceanography, University of California San Diego"
 met = "data/met/met_2023.csv" # BUZM3 wind and 44097 waves, 2023 (scripts/data/met_data.py)
 
 # Stations supplying `met` (positions from the NDBC station pages).

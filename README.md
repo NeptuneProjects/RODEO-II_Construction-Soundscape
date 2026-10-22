@@ -35,7 +35,7 @@ graph LR
 | `detect`    | Detect pile strikes automatically on each sensor's detection channel.        |
 | `extract`   | Window every channel around each strike, calibrated to uPa.                  |
 | `metrics`   | Per-pulse metrics for each channel; writes a site-wide summary table.        |
-| `psd`       | Power spectral density of each pulse.                                        |
+| `psd`       | Power spectral density and decidecade band exposure of each pulse.          |
 | `ambient`   | SPL, kurtosis, and PSD of ambient noise in a window preceding each event.    |
 | `kurtosis`  | Kurtosis of the recording in 60 s windows over each event (Martin et al. 2020). |
 | `report`    | Figures, LaTeX tables, and a Word document (see [Figures and tables](#figures-and-tables)). |
@@ -168,9 +168,11 @@ results/<site>/
 
 - `figures/<event>/metrics.png`: metric time series, one column per sensor (nearest first), colored by hydrophone depth, with kurtosis in 60 s windows in the bottom row.
 - `figures/<event>/psd.png`: pulse PSD and ambient PSD (over 1 min intervals before the event), each as the median and 5th to 95th percentiles in dB, per sensor and hydrophone.
+- `figures/<event>/bands.png`: decidecade band levels per sensor and hydrophone: SEL_ss in each band, against the exposure the ambient noise gives over a window of the same length, each as the median and 5th to 95th percentiles. The gap between them is the signal-to-noise ratio in each band.
 - `figures/<event>/levels.png`: distribution of `histogram_metric` per hydrophone and sensor.
 - `tables/<event>.tex`: per-pulse metrics, one row per hydrophone (sensor, range, depth), each as the median with the 5th and 95th percentiles in brackets. Times are in ms.
-- `tables/<event>_event.tex`: event-level quantities per hydrophone: serial number, valid pulses, SEL_cum over them, kurtosis over the 60 s windows that contain strikes, and ambient SPL and kurtosis (median [5th, 95th percentile]), with the mean wind speed and significant wave height if configured.
+- `tables/<event>_event.tex`: event-level quantities per hydrophone: serial number, valid pulses, SEL_cum over them, kurtosis over the 60 s windows that contain strikes, and ambient kurtosis (median [5th, 95th percentile]), with the mean wind speed and significant wave height if configured.
+- `tables/<event>_bands.csv`: the band statistics behind `bands.png`, per sensor, hydrophone, and band, with the ambient mean-square SPL in each band.
 
 and for the whole site:
 
@@ -194,7 +196,7 @@ reads each site's results (valid pulses from events it does not exclude) and wri
 - `figures/levels_vs_range.png`: median and interquartile range of each of `range_metrics` per event and sensor against range (log scale), with a least-squares fit of a − b log10 R for each site, and the event total SEL_cum.
 - `figures/depth.png`: median level on each hydrophone relative to the mean over its sensor, against hydrophone depth, for sensors with hydrophones at more than one depth.
 - `figures/psd.png`: median pulse PSD for each event and sensor, colored by range, one panel per site, with the ambient PSD.
-- `tables/summary.{csv,tex}`: per site, event, and sensor, the range, hydrophone depth, pulses, median of each of `range_metrics`, event total SEL_cum, and mean ambient SPL.
+- `tables/summary.{csv,tex}`: per site, event, and sensor, the range, hydrophone depth, pulses, median of each of `range_metrics`, and event total SEL_cum.
 - `tables/range_fits.csv`: the fit coefficients.
 - `compare.docx`: the above with captions.
 
@@ -239,6 +241,16 @@ Kurtosis β₂ (Pearson; 3 for Gaussian noise) is computed by the `kurtosis` sta
 `kurtosis.csv` gives each window's start, whether it is free of gaps, and the number of detected strikes in it; the event tables summarize the windows that contain strikes.
 The `ambient` stage gives the same statistic over its 1 min intervals before each event.
 Configure it in `[kurtosis]` (`window_s`, `chunk_windows`, `filter`).
+
+### Band levels
+
+Pulses and ambient noise are compared in decidecade bands: base-10 one-third octaves (IEC 61260-1), with exact centers 10^(n/10) Hz, labelled by their nominal centers (12.5, 16, 20, … Hz).
+The `psd` stage computes each pulse's sound exposure in every band from the DFT of the whole window (`band_exposure` in `psd_<sensor>.h5`). By Parseval's theorem the bands sum to the exposure behind `SEL_ss`.
+Ambient band levels are computed at report time from the 1 min interval PSDs in `ambient.h5`.
+They are shown as the exposure the ambient noise gives over the pulse window length (1.2 s), so both curves are in dB re 1 uPa² s.
+Bands lie between `[bands] fmin` (default 10 Hz, the high-pass corner) and `fmax` (default the Nyquist frequency).
+
+Ambient noise is not reported as one broadband level: half its power lies below about 25–35 Hz, where flow noise and cable strum contaminate moored measurements (ISO 18406, §4.2.2). `ambient_spl.csv` keeps the broadband `SPL_rms` per interval for reference.
 
 ### Differences from the 2025 South Fork analysis
 

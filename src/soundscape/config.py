@@ -210,6 +210,14 @@ class KurtosisConfig(StrictModel):
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
 
 
+class BandsConfig(StrictModel):
+    """Decidecade bands for band levels: those with lower edge at least
+    `fmin` and upper edge at most `fmax` (default: the Nyquist frequency)."""
+
+    fmin: float = Field(default=10.0, gt=0.0)
+    fmax: float | None = Field(default=None, gt=0.0)
+
+
 class PulsePSDConfig(StrictModel):
     nperseg: int = 2**14
     overlap: float = Field(default=0.95, ge=0.0, lt=1.0)
@@ -334,6 +342,7 @@ class SiteConfig(StrictModel):
     ambient: AmbientConfig = AmbientConfig()
     pulse_psd: PulsePSDConfig = PulsePSDConfig()
     kurtosis: KurtosisConfig = KurtosisConfig()
+    bands: BandsConfig = BandsConfig()
     report: ReportConfig = ReportConfig()
 
     @model_validator(mode="after")

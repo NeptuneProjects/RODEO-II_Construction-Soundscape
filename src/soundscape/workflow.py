@@ -229,6 +229,7 @@ class Workflow:
                 path,
                 self.site.pulse_psd,
                 self.site.pulse_psd_path(event.name, sensor.name),
+                self.site.bands,
             )
 
         self._each(_psd, "psd")

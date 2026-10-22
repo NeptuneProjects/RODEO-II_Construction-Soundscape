@@ -91,8 +91,8 @@ def _range_axis(ax: plt.Axes) -> None:
 
 def summary(data: list[SiteData], metrics: list[str]) -> pl.DataFrame:
     """One row per site, event, and sensor on the detection channel: range,
-    hydrophone depth, pulses, median of each metric, event total cSEL, and
-    mean ambient SPL."""
+    hydrophone depth, pulses, median of each metric, and event total
+    SEL_cum."""
     frames = []
     for d in data:
         order = {e.name: k for k, e in enumerate(d.events)}
@@ -104,15 +104,6 @@ def summary(data: list[SiteData], metrics: list[str]) -> pl.DataFrame:
             *[pl.col(m).median().alias(m) for m in metrics],
             total_sel(),
         )
-        if d.ambient_spl is not None:
-            amb = (
-                d.ambient_spl.filter("valid")
-                .group_by("event", "sensor", "channel")
-                .agg(pl.col("SPL_rms").mean().alias("ambient_SPL_rms"))
-            )
-            rows = rows.join(amb, on=["event", "sensor", "channel"], how="left")
-        else:
-            rows = rows.with_columns(pl.lit(None, pl.Float64).alias("ambient_SPL_rms"))
         frames.append(
             rows.with_columns(
                 pl.col("event").replace_strict(order).alias("_order")
@@ -135,7 +126,6 @@ def summary_columns(metrics: list[str], label) -> list[tuple[str, str, str]]:
         + [(m, f"Median {label(m)}", "r") for m in metrics]
         + [
             ("SEL_total", f"Event total {label('SEL_cum')}", "r"),
-            ("ambient_SPL_rms", f"Ambient {label('SPL_rms')}", "r"),
         ]
     )
 
@@ -436,8 +426,8 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
         summary_rows(table, word_cols, str),
         "Received levels for each event and sensor on the sensor's detection "
         "channel: range from the pile, hydrophone depth, number of pulses, median "
-        "per-pulse levels, cumulative SEL over all pulses of the event, and mean "
-        "ambient L_{p,rms} before the event.",
+        "per-pulse levels, and the cumulative sound exposure level SEL_{cum} over "
+        "all valid pulses of the event.",
         "".join(a for _, _, a in word_cols),
         font_pt=7.5,
     )

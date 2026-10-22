@@ -9,7 +9,8 @@ import numpy as np
 import polars as pl
 from scipy.signal import welch
 
-from soundscape.config import AmbientConfig, PulsePSDConfig, SensorConfig
+from soundscape.bands import band_sum, band_weights, decidecade_bands, exposure_spectrum
+from soundscape.config import AmbientConfig, BandsConfig, PulsePSDConfig, SensorConfig
 from soundscape.events import Event, source_range
 from soundscape.extract import apply_filter, iter_waveforms, read_pulses
 from soundscape.kurtosis import beta2
@@ -122,20 +123,32 @@ def write_ambient_psd(
         )
 
 
-def pulse_psd(pulses_path: Path, config: PulsePSDConfig, destination: Path) -> None:
-    """Welch PSD of every pulse and channel.
+def pulse_psd(
+    pulses_path: Path,
+    config: PulsePSDConfig,
+    destination: Path,
+    bands: BandsConfig | None = None,
+) -> None:
+    """Welch PSD and decidecade band exposure of every pulse and channel.
 
-    Writes /freqs, /psd float32 (n_strikes, n_channels, n_freqs) in uPa^2/Hz,
-    and /strike, /time, /valid copied from the pulse file.
+    Writes /freqs, /psd float32 (n_strikes, n_channels, n_freqs) in uPa^2/Hz;
+    /band_exposure float32 (n_strikes, n_channels, n_bands) in uPa^2 s, the
+    single-strike sound exposure in each band from the DFT of the whole
+    window (so the bands of the full spectrum sum to the exposure behind
+    SEL_ss); /band_center, /band_lower, /band_upper, /band_nominal in Hz; and
+    /strike, /time, /valid copied from the pulse file.
     """
+    bands = bands or BandsConfig()
     _, arrays, attrs = read_pulses(pulses_path, waveforms=False)
     fs = attrs["sampling_rate"]
-    psds = []
-    freqs = None
+    edges = decidecade_bands(bands.fmin, bands.fmax or fs / 2)
+    psds, band_exposure = [], []
+    freqs = weights = None
     for w in iter_waveforms(pulses_path):
+        w = w.astype(np.float64)
         nperseg = min(config.nperseg, w.shape[-1])
         freqs, p = welch(
-            w.astype(np.float64),
+            w,
             fs=fs,
             window="hann",
             nperseg=nperseg,
@@ -144,11 +157,18 @@ def pulse_psd(pulses_path: Path, config: PulsePSDConfig, destination: Path) -> N
             axis=-1,
         )
         psds.append(p.astype(np.float32))
+        f_e, e = exposure_spectrum(w, fs)
+        if weights is None:
+            weights = band_weights(f_e, edges["lower"], edges["upper"])
+        band_exposure.append(band_sum(e, weights).astype(np.float32))
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(destination, "w") as f:
         f.create_dataset("freqs", data=freqs)
         f.create_dataset("psd", data=np.concatenate(psds))
+        f.create_dataset("band_exposure", data=np.concatenate(band_exposure))
+        for k in ("center", "lower", "upper", "nominal"):
+            f.create_dataset(f"band_{k}", data=edges[k])
         for k in ("strike", "valid"):
             f.create_dataset(k, data=arrays[k])
         f.create_dataset("time", data=arrays["time"].astype(np.int64))

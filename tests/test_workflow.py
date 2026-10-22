@@ -180,7 +180,7 @@ def test_report(wf, site):
     wf.report()
 
     figs = site.report_dir / "figures"
-    for name in ("metrics.png", "levels.png", "psd.png"):
+    for name in ("metrics.png", "levels.png", "psd.png", "bands.png"):
         assert (figs / "E1" / name).stat().st_size > 0
     for metric in site.report.range_metrics:
         assert (figs / f"{metric}_vs_range.png").exists()
@@ -197,6 +197,20 @@ def test_report(wf, site):
     event = (tables / "E1_event.tex").read_text()
     assert "722013" in event and "Ambient" in event
     assert "\\beta_2$, piling" in event
+    # No broadband ambient level; ambient noise is given in bands.
+    assert "L_{p}$" not in event
+    bands = pl.read_csv(tables / "E1_bands.csv")
+    assert set(bands["channel"]) == {0, 1}
+    assert bands["band_hz"].min() == 12.5
+    assert bands["ambient_E_window_median"].is_not_null().all()
+    # The band exposures of a pulse sum to SEL_ss, apart from energy outside
+    # the bands (below 11.2 Hz and above the top band).
+    with h5py.File(site.pulse_psd_path("E1", "VLA1")) as f:
+        total = 10 * np.log10(f["band_exposure"][0, 0, :].sum())
+    sel = read_table(site.metrics_path("E1", "VLA1")).filter(pl.col("channel") == 0)[
+        "SEL_ss"
+    ][0]
+    assert total == pytest.approx(sel, abs=0.2)
     detections = (tables / "detections.tex").read_text()
     assert "E1 & P1 & VLA1" in detections
     pulses = (tables / "pulses.tex").read_text()
@@ -214,9 +228,9 @@ def test_report(wf, site):
     stats_rows = doc.tables[1].rows
     assert [r.cells[2].text for r in stats_rows[1:]] == ["16.2", "17.7"]
     assert stats_rows[0].cells[3].text.startswith("Lp,pk")
-    # Range figures and three figures for the event (no inventory, so no
+    # Range figures and four figures for the event (no inventory, so no
     # coverage figure).
-    assert len(doc.inline_shapes) == len(site.report.range_metrics) + 3
+    assert len(doc.inline_shapes) == len(site.report.range_metrics) + 4
     captions = [p for p in doc.paragraphs if p.style.name == "Caption"]
     assert len(captions) == len(doc.inline_shapes) + len(doc.tables)
     assert sum("SEQ Table" in p._p.xml for p in captions) == 3

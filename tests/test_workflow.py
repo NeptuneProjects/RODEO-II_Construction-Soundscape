@@ -191,7 +191,11 @@ def test_report(wf, site):
     # Header and one row per hydrophone, shallowest first.
     assert pulses_stats.count("\\\\") == 1 + 2
     lines = [x for x in pulses_stats.splitlines() if x.startswith("VLA1 &")]
-    assert [x.split(" & ")[2] for x in lines] == ["16.2", "17.7"]
+    # Sensor, range, serial, depth.
+    assert [x.split(" & ")[2:4] for x in lines] == [
+        ["722013", "16.2"],
+        ["722014", "17.7"],
+    ]
     # Median [5th, 95th percentile] cells.
     assert " [" in lines[0] and "SEL}_\\mathrm{ss}" in pulses_stats
     event = (tables / "E1_event.tex").read_text()
@@ -228,8 +232,9 @@ def test_report(wf, site):
     assert len(doc.tables) == 3
     assert doc.tables[0].rows[1].cells[0].text == "E1"
     stats_rows = doc.tables[1].rows
-    assert [r.cells[2].text for r in stats_rows[1:]] == ["16.2", "17.7"]
-    assert stats_rows[0].cells[3].text.startswith("Lp,pk")
+    assert [r.cells[2].text for r in stats_rows[1:]] == ["722013", "722014"]
+    assert [r.cells[3].text for r in stats_rows[1:]] == ["16.2", "17.7"]
+    assert stats_rows[0].cells[4].text.startswith("Lp,pk")
     # Range figures and four figures for the event (no inventory, so no
     # coverage figure).
     assert len(doc.inline_shapes) == len(site.report.range_metrics) + 4
@@ -315,3 +320,23 @@ def test_ambient_psd_of_gap_is_none(tmp_path):
     assert ambient_psd(path, "E1", "GAP") is None
     ok = ambient_psd(path, "E1", "OK")
     assert np.all(ok["level"] == 0.0)
+
+
+def test_hydrophone_labels():
+    from soundscape.report import hydrophone_label, hydrophone_labels
+
+    assert hydrophone_label("VLA1", 0, "722013", 16.2) == "VLA1 Serial 722013 (16.2 m)"
+    assert hydrophone_label("VLA1", 2, None, None) == "VLA1 Ch. 2"
+    # Hydrophones at one depth (e.g. the Tetra) are told apart by serial.
+    df = pl.DataFrame(
+        {
+            "sensor": ["Tetra", "Tetra"],
+            "channel": [0, 1],
+            "serial_number": ["722010", "722012"],
+            "depth_m": [33.7, 33.7],
+        }
+    )
+    assert hydrophone_labels(df) == {
+        ("Tetra", 0): "Tetra Serial 722010 (33.7 m)",
+        ("Tetra", 1): "Tetra Serial 722012 (33.7 m)",
+    }

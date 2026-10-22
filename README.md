@@ -166,11 +166,11 @@ results/<site>/
 
 `soundscape report` writes, for each event:
 
-- `figures/<event>/metrics.png`: metric time series, one column per sensor (nearest first), colored by hydrophone depth, with kurtosis in 60 s windows in the bottom row.
+- `figures/<event>/metrics.png`: metric time series, one column per sensor (nearest first), colored by hydrophone, with kurtosis in 60 s windows in the bottom row.
 - `figures/<event>/psd.png`: pulse PSD and ambient PSD (over 1 min intervals before the event), each as the median and 5th to 95th percentiles in dB, per sensor and hydrophone.
 - `figures/<event>/bands.png`: decidecade band levels per sensor and hydrophone: SEL_ss in each band, against the exposure the ambient noise gives over a window of the same length, each as the median and 5th to 95th percentiles. The gap between them is the signal-to-noise ratio in each band.
 - `figures/<event>/levels.png`: distribution of `histogram_metric` per hydrophone and sensor.
-- `tables/<event>.tex`: per-pulse metrics, one row per hydrophone (sensor, range, depth), each as the median with the 5th and 95th percentiles in brackets. Times are in ms.
+- `tables/<event>.tex`: per-pulse metrics, one row per hydrophone (sensor, range, serial number, depth), each as the median with the 5th and 95th percentiles in brackets. Times are in ms.
 - `tables/<event>_event.tex`: event-level quantities per hydrophone: serial number, valid pulses, SEL_cum over them, kurtosis over the 60 s windows that contain strikes, and ambient kurtosis (median [5th, 95th percentile]), with the mean wind speed and significant wave height if configured.
 - `tables/<event>_bands.csv`: the band statistics behind `bands.png`, per sensor, hydrophone, and band, with the ambient mean-square SPL in each band.
 
@@ -204,6 +204,8 @@ Except for the depth figure, levels are on each sensor's detection channel.
 Figure style, metrics, and Word template come from the first site's `[report]`.
 
 ### Configuration
+
+Hydrophones are labelled by sensor, serial number, and depth, e.g. `VLA1 Serial 722013 (16.2 m)`, so results can be matched to hydrophone sensitivities, which are listed by serial number. Sensor names are labels for one deployment only. The same serial can appear on different moorings at different sites.
 
 Figures and tables use valid pulses only. Configure them in `[report]`:
 

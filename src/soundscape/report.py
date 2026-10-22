@@ -256,8 +256,8 @@ def band_table(
 ) -> pl.DataFrame:
     """Tidy band statistics for one event: per sensor, channel, and band, the
     pulse SEL_ss and ambient L_p and window exposure (median, p5, p95)."""
-    depth = {
-        (r["sensor"], r["channel"]): r.get("depth_m")
+    info = {
+        (r["sensor"], r["channel"]): (r.get("serial_number"), r.get("depth_m"))
         for r in hydrophones(df).iter_rows(named=True)
     }
     rows = []
@@ -273,7 +273,8 @@ def band_table(
                 row = {
                     "sensor": sensor,
                     "channel": channel,
-                    "depth_m": depth.get((sensor, channel)),
+                    "serial_number": info.get((sensor, channel), (None, None))[0],
+                    "depth_m": info.get((sensor, channel), (None, None))[1],
                     "band_hz": float(nominal),
                     "band_center_hz": float(st["center"][b]),
                 }
@@ -302,22 +303,26 @@ def channel_colors(df: pl.DataFrame) -> dict[int, str]:
     return {c: f"C{k}" for k, c in enumerate(channels)}
 
 
+def hydrophone_label(
+    sensor: str, channel: int, serial: str | None, depth: float | None
+) -> str:
+    """e.g. "VLA1 Serial 722013 (16.2 m)", to cross-reference hydrophone
+    sensitivities, which are listed by serial number for each deployment."""
+    name = f"Serial {serial}" if serial else f"Ch. {channel}"
+    where = f" ({depth:.1f} m)" if depth is not None else ""
+    return f"{sensor} {name}{where}"
+
+
 def hydrophone_labels(df: pl.DataFrame) -> dict[tuple[str, int], str]:
-    """(sensor, channel) -> hydrophone depth label, with the channel number
-    where a sensor has several hydrophones at one depth."""
-    if "depth_m" not in df.columns:
-        return {
-            (s, c): f"Ch. {c}"
-            for s, c in df.select("sensor", "channel").unique().iter_rows()
-        }
-    rows = df.group_by("sensor", "channel").agg(pl.col("depth_m").first())
-    labels = {}
-    for (sensor,), g in rows.group_by("sensor"):
-        shared = g["depth_m"].n_unique() < len(g)
-        for _, c, d in g.sort("channel").iter_rows():
-            depth = "depth n/a" if d is None else f"{d:.1f} m"
-            labels[(sensor, c)] = f"Ch. {c}, {depth}" if shared or d is None else depth
-    return labels
+    """(sensor, channel) -> hydrophone label (see `hydrophone_label`)."""
+    cols = [c for c in ("serial_number", "depth_m") if c in df.columns]
+    rows = df.group_by("sensor", "channel").agg(*[pl.col(c).first() for c in cols])
+    return {
+        (r["sensor"], r["channel"]): hydrophone_label(
+            r["sensor"], r["channel"], r.get("serial_number"), r.get("depth_m")
+        )
+        for r in rows.iter_rows(named=True)
+    }
 
 
 def _hydrophone_legend(
@@ -385,7 +390,17 @@ def plot_event_metrics(
                     lw=0.6,
                     color=colors[channel],
                 )
-        _hydrophone_legend(axs[0, j], sensor, channels, colors, labels, ncol=2)
+        # Below the column, one hydrophone per line, so long labels fit.
+        _hydrophone_legend(
+            axs[-1, j],
+            sensor,
+            channels,
+            colors,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.35),
+            ncol=1,
+        )
     for i, metric in enumerate(rows):
         label = _axis_label(metric)
         if metric == "kurtosis":
@@ -844,8 +859,17 @@ def _by_hydrophone(table: pl.DataFrame) -> pl.DataFrame:
     return table.sort([c for c in order if c in table.columns])
 
 
+HYDROPHONE_COLUMNS = ["Sensor", "Range (km)", "Serial", "Depth (m)"]
+HYDROPHONE_ALIGN = "lrlr"
+
+
 def _hydrophone_cells(r: dict, text: Callable[[str], str]) -> list[str]:
-    return [text(r["sensor"]), f"{r['range_m'] / 1e3:.1f}", _num(r.get("depth_m"), 1)]
+    return [
+        text(r["sensor"]),
+        f"{r['range_m'] / 1e3:.1f}",
+        text(r.get("serial_number") or "--"),
+        _num(r.get("depth_m"), 1),
+    ]
 
 
 def pulse_stats_rows(
@@ -863,7 +887,7 @@ def pulse_stats_rows(
         *[e for m in metrics for e in _percentiles(scaled(m), m)]
     )
     table = _by_hydrophone(hydrophones(df).join(stats, on=["sensor", "channel"]))
-    columns = ["Sensor", "Range (km)", "Depth (m)"] + [label(m) for m in metrics]
+    columns = HYDROPHONE_COLUMNS + [label(m) for m in metrics]
     rows = [
         _hydrophone_cells(r, text)
         + [
@@ -872,7 +896,7 @@ def pulse_stats_rows(
         ]
         for r in table.iter_rows(named=True)
     ]
-    return columns, rows, "lrr" + "r" * len(metrics)
+    return columns, rows, HYDROPHONE_ALIGN + "r" * len(metrics)
 
 
 def event_rows(
@@ -895,7 +919,7 @@ def event_rows(
         ),
         on=["sensor", "channel"],
     )
-    columns = ["Sensor", "Range (km)", "Depth (m)", "S/N", "Pulses", label("SEL_cum")]
+    columns = HYDROPHONE_COLUMNS + ["Pulses", label("SEL_cum")]
     extra: list[tuple[str, str]] = []  # (prefix, header)
     if kurt is not None and not kurt.is_empty():
         k = kurt.filter(
@@ -926,7 +950,6 @@ def event_rows(
         rows.append(
             _hydrophone_cells(r, text)
             + [
-                text(r.get("serial_number") or "--"),
                 f"{r['pulses']:,}",
                 _num(r["SEL_total"], 1),
             ]
@@ -940,7 +963,7 @@ def event_rows(
                 for x, _ in extra
             ]
         )
-    return columns, rows, "lrrlrr" + "r" * len(extra)
+    return columns, rows, HYDROPHONE_ALIGN + "rr" + "r" * len(extra)
 
 
 def weather_note(
@@ -1323,7 +1346,9 @@ def write_document(
         f"(all hydrophones) in {n_events} event{'s' * (n_events != 1)}. Metrics "
         f"follow ISO 18406:2017, with quantities and levels defined in ISO "
         f"18405:2017. Statistics are medians with the 5th and 95th percentiles "
-        f"in brackets. Depths are hydrophone depths below the sea surface."
+        f"in brackets. Hydrophones are identified by sensor, serial number, and "
+        f"depth below the sea surface, e.g. VLA1 Serial 722013 (16.2 m), for "
+        f"cross-reference with the table of hydrophone sensitivities."
     )
 
     doc.heading("Data coverage", 2)
@@ -1425,20 +1450,20 @@ def write_document(
         figure(
             event_figs / "metrics.png",
             f"Pulse metrics for {when} versus time at {at_range(sensors)}, colored "
-            f"by hydrophone depth. From top: {rows_text}.",
+            f"by hydrophone (serial number and depth). From top: {rows_text}.",
         )
         figure(
             event_figs / "psd.png",
             f"Power spectral density of the pulses for {when} (red) and of "
             f"ambient noise in {a.interval_s:g}-s intervals before the event (blue): "
             f"median (line) and 5th to 95th percentiles (shaded), at "
-            f"{at_range(sensors)} (columns), by hydrophone depth (rows).",
+            f"{at_range(sensors)} (columns), by hydrophone (rows).",
         )
         window_s = site.extract.pre_s + site.extract.post_s
         figure(
             event_figs / "bands.png",
             f"Decidecade band levels for {when} at {at_range(sensors)} (columns), "
-            f"by hydrophone depth (rows): single-strike sound exposure level "
+            f"by hydrophone (rows): single-strike sound exposure level "
             f"SEL_{{ss}} in each band (red), and the sound exposure of the ambient "
             f"noise over a window of the same length ({window_s:g} s), from "
             f"{a.interval_s:g}-s intervals before the event (blue). Lines are "
@@ -1449,7 +1474,7 @@ def write_document(
         figure(
             event_figs / "levels.png",
             f"Distribution of {_word_label(cfg.histogram_metric)} for {when} at "
-            f"{at_range(sensors)}, by hydrophone depth.",
+            f"{at_range(sensors)}, by hydrophone.",
         )
 
     path = site.report_dir / "report.docx"

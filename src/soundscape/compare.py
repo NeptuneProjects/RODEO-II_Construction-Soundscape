@@ -99,6 +99,7 @@ def summary(data: list[SiteData], metrics: list[str]) -> pl.DataFrame:
         det = detection_channels(d.site, d.df)
         rows = det.group_by("site", "event", "pile", "sensor", "channel").agg(
             (pl.col("range_m").first() / 1e3).alias("range_km"),
+            pl.col("serial_number").first(),
             pl.col("depth_m").first(),
             pl.col("strike").n_unique().alias("pulses"),
             *[pl.col(m).median().alias(m) for m in metrics],
@@ -120,6 +121,7 @@ def summary_columns(metrics: list[str], label) -> list[tuple[str, str, str]]:
             ("event", "Event", "l"),
             ("sensor", "Sensor", "l"),
             ("range_km", "Range (km)", "r"),
+            ("serial_number", "Serial", "l"),
             ("depth_m", "Depth (m)", "r"),
             ("pulses", "Pulses", "r"),
         ]

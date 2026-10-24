@@ -268,9 +268,16 @@ For each pulse window p(t), the pulse duration T90 is the 90 % energy signal dur
 | `SPL_rms90` | L<sub>p,90</sub> | mean-square SPL over T90 (dB re 1 uPa)                   |
 | `SEL_ss`    | SEL<sub>ss</sub> | single-strike SEL, 10 log10 (∫p² dt / E₀) over the whole window, i.e. 100 % of the pulse energy (dB re 1 uPa² s) |
 | `SEL_cum`   | SEL<sub>cum</sub> | running energy sum of `SEL_ss` over valid strikes in time order |
-| `T90`, `t_rise`, `t_decay` | T<sub>90</sub>, t<sub>r</sub>, t<sub>d</sub> | pulse duration; start of T90 to peak; peak to end of T90 (s; reported in ms) |
+| `T90`, `t_rise`, `t_decay` | T<sub>90</sub>, t<sub>r</sub>, t<sub>d</sub> | pulse duration; start of T90 to the peak within T90; that peak to end of T90 (s; reported in ms) |
+| `spikes`    |        | number of single-sample spikes in the window (see below)           |
 
 The window (`[extract] pre_s + post_s`, 1.2 s) is long enough to hold the whole pulse, so `SEL_ss` includes the ambient noise in it and is biased upward at low signal-to-noise ratio.
+
+The peak for `t_rise` and `t_decay` is taken within T90, so both are non-negative; `SPL_pk` is the peak over the whole window.
+
+`valid` is per pulse and hydrophone. A pulse is invalid where its window touches a data gap (all hydrophones of the sensor) or where the hydrophone's window holds a spike: a sample departing from the mean of its neighbours by more than `[extract] spike_threshold` (default 30) times the window's median departure.
+Such pulses are dropped rather than de-spiked, and are left out of `SEL_cum`, the PSD and band statistics (`channel_valid` in `psd_<sensor>.h5`), the figures, and the supplement.
+The spikes are clicks from the recording chain on VLA2 Serial 722015 at Vineyard Wind 1 (AN36, AP35, and fewer in AR34 and AT33). On every other hydrophone at most one pulse per event exceeds the threshold.
 
 Kurtosis β₂ (Pearson; 3 for Gaussian noise) is computed by the `kurtosis` stage over consecutive 60 s windows of the continuous recording on every channel, following Martin et al. (2020), not per pulse.
 `kurtosis.csv` gives each window's start, whether it is free of gaps, and the number of detected strikes in it; the event tables summarize the windows that contain strikes.

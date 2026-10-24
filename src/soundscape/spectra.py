@@ -14,7 +14,7 @@ from soundscape.config import AmbientConfig, BandsConfig, PulsePSDConfig, Sensor
 from soundscape.events import Event, source_range
 from soundscape.extract import apply_filter, iter_waveforms, read_pulses
 from soundscape.kurtosis import beta2
-from soundscape.metrics import _db_power
+from soundscape.metrics import _db_power, channel_valid, spike_count
 from soundscape.sources import read_segment
 
 logger = logging.getLogger(__name__)
@@ -128,6 +128,7 @@ def pulse_psd(
     config: PulsePSDConfig,
     destination: Path,
     bands: BandsConfig | None = None,
+    spike_threshold: float | None = None,
 ) -> None:
     """Welch PSD and decidecade band exposure of every pulse and channel.
 
@@ -136,16 +137,23 @@ def pulse_psd(
     single-strike sound exposure in each band from the DFT of the whole
     window (so the bands of the full spectrum sum to the exposure behind
     SEL_ss); /band_center, /band_lower, /band_upper, /band_nominal in Hz; and
-    /strike, /time, /valid copied from the pulse file.
+    /strike, /time, /valid copied from the pulse file; and /channel_valid
+    bool (n_strikes, n_channels), also False where the channel's window has
+    spikes (with `spike_threshold`; see `metrics.spike_count`).
     """
     bands = bands or BandsConfig()
     _, arrays, attrs = read_pulses(pulses_path, waveforms=False)
     fs = attrs["sampling_rate"]
     edges = decidecade_bands(bands.fmin, bands.upper_limit(fs))
-    psds, band_exposure = [], []
+    psds, band_exposure, spikes = [], [], []
     freqs = weights = None
     for w in iter_waveforms(pulses_path):
         w = w.astype(np.float64)
+        spikes.append(
+            spike_count(w, spike_threshold)
+            if spike_threshold is not None
+            else np.zeros(w.shape[:2], dtype=int)
+        )
         nperseg = min(config.nperseg, w.shape[-1])
         freqs, p = welch(
             w,
@@ -171,6 +179,10 @@ def pulse_psd(
             f.create_dataset(f"band_{k}", data=edges[k])
         for k in ("strike", "valid"):
             f.create_dataset(k, data=arrays[k])
+        f.create_dataset(
+            "channel_valid",
+            data=channel_valid(arrays["valid"], np.concatenate(spikes)),
+        )
         f.create_dataset("time", data=arrays["time"].astype(np.int64))
         f.attrs.update(attrs)
         f.attrs.update(

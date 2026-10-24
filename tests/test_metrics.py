@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from soundscape.kurtosis import beta2
-from soundscape.metrics import cumulative_sel, pulse_metrics
+from soundscape.metrics import channel_valid, cumulative_sel, pulse_metrics, spike_count
 
 FS = 10_000.0
 
@@ -85,3 +85,41 @@ def test_cumulative_sel():
     out = cumulative_sel(sel, valid)
     assert out[-1, 0] == pytest.approx(150 + 10 * np.log10(3))
     assert out[2, 1] == out[1, 1]
+
+
+def _burst(n=12_000, at=6000):
+    """Noise with a 100 Hz tone burst starting at `at`."""
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal(n)
+    t = np.arange(2000) / FS
+    x[at : at + 2000] += 100 * np.sin(2 * np.pi * 100 * t) * np.exp(-t / 0.05)
+    return x
+
+
+def test_rise_and_decay_are_non_negative_with_an_outlying_peak():
+    x = _burst()
+    x[100] = 500.0  # larger than the burst, well before it
+    m = pulse_metrics(x, FS)
+    assert m["SPL_pk"] == pytest.approx(20 * np.log10(500.0))
+    assert m["t_rise"] >= 0
+    assert m["t_decay"] >= 0
+
+
+def test_spikes_are_counted_and_band_limited_sound_is_not():
+    x = _burst()
+    assert spike_count(np.sin(np.arange(x.size) / 5), 30) == 0
+    clean = np.convolve(x, np.ones(8) / 8, mode="same")  # band-limited
+    spiky = clean.copy()
+    spiky[[1000, 9000]] += 200.0
+    assert spike_count(np.stack([clean, spiky]), 30).tolist() == [0, 2]
+    assert spike_count(np.zeros((1, 100)), 30)[0] == 0
+
+
+def test_spiky_channels_are_invalid_and_left_out_of_cumulative_sel():
+    valid = channel_valid(
+        np.array([True, True, False]), np.array([[0, 0], [0, 3], [0, 0]])
+    )
+    assert valid.tolist() == [[True, True], [True, False], [False, False]]
+    out = cumulative_sel(np.full((3, 2), 150.0), valid)
+    assert out[-1, 0] == pytest.approx(150 + 10 * np.log10(2))
+    assert out[-1, 1] == pytest.approx(150)

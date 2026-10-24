@@ -192,7 +192,8 @@ class Workflow:
             if not path.exists():
                 logger.warning(f"[metrics] missing {path}")
                 return
-            with_hydrophones(compute_metrics(path), sensor).write_csv(
+            metrics = compute_metrics(path, self.site.extract.spike_threshold)
+            with_hydrophones(metrics, sensor).write_csv(
                 self.site.metrics_path(event.name, sensor.name)
             )
 
@@ -232,6 +233,7 @@ class Workflow:
                 self.site.pulse_psd,
                 self.site.pulse_psd_path(event.name, sensor.name),
                 self.site.bands,
+                self.site.extract.spike_threshold,
             )
 
         self._each(_psd, "psd")

@@ -139,20 +139,37 @@ def _db_percentiles(psd: np.ndarray) -> dict[str, np.ndarray]:
     return {"median": med, "p5": p5, "p95": p95}
 
 
+def _channel_valid(f: h5py.File) -> np.ndarray:
+    """Validity per strike and channel from a pulse PSD file; files written
+    before /channel_valid only have it per strike."""
+    if "channel_valid" in f:
+        return f["channel_valid"][:]
+    return np.repeat(f["valid"][:, None], len(f.attrs["channels"]), axis=1)
+
+
+def _pulse_count(n: np.ndarray) -> str:
+    """Valid pulses per hydrophone, as one number or a range."""
+    lo, hi = int(np.min(n)), int(np.max(n))
+    return f"{hi:,}" if lo == hi else f"{lo:,}\u2013{hi:,}"
+
+
 def pulse_psd_stats(path: Path) -> dict:
     """Median and 5th and 95th percentiles of the valid pulse PSDs in dB, per
-    channel (arrays of shape (n_channels, n_freqs))."""
+    channel (arrays of shape (n_channels, n_freqs)); `n` is the number of
+    valid pulses per channel."""
     with h5py.File(path, "r") as f:
         freqs = f["freqs"][:]
-        valid = f["valid"][:]
+        valid = _channel_valid(f)
         channels = [int(c) for c in f.attrs["channels"]]
         dset = f["psd"]
-        per_ch = [_db_percentiles(dset[:, c, :][valid]) for c in range(dset.shape[1])]
+        per_ch = [
+            _db_percentiles(dset[:, c, :][valid[:, c]]) for c in range(dset.shape[1])
+        ]
     return {
         "freqs": freqs,
         "channels": channels,
         **{k: np.array([p[k] for p in per_ch]) for k in ("median", "p5", "p95")},
-        "n": int(valid.sum()),
+        "n": valid.sum(axis=0),
     }
 
 
@@ -200,14 +217,16 @@ def pulse_band_stats(path: Path) -> dict | None:
     with h5py.File(path, "r") as f:
         if "band_exposure" not in f:
             return None
-        valid = f["valid"][:]
-        exposure = f["band_exposure"][:][valid]
+        valid = _channel_valid(f)
+        exposure = f["band_exposure"][:]
         out = {k: f[f"band_{k}"][:] for k in ("center", "lower", "upper", "nominal")}
         out["channels"] = [int(c) for c in f.attrs["channels"]]
-    per_ch = [_db_percentiles(exposure[:, c, :]) for c in range(exposure.shape[1])]
+    per_ch = [
+        _db_percentiles(exposure[valid[:, c], c, :]) for c in range(exposure.shape[1])
+    ]
     for k in ("median", "p5", "p95"):
         out[k] = np.array([p[k] for p in per_ch])
-    out["n"] = int(valid.sum())
+    out["n"] = valid.sum(axis=0)
     return out
 
 
@@ -449,7 +468,9 @@ def plot_pulse_psd(
     lo, hi = np.inf, -np.inf
     for j, (sensor, range_m) in enumerate(sensors):
         st, amb = stats[sensor], ambient.get(sensor)
-        axs[0, j].set_title(f"{sensor}, R = {range_m / 1e3:.1f} km\n{st['n']:,} pulses")
+        axs[0, j].set_title(
+            f"{sensor}, R = {range_m / 1e3:.1f} km\n{_pulse_count(st['n'])} pulses"
+        )
         f = st["freqs"]
         band = (f >= fmin) & (f <= fmax)
         n_ch = len(st["channels"])
@@ -545,7 +566,9 @@ def plot_band_levels(
     for j, (sensor, range_m) in enumerate(sensors):
         st, amb = pulses[sensor], ambient.get(sensor)
         f = st["center"]
-        axs[0, j].set_title(f"{sensor}, R = {range_m / 1e3:.1f} km\n{st['n']:,} pulses")
+        axs[0, j].set_title(
+            f"{sensor}, R = {range_m / 1e3:.1f} km\n{_pulse_count(st['n'])} pulses"
+        )
         n_ch = len(st["channels"])
         for i in range(n_rows):
             ax = axs[i, j]

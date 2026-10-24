@@ -184,11 +184,18 @@ class DetectorOverride(StrictModel):
 
 
 class ExtractConfig(StrictModel):
-    """Windowing of each strike for metric computation."""
+    """Windowing of each strike for metric computation.
+
+    A pulse is invalid on a hydrophone whose window holds a single-sample
+    spike larger than `spike_threshold` times the window's median
+    sample-to-sample departure (see `metrics.spike_count`); None disables the
+    check.
+    """
 
     pre_s: float = 0.6
     post_s: float = 0.6
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
+    spike_threshold: float | None = Field(default=30.0, gt=0.0)
 
 
 class AmbientConfig(StrictModel):

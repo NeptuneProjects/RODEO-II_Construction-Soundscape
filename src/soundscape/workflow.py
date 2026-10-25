@@ -9,6 +9,7 @@ Stages, in order:
     psd        power spectral density of each pulse
     ambient    ambient noise preceding each event
     kurtosis   kurtosis of the recording in 60 s windows over each event
+    interpulse sound between strikes in 100 ms segments, and ambient likewise
     report     figures, LaTeX tables, and a Word document
     supplement PDF table of every pulse (data supplement)
     run        all of the above
@@ -33,6 +34,7 @@ from soundscape.compare import compare_sites
 from soundscape.config import SensorConfig, SiteConfig, load_site
 from soundscape.events import Event, load_events
 from soundscape.extract import extract
+from soundscape.interpulse import ambient_segments, interpulse, summarize_site
 from soundscape.kurtosis import windowed_kurtosis
 from soundscape.metrics import compute_metrics, read_table
 from soundscape.plotting import plot_detections
@@ -286,6 +288,49 @@ class Workflow:
         if tables:
             _merge_table(self.site, self.site.kurtosis_path, pl.concat(tables))
 
+    def interpulse(self) -> None:
+        def _interpulse(event: Event, sensor) -> None:
+            path = self.site.metrics_path(event.name, sensor.name)
+            if not path.exists():
+                logger.warning(f"[interpulse] missing {path}")
+                return
+            metrics = read_table(path)
+            if "t5_s" not in metrics.columns:
+                logger.warning(f"[interpulse] {path} predates t5_s; rerun metrics")
+                return
+            inventory = self.site.inventory_path(sensor.name)
+            segments, intervals = interpulse(
+                sensor, inventory, event, metrics, self.site.interpulse, self.site.bands
+            )
+            if segments.is_empty():
+                logger.warning(f"[interpulse] {event.name}/{sensor.name}: no data")
+                return
+            segments.write_parquet(
+                self.site.interpulse_segments_path(event.name, sensor.name)
+            )
+            intervals.write_parquet(
+                self.site.interpulse_intervals_path(event.name, sensor.name)
+            )
+            ambient = ambient_segments(
+                sensor,
+                inventory,
+                event,
+                self.site.interpulse,
+                self.site.bands,
+                self.site.ambient,
+            )
+            if not ambient.is_empty():
+                ambient.write_parquet(
+                    self.site.interpulse_ambient_path(event.name, sensor.name)
+                )
+
+        self._each(_interpulse, "interpulse")
+        # Summaries over every event in the site file, not only those rerun.
+        for kind, table in summarize_site(self.site, load_events(self.site)).items():
+            if not table.is_empty():
+                table.write_csv(self.site.interpulse_summary_path(kind))
+        logger.info(f"[interpulse] summaries -> {self.site.output_dir}")
+
     def report(self) -> None:
         make_report(self.site, self.events)
 
@@ -300,6 +345,7 @@ class Workflow:
         self.psd()
         self.ambient()
         self.kurtosis()
+        self.interpulse()
         self.report()
         self.supplement()
 
@@ -325,6 +371,7 @@ COMMANDS = [
     "psd",
     "ambient",
     "kurtosis",
+    "interpulse",
     "report",
     "supplement",
     "run",

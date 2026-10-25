@@ -9,8 +9,8 @@ Output layout:
 
     <output>/
     ├── compare.docx
-    ├── figures/{levels_vs_range,depth,psd}.png
-    └── tables/summary.{csv,tex}
+    ├── figures/{levels_vs_range,depth,psd,interpulse_vs_range,interpulse_bands}.png
+    └── tables/{summary.{csv,tex},range_fits.csv,masking.csv}
 """
 
 import logging
@@ -27,6 +27,7 @@ from matplotlib.ticker import NullFormatter, ScalarFormatter
 from soundscape.config import SiteConfig
 from soundscape.document import Document
 from soundscape.events import Event, load_events
+from soundscape.interpulse import masking_factors
 from soundscape.metrics import read_table
 from soundscape.report import (
     METRIC_LABELS,
@@ -35,11 +36,14 @@ from soundscape.report import (
     _axis_label,
     _num,
     _save,
+    _stat,
     _tabular,
     _tex_label,
     _word_label,
     ambient_psd,
     detection_channels,
+    interpulse_band,
+    interpulse_summaries,
     load_metrics,
     pulse_psd_stats,
     tex_escape,
@@ -58,6 +62,7 @@ class SiteData:
     events: list[Event]
     df: pl.DataFrame  # valid pulses, all channels, with a `site` column
     ambient_spl: pl.DataFrame | None
+    interpulse: dict[str, pl.DataFrame]  # see report.interpulse_summaries
 
 
 def load_site_data(site: SiteConfig) -> SiteData | None:
@@ -73,7 +78,12 @@ def load_site_data(site: SiteConfig) -> SiteData | None:
     ambient = (
         read_table(site.ambient_spl_path) if site.ambient_spl_path.exists() else None
     )
-    return SiteData(site, events, df, ambient)
+    inter = interpulse_summaries(site)
+    if inter and site.interpulse_summary_path("bands").exists():
+        inter["bands"] = pl.read_csv(site.interpulse_summary_path("bands"))
+    names = [e.name for e in events]
+    inter = {k: v.filter(pl.col("event").is_in(names)) for k, v in inter.items()}
+    return SiteData(site, events, df, ambient, inter)
 
 
 def _range_axis(ax: plt.Axes) -> None:
@@ -364,6 +374,130 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# Inter-pulse sound field
+# --------------------------------------------------------------------------
+
+
+def _inter(data: list[SiteData], kind: str) -> pl.DataFrame:
+    """One inter-pulse summary on the detection channels, over sites."""
+    frames = [
+        detection_channels(d.site, d.interpulse[kind]).with_columns(
+            site=pl.lit(d.site.name)
+        )
+        for d in data
+        if kind in d.interpulse
+    ]
+    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
+
+
+def plot_interpulse_vs_range(
+    data: list[SiteData], thresholds: list[float]
+) -> plt.Figure | None:
+    """Median excess of the inter-pulse level over ambient, and the
+    percentage of inter-pulse time above each threshold, against range, for
+    each event and sensor."""
+    ex = _inter(data, "excess")
+    if ex.is_empty():
+        return None
+    fig, axs = plt.subplots(1, 2, figsize=(8.0, 3.2), layout="constrained")
+    for k, (site, d) in enumerate(ex.group_by(["site"], maintain_order=True)):
+        r = d["range_m"] / 1e3
+        axs[0].plot(r, d["dL"], MARKERS[k], ms=4, color=f"C{k}", label=site[0])
+        for j, t in enumerate(thresholds):
+            axs[1].plot(
+                r,
+                100 * d[f"above_{t:g}"],
+                MARKERS[k],
+                ms=4,
+                color=f"C{k}",
+                mfc="none" if j else None,
+                label=f"{site[0]}, > {t:g} dB",
+            )
+    axs[0].axhline(0, color="k", lw=0.6)
+    axs[0].set_ylabel(f"{METRIC_LABELS['dL_ip'][0]} (dB)")
+    axs[1].set_ylabel("Inter-pulse time above ambient (%)")
+    axs[1].set_ylim(0, 102)
+    for ax in axs:
+        ax.set_xlabel("Range (km)")
+        _range_axis(ax)
+        ax.grid(True, lw=0.3)
+        ax.legend(fontsize="small")
+    return fig
+
+
+def plot_interpulse_bands(data: list[SiteData]) -> plt.Figure | None:
+    """Median excess over ambient in each decidecade band between pulses,
+    per sensor (median over events), one panel per site."""
+    b = _inter(data, "bands")
+    if b.is_empty():
+        return None
+    sites = b["site"].unique(maintain_order=True).to_list()
+    fig, axs = plt.subplots(
+        1,
+        len(sites),
+        figsize=(3.6 * len(sites), 3.0),
+        layout="constrained",
+        sharey=True,
+        squeeze=False,
+    )
+    for ax, site in zip(axs[0], sites):
+        d = b.filter(pl.col("site") == site)
+        order = d.group_by("sensor").agg(pl.col("range_m").median()).sort("range_m")
+        for k, (sensor, rng) in enumerate(order.iter_rows()):
+            m = (
+                d.filter(pl.col("sensor") == sensor)
+                .group_by("nominal")
+                .agg(pl.col("dL").median())
+                .sort("nominal")
+            )
+            ax.plot(
+                m["nominal"],
+                m["dL"],
+                marker=".",
+                color=f"C{k}",
+                label=f"{sensor} ({rng / 1e3:.0f} km)",
+            )
+        ax.axhline(0, color="k", lw=0.6)
+        ax.set_xscale("log")
+        ax.set_xlabel("Decidecade band (Hz)")
+        ax.set_title(site)
+        ax.grid(True, lw=0.3)
+        ax.legend(fontsize="small")
+    axs[0, 0].set_ylabel("Inter-pulse level above ambient (dB)")
+    return fig
+
+
+def masking_table(data: list[SiteData]) -> pl.DataFrame:
+    """Listening space remaining between strikes, per site and sensor: the
+    median over events of the inter-pulse excess on the detection channel,
+    and the listening range and area remaining at each site's spreading
+    coefficients (Clark et al. 2009; see interpulse.masking_factors)."""
+    rows = []
+    for d in data:
+        if "excess" not in d.interpulse:
+            continue
+        ex = detection_channels(d.site, d.interpulse["excess"])
+        for (sensor,), g in ex.group_by(["sensor"], maintain_order=True):
+            dl = float(g["dL"].median())
+            row = {
+                "site": d.site.name,
+                "sensor": sensor,
+                "range_min_km": g["range_m"].min() / 1e3,
+                "range_max_km": g["range_m"].max() / 1e3,
+                "events": g["event"].n_unique(),
+                "dL_median": dl,
+                "dL_min": float(g["dL"].min()),
+                "dL_max": float(g["dL"].max()),
+            }
+            for n in d.site.interpulse.spreading:
+                r, a = masking_factors(dl, n)
+                row[f"range_left_N{n:g}"] = float(r)
+                row[f"area_left_N{n:g}"] = float(a)
+            rows.append(row)
+    return pl.DataFrame(rows).sort("site", "range_min_km") if rows else pl.DataFrame()
+
+
 def compare_sites(sites: list[SiteConfig], output: Path) -> None:
     """Write the cross-site figures, tables, and Word document to `output`.
     Figure style, metrics, and Word template come from the first site."""
@@ -409,6 +543,16 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
         _save(psd, figs / "psd.png", cfg.dpi, cfg.titles)
     else:
         logger.warning("[compare] no pulse PSD files; psd figure skipped")
+    ip = sites[0].interpulse
+    ip_range = plot_interpulse_vs_range(data, ip.thresholds_db)
+    if ip_range is not None:
+        _save(ip_range, figs / "interpulse_vs_range.png", cfg.dpi, cfg.titles)
+    ip_bands = plot_interpulse_bands(data)
+    if ip_bands is not None:
+        _save(ip_bands, figs / "interpulse_bands.png", cfg.dpi, cfg.titles)
+    masking = masking_table(data)
+    if not masking.is_empty():
+        masking.write_csv(tables / "masking.csv")
 
     # Word document ---------------------------------------------------------
     doc = Document(cfg.docx_template)
@@ -469,6 +613,83 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
             "for each event and sensor, colored by range, with the ambient noise "
             "spectrum before each event in gray.",
         )
+    if ip_range is not None:
+        _interpulse_section(doc, data, figs, masking, ip_bands is not None)
     path = output / "compare.docx"
     doc.save(path)
     logger.info(f"[compare] {path}")
+
+
+def _interpulse_section(
+    doc: Document,
+    data: list[SiteData],
+    figs: Path,
+    masking: pl.DataFrame,
+    bands: bool,
+) -> None:
+    """Inter-pulse figures and the listening-space table in compare.docx."""
+    site = data[0].site
+    ip = site.interpulse
+    lo, hi = interpulse_band(site)
+    band = f"{lo:g} Hz to {hi / 1e3:.1f} kHz"
+    doc.heading("Inter-pulse sound field", 2)
+    doc.figure(
+        figs / "interpulse_vs_range.png",
+        f"Sound between strikes against range, for each event and sensor on the "
+        f"detection channel. Left: ΔL_{{ip}}, the median mean-square SPL ({band}) "
+        f"of the {ip.segment_s * 1e3:g}-ms segments in the inter-pulse interval "
+        f"(from t_{{95}} of one pulse to t_{{5}} of the next) less the median of "
+        f"the same quantity in the ambient window before the event. Right: the "
+        f"percentage of inter-pulse time more than "
+        + _and([f"{t:g} dB" for t in ip.thresholds_db])
+        + " (filled and open markers) above that ambient median.",
+    )
+    if bands:
+        doc.figure(
+            figs / "interpulse_bands.png",
+            "Median excess of the inter-pulse level over ambient in each "
+            "decidecade band, per sensor (median over events), on the detection "
+            "channel. Band levels are from the DFT of each "
+            f"{ip.segment_s * 1e3:g}-ms segment (10 Hz resolution), so bands "
+            "below about 50 Hz are approximate.",
+        )
+    if masking.is_empty():
+        return
+    nominal, *bounds = ip.spreading
+    columns = [
+        "Site",
+        "Sensor",
+        "Range (km)",
+        "Events",
+        "ΔL_{ip} (dB)",
+        f"Range left, N = {nominal:g} (%)",
+        f"Area left, N = {nominal:g} (%)",
+    ] + [f"Area left, N = {n:g} (%)" for n in bounds]
+    rows = [
+        [
+            r["site"],
+            r["sensor"],
+            f"{r['range_min_km']:.1f}–{r['range_max_km']:.1f}",
+            str(r["events"]),
+            _stat(r["dL_median"], r["dL_min"], r["dL_max"], 1),
+            _num(100 * r[f"range_left_N{nominal:g}"], 0),
+            _num(100 * r[f"area_left_N{nominal:g}"], 0),
+        ]
+        + [_num(100 * r[f"area_left_N{n:g}"], 0) for n in bounds]
+        for r in masking.iter_rows(named=True)
+    ]
+    doc.table(
+        columns,
+        rows,
+        "Listening space remaining between strikes for low-frequency cetaceans "
+        f"({band}), per site and sensor on the detection channel. ΔL_{{ip}} is "
+        "the median over events of the inter-pulse excess over ambient, with the "
+        "smallest and largest event medians in brackets. With transmission loss "
+        "N log_{10} r, a rise ΔL in the noise scales the range at which a call "
+        "can be detected by 10^{−ΔL/N} and the area by 10^{−2ΔL/N} (Clark et al. "
+        f"2009); N = {nominal:g} is nominal, and "
+        + _and([f"N = {n:g}" for n in bounds])
+        + " bound it. This is a first-order estimate: it treats the median "
+        "excess as steady and ignores critical ratios and call structure.",
+        "llrrrrr" + "r" * len(bounds),
+    )

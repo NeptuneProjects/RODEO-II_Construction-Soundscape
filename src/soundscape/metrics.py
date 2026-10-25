@@ -99,6 +99,9 @@ def pulse_metrics(x: np.ndarray, fs: float) -> dict[str, np.ndarray]:
         "T90": (i1 - i0) / fs,
         "t_rise": (i_pk - i0) / fs,
         "t_decay": (i1 - i_pk) / fs,
+        # Start and end of T90 from the start of the window.
+        "t5": i0 / fs,
+        "t95": i1 / fs,
     }
 
 
@@ -107,9 +110,11 @@ def spike_count(x: np.ndarray, threshold: float) -> np.ndarray:
 
     A sample is a spike where its departure from the mean of its two
     neighbours exceeds `threshold` times the median of that departure over
-    the window. Sound in the water is band-limited well below the sampling
-    rate, so it changes little from one sample to the next; a one-sample
-    jump comes from the recording chain.
+    the window, and is at least half the largest |x| within two samples.
+    Sound in the water is band-limited well below the sampling rate, so it
+    changes little from one sample to the next compared with its amplitude
+    (a tone of frequency f and amplitude A by at most A (1 - cos 2 pi f/fs));
+    a jump as large as the signal itself comes from the recording chain.
     """
     x = np.asarray(x, dtype=np.float64)
     r = np.abs(x[..., 1:-1] - 0.5 * (x[..., :-2] + x[..., 2:]))
@@ -118,7 +123,11 @@ def spike_count(x: np.ndarray, threshold: float) -> np.ndarray:
     # only local maxima.
     pad = np.pad(r, [(0, 0)] * (r.ndim - 1) + [(1, 1)])
     local_max = (r >= pad[..., :-2]) & (r > pad[..., 2:])
-    count = ((r > threshold * scale) & local_max).sum(axis=-1)
+    # |x| within two samples of each r (r[i] is at sample i + 1).
+    a = np.pad(np.abs(x), [(0, 0)] * (x.ndim - 1) + [(1, 1)])
+    near = np.max([a[..., k : k + r.shape[-1]] for k in range(5)], axis=0)
+    jump = (r > threshold * scale) & (r >= 0.5 * near)
+    count = (jump & local_max).sum(axis=-1)
     return np.where(scale[..., 0] > 0, count, 0)
 
 
@@ -175,6 +184,10 @@ def compute_metrics(pulses_path, spike_threshold: float | None = None) -> pl.Dat
             "time": np.repeat(arrays["time"], n_channels),
             "valid": valid.reshape(-1),
             "spikes": m["spikes"].reshape(-1),
+            # Start and end of T90 relative to the detection time, for the
+            # inter-pulse intervals.
+            "t5_s": (m["t5"] - attrs["pre_s"]).reshape(-1),
+            "t95_s": (m["t95"] - attrs["pre_s"]).reshape(-1),
             **{k: m[k].reshape(-1) for k in METRIC_COLUMNS},
         }
     )

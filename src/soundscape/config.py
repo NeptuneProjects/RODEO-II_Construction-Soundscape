@@ -217,6 +217,32 @@ class KurtosisConfig(StrictModel):
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
 
 
+class InterpulseConfig(StrictModel):
+    """Sound between strikes (Guan et al. 2015, 2017).
+
+    The level is the mean-square SPL in consecutive `segment_s` segments from
+    each strike's detection time to the next (the incremental computation
+    method of Guan et al. 2015), broadband and in `band` (default 20 Hz to the
+    top of the decidecade bands). The inter-pulse interval on a hydrophone
+    runs from t95 of one pulse to t5 of the next; Guan et al.'s interval,
+    `guan_after_s` after one strike to `guan_before_s` before the next, is
+    tagged as well. Intervals longer than `max_spacing_factor` times the
+    event's median strike spacing are pauses and are left out. Excess over
+    ambient is summarized at `thresholds_db`, and the listening-space
+    reduction uses spreading coefficients `spreading` (the first is nominal).
+    """
+
+    segment_s: float = Field(default=0.1, gt=0.0)
+    chunk_s: float = Field(default=300.0, gt=0.0)
+    band: tuple[float, float | None] = (20.0, None)
+    max_spacing_factor: float = Field(default=2.0, gt=1.0)
+    guan_after_s: float = Field(default=0.1, ge=0.0)
+    guan_before_s: float = Field(default=0.5, ge=0.0)
+    thresholds_db: list[float] = [3.0, 10.0]
+    spreading: list[float] = [15.0, 10.0, 20.0]
+    filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
+
+
 class BandsConfig(StrictModel):
     """Decidecade bands for band levels: those with lower edge at least
     `fmin` and upper edge at most `fmax`. By default `fmax` is
@@ -374,6 +400,7 @@ class SiteConfig(StrictModel):
     ambient: AmbientConfig = AmbientConfig()
     pulse_psd: PulsePSDConfig = PulsePSDConfig()
     kurtosis: KurtosisConfig = KurtosisConfig()
+    interpulse: InterpulseConfig = InterpulseConfig()
     bands: BandsConfig = BandsConfig()
     report: ReportConfig = ReportConfig()
 
@@ -443,6 +470,15 @@ class SiteConfig(StrictModel):
     def pulse_psd_path(self, event: str, sensor: str) -> Path:
         return self.event_dir(event) / f"psd_{sensor}.h5"
 
+    def interpulse_segments_path(self, event: str, sensor: str) -> Path:
+        return self.event_dir(event) / f"interpulse_segments_{sensor}.parquet"
+
+    def interpulse_intervals_path(self, event: str, sensor: str) -> Path:
+        return self.event_dir(event) / f"interpulse_intervals_{sensor}.parquet"
+
+    def interpulse_ambient_path(self, event: str, sensor: str) -> Path:
+        return self.event_dir(event) / f"interpulse_ambient_{sensor}.parquet"
+
     @property
     def report_dir(self) -> Path:
         return self.output_dir / "report"
@@ -462,6 +498,10 @@ class SiteConfig(StrictModel):
     @property
     def kurtosis_path(self) -> Path:
         return self.output_dir / "kurtosis.csv"
+
+    def interpulse_summary_path(self, kind: str) -> Path:
+        """Site-wide inter-pulse summary table (see interpulse.summarize_site)."""
+        return self.output_dir / f"interpulse_{kind}.csv"
 
 
 def load_site(path: Path) -> SiteConfig:

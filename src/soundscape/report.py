@@ -32,6 +32,7 @@ from soundscape.bands import band_sum, band_weights
 from soundscape.config import SiteConfig
 from soundscape.document import Document
 from soundscape.events import distance_m, load_events, source_range
+from soundscape.interpulse import summary_band
 from soundscape.metrics import read_table
 from soundscape.sources import coverage, recorded_intervals
 
@@ -55,6 +56,10 @@ METRIC_LABELS = {
     "kurtosis": ("$\\beta_2$", ""),
     "WSPD": ("Wind speed", "m/s"),
     "WVHT": ("$H_{1/3}$", "m"),
+    # Inter-pulse: mean-square SPL of 100 ms segments in the summary band, and
+    # its median excess over ambient.
+    "Lp_ip": ("$L_{p,\\mathrm{ip}}$", DB),
+    "dL_ip": ("$\\Delta L_\\mathrm{ip}$", "dB"),
 }
 
 # The same labels for Word (see soundscape.document for the markup).
@@ -71,6 +76,8 @@ WORD_LABELS = {
     "kurtosis": ("β_{2}", ""),
     "WSPD": ("Wind speed", "m/s"),
     "WVHT": ("H_{1/3}", "m"),
+    "Lp_ip": ("L_{p,ip}", "dB re 1 µPa"),
+    "dL_ip": ("ΔL_{ip}", "dB"),
 }
 
 # Factors from the units in the metrics tables to the units shown, and the
@@ -726,6 +733,89 @@ def plot_metric_vs_range(df: pl.DataFrame, metric: str, site_name: str) -> plt.F
     return fig
 
 
+def plot_interpulse_decay(
+    decay: pl.DataFrame, thresholds: list[float], site_name: str
+) -> plt.Figure:
+    """Median summary-band level against time since the strike, relative to
+    the ambient median, on each sensor's detection channel (`decay` already
+    filtered to them): one panel per sensor, one line per event, colored by
+    range. Times where fewer than half the event's intervals reach are
+    dropped (the strike spacing varies)."""
+    sensors = (
+        decay.group_by("sensor").agg(pl.col("range_m").min()).sort("range_m")["sensor"]
+    )
+    fig, axs = plt.subplots(
+        1,
+        len(sensors),
+        figsize=(2.6 * len(sensors) + 1.0, 3.0),
+        layout="constrained",
+        sharey=True,
+        squeeze=False,
+    )
+    norm = plt.Normalize(decay["range_m"].min() / 1e3, decay["range_m"].max() / 1e3)
+    cmap = plt.get_cmap("viridis")
+    for ax, sensor in zip(axs[0], sensors):
+        d = decay.filter(pl.col("sensor") == sensor)
+        for (_,), c in d.group_by(["event"], maintain_order=True):
+            c = c.filter(pl.col("n") >= 0.5 * pl.col("n").max()).sort("t_s")
+            ax.plot(
+                c["t_s"] + 0.05,
+                c["dL"],
+                lw=0.8,
+                color=cmap(norm(c["range_m"][0] / 1e3)),
+            )
+        ax.axhline(0, color="k", lw=0.6)
+        for t in thresholds:
+            ax.axhline(t, color="gray", lw=0.6, ls=":")
+        ax.set_title(sensor)
+        ax.set_xlabel("Time since strike (s)")
+        ax.grid(True, lw=0.3)
+    axs[0, 0].set_ylabel("Level above ambient (dB)")
+    fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axs[0, -1], label="Range (km)"
+    )
+    fig.suptitle(f"{site_name}: inter-pulse decay, detection channels")
+    return fig
+
+
+def plot_interpulse_cdf(hist: pl.DataFrame, site_name: str) -> plt.Figure:
+    """Cumulative distributions of the 100 ms summary-band levels between
+    pulses and in the ambient windows, pooled over events, on each sensor's
+    detection channel (`hist` already filtered to them)."""
+    sensors = (
+        hist.group_by("sensor").agg(pl.col("range_m").min()).sort("range_m")["sensor"]
+    )
+    fig, axs = plt.subplots(
+        1,
+        len(sensors),
+        figsize=(2.6 * len(sensors), 3.0),
+        layout="constrained",
+        sharey=True,
+        squeeze=False,
+    )
+    styles = {"interpulse": ("C0", "Inter-pulse"), "ambient": ("0.5", "Ambient")}
+    for ax, sensor in zip(axs[0], sensors):
+        for kind, (color, label) in styles.items():
+            h = (
+                hist.filter(pl.col("sensor") == sensor, pl.col("kind") == kind)
+                .group_by("level")
+                .agg(pl.col("count").sum())
+                .sort("level")
+            )
+            if h.is_empty():
+                continue
+            cdf = np.cumsum(h["count"].to_numpy()) / h["count"].sum() * 100
+            ax.step(h["level"] + 0.5, cdf, where="post", color=color, label=label)
+        ax.axhline(50, color="k", lw=0.4, ls=":")
+        ax.set_title(sensor)
+        ax.set_xlabel(f"{METRIC_LABELS['Lp_ip'][0]} ({DB})")
+        ax.grid(True, lw=0.3)
+    axs[0, 0].set_ylabel("Cumulative percentage")
+    axs[0, 0].legend(loc="lower right", fontsize="small")
+    fig.suptitle(f"{site_name}: 100 ms levels, detection channels")
+    return fig
+
+
 def plot_data_coverage(
     events: list,
     recorded: dict[str, list[tuple[np.datetime64, np.datetime64]]],
@@ -930,13 +1020,17 @@ def event_rows(
     kurt: pl.DataFrame | None = None,
     label: Callable[[str], str] = _tex_label,
     text: Callable[[str], str] = tex_escape,
+    inter: pl.DataFrame | None = None,
 ) -> tuple[list[str], list[list[str]], str]:
     """Columns, rows, and alignment of the event-level quantities for one
     event, one row per hydrophone: serial number, number of valid pulses,
     cumulative SEL over them, kurtosis in windows containing strikes, and the
     ambient kurtosis before the event (median with the 5th and 95th
     percentiles in brackets). Ambient levels are given in decidecade bands
-    (see `ambient_band_stats`), not here."""
+    (see `ambient_band_stats`), not here. With `inter` (the event's rows of
+    `interpulse.excess_summary`), also the inter-pulse level, its median
+    excess over ambient, and the percentage of inter-pulse time more than
+    each threshold above ambient."""
     table = hydrophones(df).join(
         df.group_by("sensor", "channel").agg(
             pl.col("strike").n_unique().alias("pulses"), total_sel()
@@ -968,10 +1062,23 @@ def event_rows(
         )
         extra.append(("ambkurt", f"Ambient {label('kurtosis')}"))
     columns += [h for _, h in extra]
+    above = []
+    if inter is not None and not inter.is_empty():
+        above = [c for c in inter.columns if c.startswith("above_")]
+        table = table.join(
+            inter.select(
+                "sensor", "channel", "Lp_median", "Lp_p5", "Lp_p95", "dL", *above
+            ),
+            on=["sensor", "channel"],
+            how="left",
+        )
+        columns += [label("Lp_ip"), label("dL_ip")] + [
+            text(f"> {c.removeprefix('above_')} dB (%)") for c in above
+        ]
     table = _by_hydrophone(table)
     rows = []
     for r in table.iter_rows(named=True):
-        rows.append(
+        cells = (
             _hydrophone_cells(r, text)
             + [
                 f"{r['pulses']:,}",
@@ -987,7 +1094,14 @@ def event_rows(
                 for x, _ in extra
             ]
         )
-    return columns, rows, HYDROPHONE_ALIGN + "rr" + "r" * len(extra)
+        if above:
+            cells += [
+                _stat(r["Lp_median"], r["Lp_p5"], r["Lp_p95"], 1),
+                _num(r["dL"], 1),
+            ] + [_num(None if r[c] is None else 100 * r[c], 0) for c in above]
+        rows.append(cells)
+    n_ip = 2 + len(above) if above else 0
+    return columns, rows, HYDROPHONE_ALIGN + "rr" + "r" * (len(extra) + n_ip)
 
 
 def weather_note(
@@ -1130,6 +1244,54 @@ def _and(items: list[str]) -> str:
     return ", ".join(items[:-1]) + ", and " + items[-1]
 
 
+def interpulse_summaries(site: SiteConfig) -> dict[str, pl.DataFrame]:
+    """Site-wide inter-pulse summaries written by the interpulse stage
+    (excess restricted to the t95-to-t5 interval); empty if not run."""
+    paths = {k: site.interpulse_summary_path(k) for k in ("excess", "decay", "hist")}
+    if not all(p.exists() for p in paths.values()):
+        return {}
+    out = {k: pl.read_csv(p) for k, p in paths.items()}
+    out["excess"] = out["excess"].filter(pl.col("definition") == "interval")
+    return out
+
+
+def _event_excess(inter: dict | None, event) -> pl.DataFrame | None:
+    if not inter:
+        return None
+    return inter["excess"].filter(pl.col("event") == event.name)
+
+
+def interpulse_band(site: SiteConfig) -> tuple[float, float]:
+    """Edges of the inter-pulse summary band at the site's sampling rate."""
+    fs = site_sampling_rate(site)
+    return summary_band(site.interpulse, site.bands, fs)
+
+
+def site_sampling_rate(site: SiteConfig) -> float:
+    """Sampling rate from the first pulse file found (19531.25 Hz at both
+    sites)."""
+    for path in sorted(site.output_dir.glob("events/*/pulses_*.h5")):
+        with h5py.File(path, "r") as f:
+            return float(f.attrs["sampling_rate"])
+    raise FileNotFoundError(f"no pulse files under {site.output_dir}")
+
+
+def interpulse_note(site: SiteConfig) -> str:
+    """Caption text for the inter-pulse columns of the event tables (Word)."""
+    lo, hi = interpulse_band(site)
+    c = site.interpulse
+    return (
+        f"L_{{p,ip}} is the mean-square SPL from {lo:g} Hz to {hi / 1e3:.1f} kHz in "
+        f"{c.segment_s * 1e3:g}-ms segments between strikes, over the inter-pulse "
+        f"interval from t_{{95}} of one pulse to t_{{5}} of the next (Guan et al. "
+        f"2015); ΔL_{{ip}} is its median less the median of the same quantity in "
+        f"the ambient window before the event, and the last columns give the "
+        f"percentage of inter-pulse time more than "
+        + _and([f"{t:g} dB" for t in c.thresholds_db])
+        + " above that ambient median."
+    )
+
+
 def make_report(site: SiteConfig, events: list) -> None:
     """Write all figures and tables for the given events, and the Word
     document that collects them."""
@@ -1158,6 +1320,7 @@ def make_report(site: SiteConfig, events: list) -> None:
         read_table(site.ambient_spl_path) if site.ambient_spl_path.exists() else None
     )
     kurt = read_table(site.kurtosis_path) if site.kurtosis_path.exists() else None
+    inter = interpulse_summaries(site)
     if kurt is None:
         logger.warning(f"[report] missing {site.kurtosis_path}; run kurtosis first")
     met = pl.read_csv(cfg.met, try_parse_dates=True) if cfg.met is not None else None
@@ -1213,9 +1376,29 @@ def make_report(site: SiteConfig, events: list) -> None:
         (tables / f"{event.name}.tex").write_text(
             _tabular(*pulse_stats_rows(df_e, cfg.metrics))
         )
-        columns, rows, align = event_rows(event.name, df_e, ambient_spl, kurt_e)
+        columns, rows, align = event_rows(
+            event.name, df_e, ambient_spl, kurt_e, inter=_event_excess(inter, event)
+        )
         (tables / f"{event.name}_event.tex").write_text(
             _tabular(columns, rows, align, weather_note(weather, _tex_label))
+        )
+
+    if inter:
+        _save(
+            plot_interpulse_decay(
+                detection_channels(site, inter["decay"]),
+                site.interpulse.thresholds_db,
+                site.name,
+            ),
+            figs / "interpulse_decay.png",
+            cfg.dpi,
+            cfg.titles,
+        )
+        _save(
+            plot_interpulse_cdf(detection_channels(site, inter["hist"]), site.name),
+            figs / "interpulse_cdf.png",
+            cfg.dpi,
+            cfg.titles,
         )
 
     for metric in cfg.range_metrics:
@@ -1229,7 +1412,7 @@ def make_report(site: SiteConfig, events: list) -> None:
     (tables / "detections.tex").write_text(detections_table(site, events))
     logger.info(f"[report] tables -> {tables}")
 
-    write_document(site, events, df, ambient_spl, met, kurt)
+    write_document(site, events, df, ambient_spl, met, kurt, inter)
 
 
 def write_band_outputs(
@@ -1296,6 +1479,7 @@ def write_document(
     ambient_spl: pl.DataFrame | None = None,
     met: pl.DataFrame | None = None,
     kurt: pl.DataFrame | None = None,
+    inter: dict[str, pl.DataFrame] | None = None,
 ) -> Path:
     """Word document of the figures (as already written to the report
     directory) and tables, with captions, for pasting into a shared report.
@@ -1362,6 +1546,29 @@ def write_document(
             f"interquartile range for each event and sensor.",
         )
 
+    if inter:
+        lo, hi = interpulse_band(site)
+        doc.heading("Inter-pulse sound field", 2)
+        figure(
+            figs / "interpulse_decay.png",
+            f"Decay of the sound field between strikes at {site.name}: median "
+            f"mean-square SPL L_{{p}} in {lo:g} Hz to {hi / 1e3:.1f} kHz over "
+            f"consecutive {site.interpulse.segment_s * 1e3:g}-ms segments after "
+            f"each strike, relative to the median of the same quantity over the "
+            f"ambient window before the event, on each sensor's detection "
+            f"channel. Lines are events, colored by range; dotted lines mark "
+            + _and([f"{t:g} dB" for t in site.interpulse.thresholds_db])
+            + " above ambient.",
+        )
+        figure(
+            figs / "interpulse_cdf.png",
+            f"Cumulative distributions of the {site.interpulse.segment_s * 1e3:g}-ms "
+            f"levels L_{{p,ip}} ({lo:g} Hz to {hi / 1e3:.1f} kHz) in the inter-pulse "
+            f"intervals (from t_{{95}} of one pulse to t_{{5}} of the next) and in "
+            f"the ambient windows before each event, pooled over the events at "
+            f"{site.name}, on each sensor's detection channel.",
+        )
+
     per_pulse = [m for m in cfg.metrics if m != "SEL_cum"]
     for event in events:
         df_e = df.filter(pl.col("event") == event.name)
@@ -1417,8 +1624,11 @@ def write_document(
             if note := station_note(site):
                 caption += " " + note
         caption += " Values are medians with the 5th and 95th percentiles in brackets."
+        inter_e = _event_excess(inter, event)
+        if inter_e is not None and not inter_e.is_empty():
+            caption += " " + interpulse_note(site)
         columns, rows, align = event_rows(
-            event.name, df_e, ambient_spl, kurt_e, _word_label, str
+            event.name, df_e, ambient_spl, kurt_e, _word_label, str, inter_e
         )
         doc.table(columns, rows, caption, align, font_pt=7.5)
 

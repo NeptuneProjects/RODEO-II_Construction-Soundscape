@@ -23,10 +23,12 @@ graph LR
    C --> E[psd]
    A --> F[ambient]
    B --> H[kurtosis]
+   D --> I[interpulse]
    D --> G[report]
    E --> G
    F --> G
    H --> G
+   I --> G
 ```
 
 | Stage       | What it does                                                                 |
@@ -38,6 +40,7 @@ graph LR
 | `psd`       | Power spectral density and decidecade band exposure of each pulse.          |
 | `ambient`   | SPL, kurtosis, and PSD of ambient noise in a window preceding each event.    |
 | `kurtosis`  | Kurtosis of the recording in 60 s windows over each event (Martin et al. 2020). |
+| `interpulse` | Sound between strikes in 100 ms segments, and the same over the ambient window (Guan et al. 2015); writes site-wide summaries. |
 | `report`    | Figures, LaTeX tables, and a Word document (see [Figures and tables](#figures-and-tables)). |
 | `supplement` | PDF data supplement tabulating every pulse (see [Data supplement](#data-supplement)). |
 
@@ -154,11 +157,15 @@ results/<site>/
 │   ├── detections_<sensor>.png     # detector diagnostic
 │   ├── pulses_<sensor>.h5          # (strike, channel, sample) waveforms in uPa
 │   ├── metrics_<sensor>.csv
-│   └── psd_<sensor>.h5
+│   ├── psd_<sensor>.h5
+│   ├── interpulse_segments_<sensor>.parquet   # 100 ms levels between strikes
+│   ├── interpulse_intervals_<sensor>.parquet  # medians per interval, per band
+│   └── interpulse_ambient_<sensor>.parquet    # 100 ms levels before the event
 ├── metrics.csv                     # all events, sensors, channels
 ├── ambient.h5                      # ambient PSD per event/sensor
 ├── ambient_spl.csv                 # ambient SPL and kurtosis per interval
 ├── kurtosis.csv                    # kurtosis per 60 s window of each event
+├── interpulse_{excess,decay,bands,hist}.csv  # inter-pulse summaries
 ├── logs/<command>_<time>.log       # one log per run, as printed to the terminal
 └── report/                         # figures and LaTeX tables
 ```
@@ -180,6 +187,10 @@ and for the whole site:
 - `figures/coverage.png`: when each sensor was recording, with every event in the site file on the same time axis, its window, and the sensors that recorded it. It is drawn from the inventories, so it needs no metrics.
 - `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
 - `tables/detections.tex`: strikes and median SNR per event and sensor.
+- `figures/interpulse_decay.png`: median inter-pulse level above ambient against time since the strike, per sensor, one line per event colored by range (after `interpulse`).
+- `figures/interpulse_cdf.png`: cumulative distributions of the 100 ms levels between strikes and in the ambient windows, per sensor.
+
+After `interpulse`, the event tables also give the inter-pulse level L<sub>p,ip</sub>, its median excess over ambient ΔL<sub>ip</sub>, and the percentage of inter-pulse time more than each of `[interpulse] thresholds_db` above ambient.
 
 It also writes `report.docx`, which collects the figures and tables with captions written from the data, for pasting into a shared Word report.
 Tables are native Word tables, with each event's tables on a landscape page, and captions are numbered with Word fields, so they renumber in the document they are pasted into (select all and press F9).
@@ -216,6 +227,9 @@ reads each site's results (valid pulses from events it does not exclude) and wri
 - `figures/psd.png`: median pulse PSD for each event and sensor, colored by range, one panel per site, with the ambient PSD.
 - `tables/summary.{csv,tex}`: per site, event, and sensor, the range, hydrophone depth, pulses, median of each of `range_metrics`, and event total SEL_cum.
 - `tables/range_fits.csv`: the fit coefficients.
+- `figures/interpulse_vs_range.png`: inter-pulse excess over ambient, and the percentage of inter-pulse time above each threshold, against range.
+- `figures/interpulse_bands.png`: inter-pulse excess over ambient per decidecade band and sensor.
+- `tables/masking.csv`: median inter-pulse excess per site and sensor, and the listening range and area remaining at each of `[interpulse] spreading`.
 - `compare.docx`: the above with captions.
 
 Except for the depth figure, levels are on each sensor's detection channel.
@@ -270,12 +284,13 @@ For each pulse window p(t), the pulse duration T90 is the 90 % energy signal dur
 | `SEL_cum`   | SEL<sub>cum</sub> | running energy sum of `SEL_ss` over valid strikes in time order |
 | `T90`, `t_rise`, `t_decay` | T<sub>90</sub>, t<sub>r</sub>, t<sub>d</sub> | pulse duration; start of T90 to the peak within T90; that peak to end of T90 (s; reported in ms) |
 | `spikes`    |        | number of single-sample spikes in the window (see below)           |
+| `t5_s`, `t95_s` |    | start and end of T90 relative to the detection time (s), for the inter-pulse intervals |
 
 The window (`[extract] pre_s + post_s`, 1.2 s) is long enough to hold the whole pulse, so `SEL_ss` includes the ambient noise in it and is biased upward at low signal-to-noise ratio.
 
 The peak for `t_rise` and `t_decay` is taken within T90, so both are non-negative; `SPL_pk` is the peak over the whole window.
 
-`valid` is per pulse and hydrophone. A pulse is invalid where its window touches a data gap (all hydrophones of the sensor) or where the hydrophone's window holds a spike: a sample departing from the mean of its neighbours by more than `[extract] spike_threshold` (default 30) times the window's median departure.
+`valid` is per pulse and hydrophone. A pulse is invalid where its window touches a data gap (all hydrophones of the sensor) or where the hydrophone's window holds a spike: a sample departing from the mean of its neighbours by more than `[extract] spike_threshold` (default 30) times the window's median departure, and by at least half the largest |p| within two samples (so loud band-limited sound, which changes little between samples relative to its amplitude, is not mistaken for a spike).
 Such pulses are dropped rather than de-spiked, and are left out of `SEL_cum`, the PSD and band statistics (`channel_valid` in `psd_<sensor>.h5`), the figures, and the supplement.
 The spikes are clicks from the recording chain on VLA2 Serial 722015 at Vineyard Wind 1 (AN36, AP35, and fewer in AR34 and AT33). On every other hydrophone at most one pulse per event exceeds the threshold.
 
@@ -293,6 +308,17 @@ They are shown as the exposure the ambient noise gives over the pulse window len
 Bands lie between `[bands] fmin` (default 10 Hz, the high-pass corner) and `fmax`, which defaults to `nyquist_fraction` (0.8) of the Nyquist frequency so the top band stays clear of the recorders' anti-aliasing roll-off. At the 19.5 kHz sampling rate of both sites the top band is 6.3 kHz (upper edge 7.1 kHz); the 8 kHz band (7.9–8.9 kHz) is left out.
 
 Ambient noise is not reported as one broadband level: half its power lies below about 25–35 Hz, where flow noise and cable strum contaminate moored measurements (ISO 18406, §4.2.2). `ambient_spl.csv` keeps the broadband `SPL_rms` per interval for reference.
+
+### Inter-pulse sound field
+
+The `interpulse` stage (Optional Task 2.4.4) follows Guan et al. (2015, JASA 138:3447; 2017, POMA 27:070023).
+It reads the raw data from each strike's detection time to the next and computes the mean-square SPL in consecutive 100 ms segments (`[interpulse] segment_s`), broadband, in the summary band (`band`, default 20 Hz to the top decidecade band, which covers low-frequency cetaceans within the recorded bandwidth), and in each decidecade band, from the DFT of each segment.
+Segments are tagged as inside the inter-pulse interval, from t95 of one pulse to t5 of the next on that hydrophone (`t95_s` and `t5_s` in the metrics tables, relative to the detection time), and inside Guan et al.'s interval, 0.1 s after one strike to 0.5 s before the next (`guan_after_s`, `guan_before_s`).
+Intervals with an invalid pulse at either end, in a recording gap, or longer than `max_spacing_factor` (2) times the median strike spacing (a pause) are left out.
+Each interval is summarized by the median of its segments, because the 5 % of each pulse's energy outside T90 would dominate a mean square.
+The same segments over the ambient window before each event give the ambient reference; the excess ΔL_ip is the median inter-pulse level less the ambient median.
+The listening-space reduction (Clark et al. 2009) scales detection range by 10^(−ΔL/N) and area by 10^(−2ΔL/N).
+It takes about 2 min per event and sensor (3,000 strikes) and 2.2 GB of memory; rerun `metrics` first if its tables predate `t5_s`.
 
 ### Differences from the 2025 South Fork analysis
 

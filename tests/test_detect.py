@@ -99,7 +99,7 @@ def test_suppress_close_keeps_strongest():
 def test_reference_energy(window):
     times = np.arange(0, 60_000_000, 1_000_000)
     energy = np.linspace(1, 2, len(times))
-    ref = detect.reference_energy(times, energy, window)
+    ref = detect.reference_level(times, energy, window)
     if window == 0:
         assert np.all(ref == 2)
     else:
@@ -128,8 +128,8 @@ def test_neighbor_check_rejects_isolated_transients():
     candidates = pl.DataFrame(
         {
             "time": T0 + (t * 1e6).astype("timedelta64[us]"),
-            "energy": np.full(len(t), 100.0),
-            "noise": 1.0,
+            "e": np.full(len(t), 100.0),
+            "e_bg": 1.0,
         },
         schema=detect.CANDIDATE_SCHEMA,
     )

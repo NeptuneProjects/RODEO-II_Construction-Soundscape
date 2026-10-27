@@ -21,6 +21,15 @@ class Event:
     longitude: float
 
 
+def too_few_strikes(site: SiteConfig, event: str, sensor: str) -> bool:
+    """Whether the sensor detected fewer than `site.min_strikes` strikes in
+    the event (False if detection has not been run)."""
+    path = site.detections_path(event, sensor)
+    if not path.exists():
+        return False
+    return pl.scan_csv(path).select(pl.len()).collect().item() < site.min_strikes
+
+
 def load_events(site: SiteConfig, names: list[str] | None = None) -> list[Event]:
     """Load events joined with pile positions, dropping excluded events.
 

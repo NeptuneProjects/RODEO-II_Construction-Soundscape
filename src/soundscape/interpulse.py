@@ -1,7 +1,7 @@
 """Sound between strikes: the inter-pulse sound field (Optional Task 2.4.4).
 
 Following Guan et al. (2015, 2017), the level is computed by the incremental
-computation method: the mean-square SPL in consecutive 100 ms segments,
+computation method: the mean-square sound pressure level in consecutive 100 ms segments,
 
     L_p = 10 log10(mean p^2 over the segment / p0^2)    dB re 1 uPa
 
@@ -20,7 +20,7 @@ narrower than a bin, are approximate).
 Each interval is summarized by the median over its segments, not by its
 mean square: the interval holds the last 5 % of one pulse's energy and the
 first 5 % of the next, which would otherwise dominate it. The same segments
-over the ambient window before each event give the ambient distribution,
+over the background noise window before each event give the background noise distribution,
 computed the same way so that the two compare like for like.
 
 Guan, S., Vignola, J., Judge, J., & Turo, D. (2015). Airgun inter-pulse noise
@@ -40,12 +40,17 @@ import polars as pl
 from tritonoa.data.reader import NoDataError
 
 from soundscape.bands import band_sum, band_weights, decidecade_bands, exposure_spectrum
-from soundscape.config import AmbientConfig, BandsConfig, InterpulseConfig, SensorConfig
-from soundscape.events import Event, source_range
+from soundscape.config import (
+    BackgroundConfig,
+    BandsConfig,
+    InterpulseConfig,
+    SensorConfig,
+)
+from soundscape.events import Event, source_range, too_few_strikes
 from soundscape.extract import apply_filter
 from soundscape.metrics import _db_power
 from soundscape.sources import read_segment
-from soundscape.spectra import ambient_window
+from soundscape.spectra import background_window
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +65,13 @@ _BATCH = 2048
 
 
 def band_label(nominal: float) -> str:
-    """Column name of a decidecade band level, e.g. `L_12.5` or `L_1000`."""
-    return f"L_{nominal:g}"
+    """Column name of a decidecade band mean-square sound pressure level
+    L_p,n, e.g. `Lp_12.5Hz` or `Lp_1000Hz`."""
+    return f"Lp_{nominal:g}Hz"
+
+
+def is_band_label(column: str) -> bool:
+    return column.startswith("Lp_") and column.endswith("Hz")
 
 
 def summary_band(
@@ -88,7 +98,7 @@ def strike_intervals(metrics: pl.DataFrame, config: InterpulseConfig) -> pl.Data
     """Consecutive strike pairs of one event and sensor, without pauses.
 
     `metrics` holds the event's rows of the metrics table (strike, time,
-    channel, valid, t5_s, t95_s). Returns one row per interval: strike, time,
+    channel, valid, t5, t95). Returns one row per interval: strike, time,
     next_time, spacing_s. A pair is kept when the strikes are consecutive in
     the detections and their spacing is at most `max_spacing_factor` times
     the median spacing.
@@ -109,10 +119,10 @@ def strike_intervals(metrics: pl.DataFrame, config: InterpulseConfig) -> pl.Data
 
 
 def _per_channel(metrics: pl.DataFrame, strikes: np.ndarray, channels: list[int]):
-    """(n_channels, n_strikes) arrays of valid, t5_s and t95_s, in the order
+    """(n_channels, n_strikes) arrays of valid, t5 and t95, in the order
     of `strikes` and `channels`; strikes missing on a channel are invalid."""
     out = {}
-    for k, default in (("valid", False), ("t5_s", np.nan), ("t95_s", np.nan)):
+    for k, default in (("valid", False), ("t5", np.nan), ("t95", np.nan)):
         wide = (
             pl.DataFrame({"strike": strikes})
             .join(
@@ -242,8 +252,8 @@ def interpulse(
         f0, f1 = first[k][which], first[k][which] + 1
         sp = spacing[k][which]
         valid = per["valid"][:, f0] & per["valid"][:, f1] & ~gap
-        in_interval = (t_s >= per["t95_s"][:, f0]) & (
-            t_s + config.segment_s <= sp + per["t5_s"][:, f1]
+        in_interval = (t_s >= per["t95"][:, f0]) & (
+            t_s + config.segment_s <= sp + per["t5"][:, f1]
         )
         in_guan = np.broadcast_to(
             (t_s >= config.guan_after_s - 1e-9)
@@ -289,8 +299,8 @@ def interpulse(
             *[pl.col(c).filter("use").median() for c in ["Lp", "Lp_band", *names]],
             pl.col("Lp_band").filter("guan").median().alias("Lp_band_guan"),
         )
-        start95 = per["t95_s"][:, first[k]]
-        end5 = spacing[k] + per["t5_s"][:, first[k] + 1]
+        start95 = per["t95"][:, first[k]]
+        end5 = spacing[k] + per["t5"][:, first[k] + 1]
         base = pl.DataFrame(
             {
                 "channel": np.repeat(channels, len(k)),
@@ -315,18 +325,18 @@ def interpulse(
     )
 
 
-def ambient_segments(
+def background_segments(
     sensor: SensorConfig,
     inventory: Path,
     event: Event,
     config: InterpulseConfig,
     bands: BandsConfig,
-    ambient: AmbientConfig,
+    background: BackgroundConfig,
 ) -> pl.DataFrame:
-    """The same 100 ms segment levels over the ambient window before the
+    """The same 100 ms segment levels over the background noise window before the
     event: channel, start (time), valid (not in a gap), Lp, Lp_band, and the
     decidecade band levels `L_<nominal>`."""
-    start, end = ambient_window(event, ambient)
+    start, end = background_window(event, background)
     pad = np.timedelta64(round(_PAD_S * 1e6), "us")
     try:
         seg = read_segment(sensor, inventory, start - pad, end + pad)
@@ -376,11 +386,11 @@ KEYS = ["event", "sensor", "range_m", "channel"]
 
 def read_interpulse(site, events: list, kind: str) -> pl.DataFrame:
     """Concatenate one kind of inter-pulse output ("segments", "intervals",
-    or "ambient") over events and sensors; empty if none exist."""
+    or "background") over events and sensors; empty if none exist."""
     path = {
         "segments": site.interpulse_segments_path,
         "intervals": site.interpulse_intervals_path,
-        "ambient": site.interpulse_ambient_path,
+        "background": site.interpulse_background_path,
     }[kind]
     files = [
         p
@@ -393,74 +403,74 @@ def read_interpulse(site, events: list, kind: str) -> pl.DataFrame:
     return pl.concat([pl.read_parquet(f) for f in files], how="diagonal_relaxed")
 
 
-def ambient_medians(ambient: pl.DataFrame, columns: list[str]) -> pl.DataFrame:
-    """Median ambient level per event and hydrophone, for each of `columns`,
-    over valid 100 ms segments (named `<column>_amb`)."""
+def background_medians(background: pl.DataFrame, columns: list[str]) -> pl.DataFrame:
+    """Median background noise level per event and hydrophone, for each of `columns`,
+    over valid 100 ms segments (named `<column>_bg`)."""
     return (
-        ambient.filter("valid")
+        background.filter("valid")
         .group_by(KEYS)
-        .agg(pl.col(c).median().alias(f"{c}_amb") for c in columns)
+        .agg(pl.col(c).median().alias(f"{c}_bg") for c in columns)
     )
 
 
 def excess_summary(
     segments: pl.DataFrame,
-    ambient: pl.DataFrame,
+    background: pl.DataFrame,
     thresholds_db: list[float],
     column: str = "in_interval",
 ) -> pl.DataFrame:
     """Per event and hydrophone, over valid inter-pulse segments (`column`
     tags which): the summary-band level (median, 5th and 95th percentiles),
-    the ambient median, the median excess dL = median - ambient median, and
+    the background noise median, the median excess dL = median - background noise median, and
     the fraction of inter-pulse time more than each threshold above the
-    ambient median (`above_<t>`); also the share of the strike spacing taken
+    background noise median (`above_<t>`); also the share of the strike spacing taken
     up by the interval (`interval_share`)."""
-    amb = ambient_medians(ambient, ["Lp_band"])
-    seg = segments.join(amb, on=KEYS, how="inner")
+    bg = background_medians(background, ["Lp_band"])
+    seg = segments.join(bg, on=KEYS, how="inner")
     inside = seg.filter("valid", pl.col(column))
     share = (
         seg.filter("valid")
         .group_by(KEYS)
         .agg(pl.col(column).mean().alias("interval_share"))
     )
-    excess = pl.col("Lp_band") - pl.col("Lp_band_amb")
+    excess = pl.col("Lp_band") - pl.col("Lp_band_bg")
     out = inside.group_by(KEYS).agg(
         pl.len().alias("n_segments"),
         pl.col("Lp_band").median().alias("Lp_median"),
         pl.col("Lp_band").quantile(0.05).alias("Lp_p5"),
         pl.col("Lp_band").quantile(0.95).alias("Lp_p95"),
-        pl.col("Lp_band_amb").first().alias("amb_median"),
+        pl.col("Lp_band_bg").first().alias("Lp_bg"),
         *[(excess > t).mean().alias(f"above_{t:g}") for t in thresholds_db],
     )
     return (
-        out.with_columns(dL=pl.col("Lp_median") - pl.col("amb_median"))
+        out.with_columns(dL=pl.col("Lp_median") - pl.col("Lp_bg"))
         .join(share, on=KEYS, how="left")
         .sort("event", "range_m", "channel")
     )
 
 
-def decay_curves(segments: pl.DataFrame, ambient: pl.DataFrame) -> pl.DataFrame:
+def decay_curves(segments: pl.DataFrame, background: pl.DataFrame) -> pl.DataFrame:
     """Median summary-band level against time since the strike, relative to
-    the ambient median, per event and hydrophone: KEYS, t_s, dL, n."""
-    amb = ambient_medians(ambient, ["Lp_band"])
+    the background noise median, per event and hydrophone: KEYS, t_s, dL, n."""
+    bg = background_medians(background, ["Lp_band"])
     return (
         segments.filter("valid")
-        .join(amb, on=KEYS, how="inner")
+        .join(bg, on=KEYS, how="inner")
         .group_by(*KEYS, "t_s")
         .agg(
-            (pl.col("Lp_band") - pl.col("Lp_band_amb")).median().alias("dL"),
+            (pl.col("Lp_band") - pl.col("Lp_band_bg")).median().alias("dL"),
             pl.len().alias("n"),
         )
         .sort(*KEYS, "t_s")
     )
 
 
-def band_excess(intervals: pl.DataFrame, ambient: pl.DataFrame) -> pl.DataFrame:
-    """Median excess over ambient in each decidecade band, per event and
-    hydrophone: KEYS, nominal (Hz), dL. Interval levels are the medians over
+def band_excess(intervals: pl.DataFrame, background: pl.DataFrame) -> pl.DataFrame:
+    """Median excess over the background noise in each decidecade band, per event and
+    hydrophone: KEYS, nominal_Hz, dL. Interval levels are the medians over
     each interval's segments (see `interpulse`); the excess is their median
-    over intervals less the ambient median."""
-    bands = [c for c in intervals.columns if c.startswith("L_")]
+    over intervals less the background noise median."""
+    bands = [c for c in intervals.columns if is_band_label(c)]
 
     def long(df: pl.DataFrame, value: str) -> pl.DataFrame:
         return df.unpivot(index=KEYS, on=bands, variable_name="band", value_name=value)
@@ -470,16 +480,21 @@ def band_excess(intervals: pl.DataFrame, ambient: pl.DataFrame) -> pl.DataFrame:
         .group_by(KEYS)
         .agg(pl.col(c).median() for c in bands)
     )
-    amb = ambient.filter("valid").group_by(KEYS).agg(pl.col(c).median() for c in bands)
+    bg = (
+        background.filter("valid").group_by(KEYS).agg(pl.col(c).median() for c in bands)
+    )
     return (
-        long(pulses, "L")
-        .join(long(amb, "L_amb"), on=[*KEYS, "band"], how="inner")
+        long(pulses, "Lp")
+        .join(long(bg, "Lp_bg"), on=[*KEYS, "band"], how="inner")
         .with_columns(
-            nominal=pl.col("band").str.strip_prefix("L_").cast(pl.Float64),
-            dL=pl.col("L") - pl.col("L_amb"),
+            nominal_Hz=pl.col("band")
+            .str.strip_prefix("Lp_")
+            .str.strip_suffix("Hz")
+            .cast(pl.Float64),
+            dL=pl.col("Lp") - pl.col("Lp_bg"),
         )
-        .select(*KEYS, "nominal", "dL")
-        .sort(*KEYS, "nominal")
+        .select(*KEYS, "nominal_Hz", "dL")
+        .sort(*KEYS, "nominal_Hz")
     )
 
 
@@ -495,8 +510,8 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
         decay        `decay_curves` per hydrophone
         bands        `band_excess` per hydrophone
         hist         counts of summary-band segment levels in HIST_BIN_DB bins
-                     (`level`, the bin's lower edge) per hydrophone, for
-                     `kind` "interpulse" (inside the interval) and "ambient"
+                     (`Lp_band`, the bin's lower edge) per hydrophone, for
+                     `kind` "interpulse" (inside the interval) and "background"
     """
     thresholds = site.interpulse.thresholds_db
     out: dict[str, list[pl.DataFrame]] = {
@@ -506,38 +521,42 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
     def hist(df: pl.DataFrame, kind: str) -> pl.DataFrame:
         return (
             df.with_columns(
-                level=(pl.col("Lp_band") / HIST_BIN_DB).floor() * HIST_BIN_DB
+                Lp_band=(pl.col("Lp_band") / HIST_BIN_DB).floor() * HIST_BIN_DB
             )
-            .filter(pl.col("level").is_finite())
-            .group_by(*KEYS, "level")
+            .filter(pl.col("Lp_band").is_finite())
+            .group_by(*KEYS, "Lp_band")
             .len("count")
             .with_columns(kind=pl.lit(kind))
         )
 
     for e in events:
         for s in site.sensors:
+            if site.is_excluded(e.name, s.name) or too_few_strikes(
+                site, e.name, s.name
+            ):
+                continue
             paths = [
                 site.interpulse_segments_path(e.name, s.name),
                 site.interpulse_intervals_path(e.name, s.name),
-                site.interpulse_ambient_path(e.name, s.name),
+                site.interpulse_background_path(e.name, s.name),
             ]
             if not all(p.exists() for p in paths):
                 continue
-            seg, iv, amb = (pl.read_parquet(p) for p in paths)
+            seg, iv, bg = (pl.read_parquet(p) for p in paths)
             for definition, column in (
                 ("interval", "in_interval"),
                 ("guan", "in_guan"),
             ):
                 out["excess"].append(
-                    excess_summary(seg, amb, thresholds, column).with_columns(
+                    excess_summary(seg, bg, thresholds, column).with_columns(
                         definition=pl.lit(definition)
                     )
                 )
-            out["decay"].append(decay_curves(seg, amb))
-            out["bands"].append(band_excess(iv, amb))
+            out["decay"].append(decay_curves(seg, bg))
+            out["bands"].append(band_excess(iv, bg))
             out["hist"] += [
                 hist(seg.filter("valid", "in_interval"), "interpulse"),
-                hist(amb.filter("valid"), "ambient"),
+                hist(bg.filter("valid"), "background"),
             ]
     return {
         k: pl.concat(v, how="diagonal_relaxed") if v else pl.DataFrame()

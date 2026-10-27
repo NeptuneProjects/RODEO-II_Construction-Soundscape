@@ -63,17 +63,21 @@ COLUMN_NOTES = {
     "range_km": "Horizontal distance from the pile to the sensor.",
     "strike": "Strike number within the event, in time order.",
     "time": "Detected strike time (UTC).",
-    "SPL_pk": "Peak sound pressure level.",
-    "SPL_pkpk": "Peak-to-peak sound pressure level.",
-    "SPL_rms90": "Mean-square sound pressure level over the pulse duration $T_{90}$.",
-    "SEL_ss": "Single-strike sound exposure level, over the whole pulse window "
-    "(100\\,\\% of the pulse energy).",
-    "SEL_cum": "Cumulative sound exposure level: running energy sum of "
-    "$\\mathrm{SEL}_\\mathrm{ss}$ over the valid strikes of the event so far.",
-    "T90": "Pulse duration: the 90\\,\\% energy signal duration, from 5\\,\\% to "
+    "Lp_pk": "Peak sound pressure level.",
+    "Lp_pkpk": "Peak-to-peak sound pressure level.",
+    "Lp_90": "Mean-square sound pressure level over the 90\\,\\% energy signal "
+    "duration $\\tau_{90\\%}$.",
+    "LEp_ss": "Single-strike sound exposure level (SEL$_\\mathrm{ss}$), over the "
+    "pulse's integration time (100\\,\\% of the pulse energy).",
+    "LEp_cum": "Cumulative sound exposure level: running energy sum of "
+    "$L_{E,p,\\mathrm{ss}}$ over the valid strikes of the event so far (SEL$_\\mathrm{cum}$).",
+    "tau90": "Pulse duration: the 90\\,\\% energy signal duration, from 5\\,\\% to "
     "95\\,\\% of the cumulative energy.",
-    "t_rise": "Rise time: from the start of $T_{90}$ to the peak sound pressure.",
-    "t_decay": "Decay time: from the peak sound pressure to the end of $T_{90}$.",
+    "t_r": "Rise time: from the start of $\\tau_{90\\%}$ to the peak sound pressure.",
+    "t_d": "Decay time: from the peak sound pressure to the end of $\\tau_{90\\%}$.",
+    "SNR": "Signal-to-noise ratio, as a level difference: $L_{E,p,\\mathrm{ss}}$ "
+    "less the sound exposure level of the background noise over the same time "
+    "(ISO 18406, 3.17).",
 }
 
 ID_COLUMNS = [

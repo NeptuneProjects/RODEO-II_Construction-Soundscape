@@ -9,8 +9,9 @@ Output layout:
 
     <output>/
     ├── compare.docx
-    ├── figures/{levels_vs_range,depth,psd,interpulse_vs_range,interpulse_bands}.png
-    └── tables/{summary.{csv,tex},range_fits.csv,masking.csv}
+    ├── figures/{levels_vs_range,depth,psd,background_vs_range,interpulse_vs_range,
+    │            interpulse_bands}.png
+    └── tables/{summary.{csv,tex},range_fits.csv,background_fits.csv,masking.csv}
 """
 
 import logging
@@ -40,7 +41,7 @@ from soundscape.report import (
     _tabular,
     _tex_label,
     _word_label,
-    ambient_psd,
+    background_psd,
     detection_channels,
     interpulse_band,
     interpulse_summaries,
@@ -61,7 +62,7 @@ class SiteData:
     site: SiteConfig
     events: list[Event]
     df: pl.DataFrame  # valid pulses, all channels, with a `site` column
-    ambient_spl: pl.DataFrame | None
+    background_spl: pl.DataFrame | None
     interpulse: dict[str, pl.DataFrame]  # see report.interpulse_summaries
 
 
@@ -75,15 +76,17 @@ def load_site_data(site: SiteConfig) -> SiteData | None:
         .filter(pl.col("event").is_in([e.name for e in events]))
         .with_columns(pl.lit(site.name).alias("site"))
     )
-    ambient = (
-        read_table(site.ambient_spl_path) if site.ambient_spl_path.exists() else None
+    background = (
+        read_table(site.background_spl_path)
+        if site.background_spl_path.exists()
+        else None
     )
     inter = interpulse_summaries(site)
     if inter and site.interpulse_summary_path("bands").exists():
         inter["bands"] = pl.read_csv(site.interpulse_summary_path("bands"))
     names = [e.name for e in events]
     inter = {k: v.filter(pl.col("event").is_in(names)) for k, v in inter.items()}
-    return SiteData(site, events, df, ambient, inter)
+    return SiteData(site, events, df, background, inter)
 
 
 def _range_axis(ax: plt.Axes) -> None:
@@ -102,7 +105,7 @@ def _range_axis(ax: plt.Axes) -> None:
 def summary(data: list[SiteData], metrics: list[str]) -> pl.DataFrame:
     """One row per site, event, and sensor on the detection channel: range,
     hydrophone depth, pulses, median of each metric, and event total
-    SEL_cum."""
+    LEp_cum."""
     frames = []
     for d in data:
         order = {e.name: k for k, e in enumerate(d.events)}
@@ -137,7 +140,7 @@ def summary_columns(metrics: list[str], label) -> list[tuple[str, str, str]]:
         ]
         + [(m, f"Median {label(m)}", "r") for m in metrics]
         + [
-            ("SEL_total", f"Event total {label('SEL_cum')}", "r"),
+            ("LEp_cum_event", f"Event total {label('LEp_cum')}", "r"),
         ]
     )
 
@@ -174,10 +177,10 @@ def plot_levels_vs_range(
     data: list[SiteData], metrics: list[str]
 ) -> tuple[plt.Figure, dict]:
     """Median and interquartile range of each metric per event and sensor
-    against range, one panel per metric plus the event total cSEL, with a fit
+    against range, one panel per metric plus the event total LEp_cum, with a fit
     of a - b log10(R) per site for each per-pulse metric. Returns the figure
     and the fits {(site, metric): (a, b)}."""
-    panels = metrics + ["SEL_total"]
+    panels = metrics + ["LEp_cum_event"]
     ncols = 2
     nrows = -(-len(panels) // ncols)
     fig, axs = plt.subplots(
@@ -208,7 +211,7 @@ def plot_levels_vs_range(
         }
         for ax, m in zip(axs.flat, panels):
             y = stats[m].to_numpy()
-            if m == "SEL_total":
+            if m == "LEp_cum_event":
                 ax.errorbar(r, y, label=d.site.name, **style)
                 continue
             yerr = np.vstack(
@@ -221,9 +224,9 @@ def plot_levels_vs_range(
                 rr = np.geomspace(r.min(), r.max(), 50)
                 ax.plot(rr, a - b * np.log10(rr), color=f"C{k}", lw=1, ls="--")
     for ax, m in zip(axs.flat, panels):
-        name = "SEL_cum" if m == "SEL_total" else m
+        name = "LEp_cum" if m == "LEp_cum_event" else m
         label = _axis_label(name)
-        if m == "SEL_total":
+        if m == "LEp_cum_event":
             label = "Event total " + label
         ax.set_ylabel(label)
         ax.grid(True, which="both", lw=0.3)
@@ -309,10 +312,10 @@ def plot_depth(data: list[SiteData], metrics: list[str]) -> plt.Figure | None:
 
 def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
     """Median pulse PSD on the detection channel for each event and sensor,
-    colored by range, one panel per site, with the ambient PSD before each
+    colored by range, one panel per site, with the background noise PSD before each
     event in gray."""
     curves = []  # (site index, range km, freqs, mean dB)
-    ambient = []  # (site index, freqs, level dB)
+    background = []  # (site index, freqs, level dB)
     for k, d in enumerate(data):
         det_ch = {s.name: s.detect_channel for s in d.site.sensors}
         pairs = d.df.group_by("event", "sensor").agg(pl.col("range_m").first())
@@ -325,11 +328,13 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
                 continue
             i = st["channels"].index(det_ch[sensor])
             curves.append((k, range_m / 1e3, st["freqs"], st["median"][i]))
-            amb = ambient_psd(d.site.ambient_path, event, sensor)
-            if amb is not None and det_ch[sensor] in amb["channels"]:
-                j = amb["channels"].index(det_ch[sensor])
-                level = amb["median"][j] if "median" in amb else amb["level"][j]
-                ambient.append((k, amb["freqs"], level))
+            bg = background_psd(d.site.background_path, event, sensor)
+            if bg is not None and det_ch[sensor] in bg["channels"]:
+                j = bg["channels"].index(det_ch[sensor])
+                if "median" in bg:
+                    background.append((k, bg["segment_freqs"], bg["median"][j]))
+                else:
+                    background.append((k, bg["freqs"], bg["level"][j]))
     if not curves:
         return None
     norm = Normalize(min(c[1] for c in curves), max(c[1] for c in curves))
@@ -345,11 +350,11 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
     )
     fmax = min(c[2][-1] for c in curves)
     lo, hi = np.inf, -np.inf
-    for k, f, level in ambient:
+    for k, f, level in background:
         axs[0, k].plot(f, level, color="0.6", lw=0.6)
     for k, r, f, level in sorted(curves, key=lambda c: -c[1]):
         axs[0, k].plot(f, level, color=cmap(norm(r)), lw=0.8)
-    for f, level in [(c[1], c[2]) for c in ambient] + [(c[2], c[3]) for c in curves]:
+    for f, level in [(c[1], c[2]) for c in background] + [(c[2], c[3]) for c in curves]:
         band = (f >= fmin) & (f <= fmax) & np.isfinite(level)
         if band.any():
             lo, hi = min(lo, level[band].min()), max(hi, level[band].max())
@@ -361,7 +366,7 @@ def plot_psd(data: list[SiteData], fmin: float = 10.0) -> plt.Figure | None:
     axs[0, 0].set_xlim(fmin, fmax)
     pad = 0.05 * (hi - lo)
     axs[0, 0].set_ylim(lo - pad, hi + pad)
-    axs[0, 0].set_ylabel("PSD (dB re 1 $\\mathrm{\\mu Pa^2/Hz}$)")
+    axs[0, 0].set_ylabel("$L_{p,f}$ (dB re 1 $\\mathrm{\\mu Pa^2/Hz}$)")
     fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axs[0, -1], label="Range (km)"
     )
@@ -391,10 +396,102 @@ def _inter(data: list[SiteData], kind: str) -> pl.DataFrame:
     return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
 
+def background_vs_range(data: list[SiteData]) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Pre-piling background noise level against range from the pile.
+
+    The level is the median over the background noise window before each event of the
+    100 ms mean-square sound pressure level in the inter-pulse summary band, on each sensor's
+    detection channel (from the interpulse stage). Returns the points (site,
+    event, sensor, range_km, level) and least-squares fits of
+    level = a - b log10(R / 1 km) per site (sensor "all") and per site and
+    sensor, with the correlation coefficient r of level with log10 R.
+    """
+    pts = _inter(data, "excess")
+    if pts.is_empty():
+        return pl.DataFrame(), pl.DataFrame()
+    pts = pts.select(
+        "site",
+        "event",
+        "sensor",
+        (pl.col("range_m") / 1e3).alias("range_km"),
+        pl.col("Lp_bg").alias("level"),
+    ).sort("site", "range_km")
+    fits = []
+    groups = [
+        ((s, "all"), g) for (s,), g in pts.group_by(["site"], maintain_order=True)
+    ]
+    groups += [
+        ((s, sensor), g)
+        for (s, sensor), g in pts.group_by(["site", "sensor"], maintain_order=True)
+    ]
+    for (site, sensor), g in groups:
+        r_km, level = g["range_km"].to_numpy(), g["level"].to_numpy()
+        if len(np.unique(r_km)) < 3:
+            continue
+        a, b = range_fit(r_km, level)
+        fits.append(
+            {
+                "site": site,
+                "sensor": sensor,
+                "n": len(g),
+                "range_min_km": r_km.min(),
+                "range_max_km": r_km.max(),
+                "a_dB": a,
+                "b_dB_per_decade": b,
+                "r": float(np.corrcoef(np.log10(r_km), level)[0, 1]),
+            }
+        )
+    return pts, pl.DataFrame(fits)
+
+
+def plot_background_vs_range(pts: pl.DataFrame, fits: pl.DataFrame) -> plt.Figure:
+    """Pre-piling background noise level per event and sensor against range, colored
+    by site with a marker per sensor, and the fit for each site."""
+    fig, ax = plt.subplots(figsize=(5.5, 3.6), layout="constrained")
+    sensors = pts["sensor"].unique(maintain_order=True).to_list()
+    for k, (site,) in enumerate(
+        pts.select("site").unique(maintain_order=True).iter_rows()
+    ):
+        d = pts.filter(pl.col("site") == site)
+        for sensor, g in d.group_by("sensor", maintain_order=True):
+            ax.plot(
+                g["range_km"],
+                g["level"],
+                MARKERS[sensors.index(sensor[0]) % len(MARKERS)],
+                ms=4,
+                color=f"C{k}",
+                mfc="none",
+                label=f"{site}, {sensor[0]}",
+            )
+        f = (
+            fits.filter(pl.col("site") == site, pl.col("sensor") == "all")
+            if not fits.is_empty()
+            else fits
+        )
+        if not f.is_empty():
+            fit = f.row(0, named=True)
+            rr = np.geomspace(d["range_km"].min(), d["range_km"].max(), 50)
+            ax.plot(
+                rr,
+                fit["a_dB"] - fit["b_dB_per_decade"] * np.log10(rr),
+                color=f"C{k}",
+                lw=1,
+                ls="--",
+                label=f"{site} fit: {-fit['b_dB_per_decade']:+.0f} dB/decade, "
+                f"r = {fit['r']:.2f}",
+            )
+    ax.set_xlabel("Range from pile (km)")
+    ax.set_ylabel(f"Pre-piling background noise {METRIC_LABELS['Lp'][0]} (dB)")
+    _range_axis(ax)
+    ax.grid(True, which="both", lw=0.3)
+    ax.legend(fontsize="x-small", ncol=2, loc="lower left")
+    return fig
+
+
 def plot_interpulse_vs_range(
     data: list[SiteData], thresholds: list[float]
 ) -> plt.Figure | None:
-    """Median excess of the inter-pulse level over ambient, and the
+    """Median excess of the inter-pulse level over the background noise, and the
     percentage of inter-pulse time above each threshold, against range, for
     each event and sensor."""
     ex = _inter(data, "excess")
@@ -416,7 +513,7 @@ def plot_interpulse_vs_range(
             )
     axs[0].axhline(0, color="k", lw=0.6)
     axs[0].set_ylabel(f"{METRIC_LABELS['dL_ip'][0]} (dB)")
-    axs[1].set_ylabel("Inter-pulse time above ambient (%)")
+    axs[1].set_ylabel("Inter-pulse time above background noise (%)")
     axs[1].set_ylim(0, 102)
     for ax in axs:
         ax.set_xlabel("Range (km)")
@@ -427,7 +524,7 @@ def plot_interpulse_vs_range(
 
 
 def plot_interpulse_bands(data: list[SiteData]) -> plt.Figure | None:
-    """Median excess over ambient in each decidecade band between pulses,
+    """Median excess over the background noise in each decidecade band between pulses,
     per sensor (median over events), one panel per site."""
     b = _inter(data, "bands")
     if b.is_empty():
@@ -447,12 +544,12 @@ def plot_interpulse_bands(data: list[SiteData]) -> plt.Figure | None:
         for k, (sensor, rng) in enumerate(order.iter_rows()):
             m = (
                 d.filter(pl.col("sensor") == sensor)
-                .group_by("nominal")
+                .group_by("nominal_Hz")
                 .agg(pl.col("dL").median())
-                .sort("nominal")
+                .sort("nominal_Hz")
             )
             ax.plot(
-                m["nominal"],
+                m["nominal_Hz"],
                 m["dL"],
                 marker=".",
                 color=f"C{k}",
@@ -464,7 +561,7 @@ def plot_interpulse_bands(data: list[SiteData]) -> plt.Figure | None:
         ax.set_title(site)
         ax.grid(True, lw=0.3)
         ax.legend(fontsize="small")
-    axs[0, 0].set_ylabel("Inter-pulse level above ambient (dB)")
+    axs[0, 0].set_ylabel("Inter-pulse level above background noise (dB)")
     return fig
 
 
@@ -543,6 +640,15 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
         _save(psd, figs / "psd.png", cfg.dpi, cfg.titles)
     else:
         logger.warning("[compare] no pulse PSD files; psd figure skipped")
+    bg_pts, bg_fits = background_vs_range(data)
+    if not bg_pts.is_empty():
+        _save(
+            plot_background_vs_range(bg_pts, bg_fits),
+            figs / "background_vs_range.png",
+            cfg.dpi,
+            cfg.titles,
+        )
+        bg_fits.write_csv(tables / "background_fits.csv")
     ip = sites[0].interpulse
     ip_range = plot_interpulse_vs_range(data, ip.thresholds_db)
     if ip_range is not None:
@@ -572,7 +678,7 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
         summary_rows(table, word_cols, str),
         "Received levels for each event and sensor on the sensor's detection "
         "channel: range from the pile, hydrophone depth, number of pulses, median "
-        "per-pulse levels, and the cumulative sound exposure level SEL_{cum} over "
+        "per-pulse levels, and the cumulative sound exposure level L_{E,p,cum} over "
         "all valid pulses of the event.",
         "".join(a for _, _, a in word_cols),
         font_pt=7.5,
@@ -609,10 +715,12 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
         doc.heading("Pulse spectra", 2)
         doc.figure(
             figs / "psd.png",
-            "Median power spectral density of the pulses on the detection channel "
-            "for each event and sensor, colored by range, with the ambient noise "
+            "Median mean-square sound pressure spectral density level L_{p,f} of the pulses on the detection channel "
+            "for each event and sensor, colored by range, with the background noise "
             "spectrum before each event in gray.",
         )
+    if not bg_pts.is_empty():
+        _background_section(doc, data, figs, bg_fits)
     if ip_range is not None:
         _interpulse_section(doc, data, figs, masking, ip_bands is not None)
     path = output / "compare.docx"
@@ -636,18 +744,18 @@ def _interpulse_section(
     doc.figure(
         figs / "interpulse_vs_range.png",
         f"Sound between strikes against range, for each event and sensor on the "
-        f"detection channel. Left: ΔL_{{ip}}, the median mean-square SPL ({band}) "
+        f"detection channel. Left: ΔL_{{ip}}, the median mean-square sound pressure level ({band}) "
         f"of the {ip.segment_s * 1e3:g}-ms segments in the inter-pulse interval "
         f"(from t_{{95}} of one pulse to t_{{5}} of the next) less the median of "
-        f"the same quantity in the ambient window before the event. Right: the "
+        f"the same quantity in the background noise window before the event. Right: the "
         f"percentage of inter-pulse time more than "
         + _and([f"{t:g} dB" for t in ip.thresholds_db])
-        + " (filled and open markers) above that ambient median.",
+        + " (filled and open markers) above that background noise median.",
     )
     if bands:
         doc.figure(
             figs / "interpulse_bands.png",
-            "Median excess of the inter-pulse level over ambient in each "
+            "Median excess of the inter-pulse level over the background noise in each "
             "decidecade band, per sensor (median over events), on the detection "
             "channel. Band levels are from the DFT of each "
             f"{ip.segment_s * 1e3:g}-ms segment (10 Hz resolution), so bands "
@@ -683,7 +791,7 @@ def _interpulse_section(
         rows,
         "Listening space remaining between strikes for low-frequency cetaceans "
         f"({band}), per site and sensor on the detection channel. ΔL_{{ip}} is "
-        "the median over events of the inter-pulse excess over ambient, with the "
+        "the median over events of the inter-pulse excess over the background noise, with the "
         "smallest and largest event medians in brackets. With transmission loss "
         "N log_{10} r, a rise ΔL in the noise scales the range at which a call "
         "can be detected by 10^{−ΔL/N} and the area by 10^{−2ΔL/N} (Clark et al. "
@@ -692,4 +800,47 @@ def _interpulse_section(
         + " bound it. This is a first-order estimate: it treats the median "
         "excess as steady and ignores critical ratios and call structure.",
         "llrrrrr" + "r" * len(bounds),
+    )
+
+
+def _background_section(
+    doc: Document, data: list[SiteData], figs: Path, fits: pl.DataFrame
+) -> None:
+    """Pre-piling background noise level against range in compare.docx."""
+    site = data[0].site
+    a = site.background
+    lo, hi = interpulse_band(site)
+    doc.heading("Pre-piling background noise versus range", 2)
+    doc.figure(
+        figs / "background_vs_range.png",
+        f"Background noise before each event against range from the pile: the median "
+        f"of the {site.interpulse.segment_s * 1e3:g}-ms mean-square sound pressure level L_{{p}} "
+        f"({lo:g} Hz to {hi / 1e3:.1f} kHz) over the {a.duration_s / 60:g} min "
+        f"starting {a.offset_s / 60:g} min before the event, on each sensor's "
+        f"detection channel. Dashed lines are least-squares fits of a − b "
+        f"log_{{10}} R (R in km) for each site, with the correlation coefficient "
+        f"r of the level with log_{{10}} R.",
+    )
+    if fits.is_empty():
+        return
+    rows = [
+        [
+            r["site"],
+            "All" if r["sensor"] == "all" else r["sensor"],
+            str(r["n"]),
+            f"{r['range_min_km']:.1f}–{r['range_max_km']:.1f}",
+            _num(r["a_dB"], 1),
+            _num(-r["b_dB_per_decade"], 1),
+            _num(r["r"], 2),
+        ]
+        for r in fits.iter_rows(named=True)
+    ]
+    doc.table(
+        ["Site", "Sensor", "Events", "Range (km)", "a (dB)", "Slope (dB/decade)", "r"],
+        rows,
+        "Fits of the pre-piling background noise level to a − b log_{10} R for each site, "
+        "over all sensors and for each sensor: the level at 1 km (a), the change "
+        "per decade of range (−b), and the correlation coefficient r of the level "
+        "with log_{10} R.",
+        "llrrrrr",
     )

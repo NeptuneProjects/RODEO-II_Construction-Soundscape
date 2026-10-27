@@ -7,7 +7,7 @@ Following Martin et al. (2020), kurtosis is the Pearson kurtosis
 of the pressure over consecutive, non-overlapping windows (60 s by default),
 rather than over a single pulse. Gaussian noise has beta_2 = 3; impulsive sound
 such as pile driving has beta_2 well above 3. The same statistic over the
-ambient intervals before each event is in the ambient table.
+background noise intervals before each event is in the background noise table.
 
 Martin, S. B., Lucke, K., & Barclay, D. R. (2020). Techniques for
 distinguishing between impulsive and non-impulsive sound in the context of
@@ -100,7 +100,7 @@ def windowed_kurtosis(
                     "valid": valid.reshape(-1),
                     "n_strikes": np.tile(counts, n_ch),
                     # Windows in gaps get no value.
-                    "kurtosis": np.where(valid, beta2(blocks), np.nan).reshape(-1),
+                    "beta": np.where(valid, beta2(blocks), np.nan).reshape(-1),
                 }
             )
         )
@@ -121,7 +121,7 @@ def windowed_kurtosis(
             "window_start",
             "valid",
             "n_strikes",
-            "kurtosis",
+            "beta",
         )
         .sort("channel", "window_start")
     )

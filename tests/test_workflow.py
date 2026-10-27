@@ -61,13 +61,13 @@ def test_end_to_end(wf, site):
         "722014"
     ]
     # Both channels carry the same pulses, so levels agree closely.
-    by_channel = m.pivot(on="channel", index="strike", values="SPL_pk")
+    by_channel = m.pivot(on="channel", index="strike", values="Lp_pk")
     np.testing.assert_allclose(by_channel["0"], by_channel["1"], atol=1.0)
     # Soft start: levels rise over the first strikes.
-    first = m.filter(pl.col("channel") == 0).sort("strike")["SPL_pk"]
+    first = m.filter(pl.col("channel") == 0).sort("strike")["Lp_pk"]
     assert first[60] - first[0] > 15
     # Cumulative SEL is non-decreasing.
-    assert (m.filter(pl.col("channel") == 0)["SEL_cum"].diff().drop_nulls() >= 0).all()
+    assert (m.filter(pl.col("channel") == 0)["LEp_cum"].diff().drop_nulls() >= 0).all()
     assert site.metrics_summary_path.exists()
 
     wf.psd()
@@ -79,15 +79,46 @@ def test_end_to_end(wf, site):
     assert abs(freqs[np.argmax(mean_psd)] - 200.0) < 10.0
 
 
-def test_ambient(wf, site, monkeypatch):
-    # Ambient window precedes the event; shift it into the synthetic record.
-    site.ambient.offset_s = -600.0
-    site.ambient.duration_s = 120.0
-    wf.ambient()
-    spl = pl.read_csv(site.ambient_spl_path)
+def test_background(wf, site, monkeypatch):
+    # Background noise window precedes the event; shift it into the synthetic record.
+    site.background.offset_s = -600.0
+    site.background.duration_s = 120.0
+    wf.background()
+    spl = pl.read_csv(site.background_spl_path)
     assert len(spl) == 2 * 2
-    with h5py.File(site.ambient_path) as f:
-        assert f["E1/VLA1/psd"].shape[0] == 2
+    with h5py.File(site.background_path) as f:
+        g = f["E1/VLA1"]
+        assert g["psd"].shape[0] == 2
+        # Levels are averaged over the pulse window (ISO 18406, 6.1.4).
+        assert g.attrs["segment_s"] == pytest.approx(1.2)
+        assert g["segment_Lp"].shape == (2, 100)
+        assert g["segment_band_ms"].shape[:2] == (2, 100)
+        assert g["segment_band_ms"].shape[2] == len(g["band_nominal"])
+        # The segment PSDs match the pulse PSD frequencies.
+        assert g["segment_psd_median"].shape == (2, len(g["segment_freqs"]))
+
+
+def test_snr_against_background_in_a_pause(wf, site):
+    from soundscape.report import load_metrics
+    from tests.conftest import make_pulse
+
+    # Background noise from the 60 s pause in piling halfway through the record.
+    site.background.offset_s = -455.0
+    site.background.duration_s = 50.0
+    wf.detect(plot=False)
+    wf.extract()
+    wf.metrics()
+    wf.background()
+    df = load_metrics(site).filter(pl.col("channel") == 0).sort("strike")
+    assert df["SNR"].is_not_null().all()
+    np.testing.assert_allclose(df["TW"], 1.2)
+    # Unit-variance noise: the window holds the pulse energy plus 1.2 s of
+    # noise, so SNR = 10 log10(1 + E_pulse / 1.2).
+    e_pulse = (make_pulse(2000.0) ** 2).sum() / 2000.0
+    expected = 10 * np.log10(1 + np.asarray(wf.recording.amps) ** 2 * e_pulse / 1.2)
+    got = df["SNR"].to_numpy()
+    assert len(got) == len(expected)
+    np.testing.assert_allclose(got, expected, atol=0.5)
 
 
 def test_excluded_pairs_are_skipped(site):
@@ -169,13 +200,13 @@ def test_log_to_file(tmp_path):
 
 
 def test_report(wf, site):
-    site.ambient.offset_s = -600.0
-    site.ambient.duration_s = 120.0
+    site.background.offset_s = -600.0
+    site.background.duration_s = 120.0
     wf.detect(plot=False)
     wf.extract()
     wf.metrics()
     wf.psd()
-    wf.ambient()
+    wf.background()
     wf.kurtosis()
     wf.report()
 
@@ -197,26 +228,29 @@ def test_report(wf, site):
         ["722014", "17.7"],
     ]
     # Median [5th, 95th percentile] cells.
-    assert " [" in lines[0] and "SEL}_\\mathrm{ss}" in pulses_stats
+    assert " [" in lines[0] and "L_{E,p,\\mathrm{ss}}" in pulses_stats
+    assert "\\tau_{90\\%}" in pulses_stats
     event = (tables / "E1_event.tex").read_text()
-    assert "722013" in event and "Ambient" in event
-    assert "\\beta_2$, piling" in event
-    # No broadband ambient level; ambient noise is given in bands.
+    assert "722013" in event and "Background noise" in event
+    assert "\\beta$, piling" in event
+    assert "SNR < 10 dB (\\%)" in event
+    assert "SNR (dB)" in pulses_stats
+    # No broadband background noise level; background noise is given in bands.
     assert "L_{p}$" not in event
     bands = pl.read_csv(tables / "E1_bands.csv")
     assert set(bands["channel"]) == {0, 1}
-    assert bands["band_hz"].min() == 12.5
+    assert bands["nominal_Hz"].min() == 12.5
     # fs = 2 kHz: bands stop below 0.8 x Nyquist (800 Hz), so 630 Hz is the
     # top band (upper edge 707 Hz) and 800 Hz (to 891 Hz) is left out.
-    assert bands["band_hz"].max() == 630
-    assert bands["ambient_E_window_median"].is_not_null().all()
-    # The band exposures of a strong pulse sum to SEL_ss, apart from the
+    assert bands["nominal_Hz"].max() == 630
+    assert bands["LEp_bg_median"].is_not_null().all()
+    # The band exposures of a strong pulse sum to LEp_ss, apart from the
     # little energy outside the bands (below 11.2 Hz and above 707 Hz).
     m = read_table(site.metrics_path("E1", "VLA1")).filter(pl.col("channel") == 0)
-    i = int(m["SEL_ss"].arg_max())
+    i = int(m["LEp_ss"].arg_max())
     with h5py.File(site.pulse_psd_path("E1", "VLA1")) as f:
         total = 10 * np.log10(f["band_exposure"][i, 0, :].sum())
-    assert total == pytest.approx(m["SEL_ss"][i], abs=0.2)
+    assert total == pytest.approx(m["LEp_ss"][i], abs=0.2)
     detections = (tables / "detections.tex").read_text()
     assert "E1 & P1 & VLA1" in detections
     assert not (tables / "pulses.tex").exists()
@@ -259,13 +293,13 @@ def test_rich_text(tmp_path):
 
 
 def test_compare(wf, site, tmp_path):
-    site.ambient.offset_s = -600.0
-    site.ambient.duration_s = 120.0
+    site.background.offset_s = -600.0
+    site.background.duration_s = 120.0
     wf.detect(plot=False)
     wf.extract()
     wf.metrics()
     wf.psd()
-    wf.ambient()
+    wf.background()
     other = site.model_copy(update={"name": "Other"})
     out = tmp_path / "compare"
     compare_sites([site, other], out)
@@ -295,24 +329,24 @@ def test_kurtosis(wf, site):
     assert not k.filter(pl.col("window_start") == gap)["valid"].any()
     # Windows with strikes are impulsive; strikes are counted per window.
     piling = k.filter("valid", pl.col("n_strikes") > 30)
-    assert len(piling) > 0 and (piling["kurtosis"] > 10).all()
+    assert len(piling) > 0 and (piling["beta"] > 10).all()
     assert k.filter(pl.col("channel") == 0)["n_strikes"].sum() == len(
         pl.read_csv(site.detections_path("E1", "VLA1"))
     )
 
 
-def test_ambient_psd_of_gap_is_none(tmp_path):
-    from soundscape.report import ambient_psd
+def test_background_psd_of_gap_is_none(tmp_path):
+    from soundscape.report import background_psd
 
-    path = tmp_path / "ambient.h5"
+    path = tmp_path / "background.h5"
     with h5py.File(path, "w") as f:
         for name, psd in (("E1/GAP", np.zeros((2, 5))), ("E1/OK", np.ones((2, 5)))):
             g = f.create_group(name)
             g.create_dataset("freqs", data=np.arange(5.0))
             g.create_dataset("psd", data=psd)
             g.attrs["channels"] = [0, 1]
-    assert ambient_psd(path, "E1", "GAP") is None
-    ok = ambient_psd(path, "E1", "OK")
+    assert background_psd(path, "E1", "GAP") is None
+    ok = background_psd(path, "E1", "OK")
     assert np.all(ok["level"] == 0.0)
 
 

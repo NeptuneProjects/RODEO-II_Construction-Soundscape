@@ -187,22 +187,32 @@ class ExtractConfig(StrictModel):
     """Windowing of each strike for metric computation.
 
     A pulse is invalid on a hydrophone whose window holds a single-sample
-    spike larger than `spike_threshold` times the window's median
-    sample-to-sample departure (see `metrics.spike_count`); None disables the
+    click larger than `click_threshold` times the window's median
+    sample-to-sample departure (see `metrics.click_count`); None disables the
     check.
     """
 
     pre_s: float = 0.6
     post_s: float = 0.6
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
-    spike_threshold: float | None = Field(default=30.0, gt=0.0)
+    click_threshold: float | None = Field(default=30.0, gt=0.0)
 
 
-class AmbientConfig(StrictModel):
-    """Ambient noise in a window preceding each event."""
+class BackgroundConfig(StrictModel):
+    """Background noise in a window preceding each event.
+
+    The window is `duration_s` long and starts `offset_s` before the event.
+    Following ISO 18406:2017 (6.1.4, Note 1, and 3.17, Note 2), levels are
+    averaged over the same time as the pulse metrics they are compared with:
+    consecutive segments of `segment_s`, by default the pulse window
+    (ExtractConfig pre_s + post_s). Kurtosis is computed over consecutive
+    `interval_s` intervals, as for piling (Martin et al. 2020), and the PSD
+    of the whole window with `psd_segment_s` Welch segments.
+    """
 
     offset_s: float = 660.0
     duration_s: float = 600.0
+    segment_s: float | None = Field(default=None, gt=0.0)
     interval_s: float = 60.0
     psd_segment_s: float = 5.0
     psd_overlap: float = Field(default=0.9, ge=0.0, lt=1.0)
@@ -220,7 +230,7 @@ class KurtosisConfig(StrictModel):
 class InterpulseConfig(StrictModel):
     """Sound between strikes (Guan et al. 2015, 2017).
 
-    The level is the mean-square SPL in consecutive `segment_s` segments from
+    The level is the mean-square sound pressure level in consecutive `segment_s` segments from
     each strike's detection time to the next (the incremental computation
     method of Guan et al. 2015), broadband and in `band` (default 20 Hz to the
     top of the decidecade bands). The inter-pulse interval on a hydrophone
@@ -228,7 +238,7 @@ class InterpulseConfig(StrictModel):
     `guan_after_s` after one strike to `guan_before_s` before the next, is
     tagged as well. Intervals longer than `max_spacing_factor` times the
     event's median strike spacing are pauses and are left out. Excess over
-    ambient is summarized at `thresholds_db`, and the listening-space
+    background is summarized at `thresholds_db`, and the listening-space
     reduction uses spreading coefficients `spreading` (the first is nominal).
     """
 
@@ -298,20 +308,21 @@ class ReportConfig(StrictModel):
     author: str | None = None  # title page of the data supplement
     affiliation: str | None = None
     met_stations: list[MetStationConfig] = Field(default_factory=list)
-    # Per-pulse metrics in the event figures and tables (SEL_cum is given as
+    # Per-pulse metrics in the event figures and tables (LEp_cum is given as
     # an event total in the tables).
     metrics: list[str] = [
-        "SPL_pk",
-        "SPL_pkpk",
-        "SPL_rms90",
-        "SEL_ss",
-        "SEL_cum",
-        "T90",
-        "t_rise",
-        "t_decay",
+        "Lp_pk",
+        "Lp_pkpk",
+        "Lp_90",
+        "LEp_ss",
+        "LEp_cum",
+        "tau90",
+        "t_r",
+        "t_d",
+        "SNR",
     ]
-    histogram_metric: str = "SPL_pk"
-    range_metrics: list[str] = ["SPL_pk", "SPL_pkpk", "SEL_ss"]
+    histogram_metric: str = "Lp_pk"
+    range_metrics: list[str] = ["Lp_pk", "Lp_pkpk", "LEp_ss"]
 
 
 # --------------------------------------------------------------------------
@@ -395,9 +406,12 @@ class SiteConfig(StrictModel):
     piles: Path
     sensors: list[SensorConfig]
     exclude: list[Exclusion] = Field(default_factory=list)
+    # Event-sensor pairs with fewer detected strikes than this (e.g. a soft
+    # start that was abandoned) are left out of the analysis from metrics on.
+    min_strikes: int = Field(default=100, ge=0)
     detector: DetectorConfig = DetectorConfig()
     extract: ExtractConfig = ExtractConfig()
-    ambient: AmbientConfig = AmbientConfig()
+    background: BackgroundConfig = BackgroundConfig()
     pulse_psd: PulsePSDConfig = PulsePSDConfig()
     kurtosis: KurtosisConfig = KurtosisConfig()
     interpulse: InterpulseConfig = InterpulseConfig()
@@ -476,8 +490,13 @@ class SiteConfig(StrictModel):
     def interpulse_intervals_path(self, event: str, sensor: str) -> Path:
         return self.event_dir(event) / f"interpulse_intervals_{sensor}.parquet"
 
-    def interpulse_ambient_path(self, event: str, sensor: str) -> Path:
-        return self.event_dir(event) / f"interpulse_ambient_{sensor}.parquet"
+    def interpulse_background_path(self, event: str, sensor: str) -> Path:
+        return self.event_dir(event) / f"interpulse_background_{sensor}.parquet"
+
+    @property
+    def background_segment_s(self) -> float:
+        """Averaging time of background noise levels: the pulse window by default."""
+        return self.background.segment_s or self.extract.pre_s + self.extract.post_s
 
     @property
     def report_dir(self) -> Path:
@@ -488,12 +507,12 @@ class SiteConfig(StrictModel):
         return self.output_dir / "metrics.csv"
 
     @property
-    def ambient_path(self) -> Path:
-        return self.output_dir / "ambient.h5"
+    def background_path(self) -> Path:
+        return self.output_dir / "background.h5"
 
     @property
-    def ambient_spl_path(self) -> Path:
-        return self.output_dir / "ambient_spl.csv"
+    def background_spl_path(self) -> Path:
+        return self.output_dir / "background_spl.csv"
 
     @property
     def kurtosis_path(self) -> Path:

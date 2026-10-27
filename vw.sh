@@ -1,4 +1,7 @@
-uv run soundscape metrics --site config/sites/vineyard.toml && \
-    uv run soundscape ambient --site config/sites/vineyard.toml && \
-    uv run soundscape kurtosis --site config/sites/vineyard.toml && \
-    uv run soundscape report --site config/sites/vineyard.toml
+SITE=config/sites/vineyard.toml
+STEPS="metrics psd background kurtosis interpulse report supplement"
+
+for STEP in $STEPS; do
+    uv run soundscape $STEP --site $SITE && \
+    :
+done

@@ -1,14 +1,16 @@
-"""Automatic detection of pile-driving strikes by band-limited energy.
+"""Automatic detection of pile-driving strikes by band-limited mean-square
+sound pressure.
 
 Generalizes the Vineyard Wind detector. Detection runs in two steps:
 
-1. `scan`: read the detection channel in chunks, band-pass it, smooth its
-   energy, and keep every local maximum at least `min_interval_s` apart as a
-   candidate, together with the chunk's noise floor. This is the only step
+1. `scan`: read the detection channel in chunks, band-pass it, average its
+   square over a moving window (the mean-square sound pressure e), and keep
+   every local maximum at least `min_interval_s` apart as a candidate,
+   together with the chunk's median e (`e_bg`). This is the only step
    that reads acoustic data.
-2. `select`: classify candidates as strikes by their energy relative to the
-   strongest candidate nearby (`threshold`) and to the noise floor
-   (`min_snr_db`). Because it only needs the candidates, thresholds can be
+2. `select`: classify candidates as strikes by their e relative to the
+   strongest candidate nearby (`e_rel` against `threshold`) and to `e_bg`
+   (`SNR_det` against `min_snr_db`). Because it only needs the candidates, thresholds can be
    re-tuned without re-reading data (`soundscape detect --reselect`).
 
 All channels of a sensor are later windowed at the same strike times, so
@@ -37,32 +39,33 @@ _CHUNK_PAD_S = 2.0
 
 CANDIDATE_SCHEMA = {
     "time": pl.Datetime("us"),
-    "energy": pl.Float64,
-    "noise": pl.Float64,
+    "e": pl.Float64,
+    "e_bg": pl.Float64,
 }
 
 
-def band_energy(
+def band_mean_square(
     x: np.ndarray, fs: float, band: tuple[float, float], order: int, smooth_s: float
 ) -> np.ndarray:
-    """Zero-phase band-pass, square, and smooth with a centered moving average."""
+    """Zero-phase band-pass, square, and average over a centered moving window:
+    the band-limited mean-square sound pressure e(t)."""
     sos = butter(order, band, btype="bandpass", fs=fs, output="sos")
-    energy = sosfiltfilt(sos, x) ** 2
+    e = sosfiltfilt(sos, x) ** 2
     n = round(smooth_s * fs)
     if n > 1:
-        energy = uniform_filter1d(energy, size=n, mode="nearest")
-    return energy
+        e = uniform_filter1d(e, size=n, mode="nearest")
+    return e
 
 
-def noise_floor(energy: np.ndarray, recorded: np.ndarray) -> float:
-    """Median energy over recorded (non-zero-filled) samples."""
-    values = energy[recorded]
+def noise_floor(e: np.ndarray, recorded: np.ndarray) -> float:
+    """Median of e over recorded (non-zero-filled) samples."""
+    values = e[recorded]
     return float(np.median(values)) if values.size else np.nan
 
 
-def find_candidates(energy: np.ndarray, fs: float, min_interval_s: float) -> np.ndarray:
+def find_candidates(e: np.ndarray, fs: float, min_interval_s: float) -> np.ndarray:
     distance = max(1, int(min_interval_s * fs))
-    return find_peaks(energy, distance=distance)[0]
+    return find_peaks(e, distance=distance)[0]
 
 
 def scan(
@@ -94,10 +97,10 @@ def scan(
 
         x = seg.data[0]
         recorded = x != 0.0
-        energy = band_energy(
+        e = band_mean_square(
             x, seg.sampling_rate, config.band, config.filter_order, config.smooth_s
         )
-        peaks = find_candidates(energy, seg.sampling_rate, config.min_interval_s)
+        peaks = find_candidates(e, seg.sampling_rate, config.min_interval_s)
         times = seg.times()
 
         in_core = (times >= core_start) & (times < core_end)
@@ -106,8 +109,8 @@ def scan(
             pl.DataFrame(
                 {
                     "time": times[peaks],
-                    "energy": energy[peaks],
-                    "noise": noise_floor(energy[in_core], recorded[in_core]),
+                    "e": e[peaks],
+                    "e_bg": noise_floor(e[in_core], recorded[in_core]),
                 },
                 schema=CANDIDATE_SCHEMA,
             )
@@ -119,11 +122,11 @@ def scan(
     return pl.concat(frames).sort("time")
 
 
-def suppress_close(times_us: np.ndarray, energy: np.ndarray, min_us: int) -> np.ndarray:
+def suppress_close(times_us: np.ndarray, e: np.ndarray, min_us: int) -> np.ndarray:
     """Greedy non-maximum suppression: indices of peaks kept, strongest first."""
     kept_times: list[int] = []
     kept = []
-    for i in np.argsort(-energy, kind="stable"):
+    for i in np.argsort(-e, kind="stable"):
         t = int(times_us[i])
         j = bisect.bisect_left(kept_times, t)
         if j > 0 and t - kept_times[j - 1] < min_us:
@@ -135,16 +138,14 @@ def suppress_close(times_us: np.ndarray, energy: np.ndarray, min_us: int) -> np.
     return np.sort(np.array(kept, dtype=int))
 
 
-def reference_energy(
-    times_us: np.ndarray, energy: np.ndarray, window_s: float
-) -> np.ndarray:
-    """Largest candidate energy within ±window/2 of each candidate (or overall)."""
+def reference_level(times_us: np.ndarray, e: np.ndarray, window_s: float) -> np.ndarray:
+    """Largest candidate e within ±window/2 of each candidate (or overall)."""
     if window_s == 0:
-        return np.full_like(energy, energy.max())
+        return np.full_like(e, e.max())
     half = int(window_s * 1e6 / 2)
     left = np.searchsorted(times_us, times_us - half, side="left")
     right = np.searchsorted(times_us, times_us + half, side="right")
-    return np.array([energy[lo:hi].max() for lo, hi in zip(left, right)])
+    return np.array([e[lo:hi].max() for lo, hi in zip(left, right)])
 
 
 def count_neighbors(times_us: np.ndarray, window_s: float) -> np.ndarray:
@@ -158,28 +159,28 @@ def count_neighbors(times_us: np.ndarray, window_s: float) -> np.ndarray:
 def select(candidates: pl.DataFrame, config: DetectorConfig) -> pl.DataFrame:
     """Score candidates and flag strikes.
 
-    Adds columns `cf` (energy relative to the reference), `snr_db`,
-    `neighbors` (other strikes passing the energy criteria within
+    Adds columns `e_rel` (e relative to the reference), `SNR_det`
+    (10 log10(e / e_bg), dB), `neighbors` (other strikes passing both criteria within
     ±`neighbor_window_s`), and `is_strike`.
     """
     if candidates.is_empty():
         return candidates.with_columns(
-            pl.lit(None, pl.Float64).alias("cf"),
-            pl.lit(None, pl.Float64).alias("snr_db"),
+            pl.lit(None, pl.Float64).alias("e_rel"),
+            pl.lit(None, pl.Float64).alias("SNR_det"),
             pl.lit(None, pl.Int64).alias("neighbors"),
             pl.lit(None, pl.Boolean).alias("is_strike"),
         )
     candidates = candidates.sort("time")
     times_us = candidates["time"].dt.epoch("us").to_numpy()
-    energy = candidates["energy"].to_numpy()
+    e = candidates["e"].to_numpy()
 
-    keep = suppress_close(times_us, energy, int(config.min_interval_s * 1e6))
+    keep = suppress_close(times_us, e, int(config.min_interval_s * 1e6))
     candidates = candidates[keep]
-    times_us, energy = times_us[keep], energy[keep]
+    times_us, e = times_us[keep], e[keep]
 
-    cf = energy / reference_energy(times_us, energy, config.normalization_window_s)
+    cf = e / reference_level(times_us, e, config.normalization_window_s)
     with np.errstate(divide="ignore", invalid="ignore"):
-        snr_db = 10 * np.log10(energy / candidates["noise"].to_numpy())
+        snr_db = 10 * np.log10(e / candidates["e_bg"].to_numpy())
     is_strike = (cf >= config.threshold) & (np.nan_to_num(snr_db) >= config.min_snr_db)
 
     neighbors = np.zeros(len(is_strike), dtype=np.int64)
@@ -188,8 +189,8 @@ def select(candidates: pl.DataFrame, config: DetectorConfig) -> pl.DataFrame:
     )
     is_strike &= neighbors >= config.min_neighbors
     return candidates.with_columns(
-        pl.Series("cf", cf),
-        pl.Series("snr_db", snr_db),
+        pl.Series("e_rel", cf),
+        pl.Series("SNR_det", snr_db),
         pl.Series("neighbors", neighbors),
         pl.Series("is_strike", is_strike),
     )
@@ -207,9 +208,9 @@ def strikes_table(
             pl.lit(sensor.name).alias("sensor"),
             pl.col("strike").cast(pl.Int64),
             "time",
-            "energy",
-            "noise",
-            "snr_db",
-            "cf",
+            "e",
+            "e_bg",
+            "SNR_det",
+            "e_rel",
         )
     )

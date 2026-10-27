@@ -181,3 +181,30 @@ def iter_waveforms(path: Path, batch_size: int = 256):
         dset = f["waveforms"]
         for i in range(0, dset.shape[0], batch_size):
             yield dset[i : i + batch_size]
+
+
+def integration_bounds(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Sample bounds [lo, hi) of each strike's integration time in its window.
+
+    Where strikes are closer together than the window, the window is cut
+    half-way to the neighbouring detection times, so that consecutive pulses
+    share no samples and the integration time is the period between strikes
+    (ISO 18406:2017, 6.4.2.1.2). Otherwise it is the whole window.
+    """
+    with h5py.File(path, "r") as f:
+        t = f["time"][:].astype(np.float64) / 1e6
+        n = f["waveforms"].shape[-1]
+        fs, pre_s = f.attrs["sampling_rate"], f.attrs["pre_s"]
+    half = np.diff(t) / 2 * fs
+    n_pre = round(pre_s * fs)
+    lo = n_pre - np.floor(np.concatenate([[np.inf], half]))
+    hi = n_pre + np.floor(np.concatenate([half, [np.inf]]))
+    return np.maximum(lo, 0).astype(int), np.minimum(hi, n).astype(int)
+
+
+def trim(w: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
+    """Zero each strike's waveforms (strike first, time last) outside its
+    integration bounds."""
+    n = np.arange(w.shape[-1])
+    keep = (n >= lo[:, None]) & (n < hi[:, None])
+    return np.where(keep[:, None, :], w, 0.0)

@@ -7,9 +7,9 @@ Stages, in order:
     extract    window all channels around each strike
     metrics    per-pulse metrics; also writes the site-wide summary
     psd        power spectral density of each pulse
-    ambient    ambient noise preceding each event
+    background    background noise preceding each event
     kurtosis   kurtosis of the recording in 60 s windows over each event
-    interpulse sound between strikes in 100 ms segments, and ambient likewise
+    interpulse sound between strikes in 100 ms segments, and background noise likewise
     report     figures, LaTeX tables, and a Word document
     supplement PDF table of every pulse (data supplement)
     run        all of the above
@@ -32,15 +32,15 @@ from tritonoa.data.reader import NoDataError
 from soundscape import detect as det
 from soundscape.compare import compare_sites
 from soundscape.config import SensorConfig, SiteConfig, load_site
-from soundscape.events import Event, load_events
+from soundscape.events import Event, load_events, too_few_strikes
 from soundscape.extract import extract
-from soundscape.interpulse import ambient_segments, interpulse, summarize_site
+from soundscape.interpulse import background_segments, interpulse, summarize_site
 from soundscape.kurtosis import windowed_kurtosis
 from soundscape.metrics import compute_metrics, read_table
 from soundscape.plotting import plot_detections
 from soundscape.report import make_report
 from soundscape.sources import coverage, get_source
-from soundscape.spectra import ambient_noise, pulse_psd, write_ambient_psd
+from soundscape.spectra import background_noise, pulse_psd, write_background_psd
 from soundscape.supplement import write_supplement
 
 logger = logging.getLogger(__name__)
@@ -141,7 +141,10 @@ class Workflow:
             config = self.site.detector_for(sensor)
             cand_path = self.site.candidates_path(event.name, sensor.name)
             if reselect:
-                candidates = pl.read_parquet(cand_path)
+                # Candidates written before the columns were named e and e_bg.
+                candidates = pl.read_parquet(cand_path).rename(
+                    {"energy": "e", "noise": "e_bg"}, strict=False
+                )
             else:
                 candidates = det.scan(
                     sensor, self.site.inventory_path(sensor.name), event, config
@@ -194,7 +197,7 @@ class Workflow:
             if not path.exists():
                 logger.warning(f"[metrics] missing {path}")
                 return
-            metrics = compute_metrics(path, self.site.extract.spike_threshold)
+            metrics = compute_metrics(path, self.site.extract.click_threshold)
             with_hydrophones(metrics, sensor).write_csv(
                 self.site.metrics_path(event.name, sensor.name)
             )
@@ -209,13 +212,19 @@ class Workflow:
         on the command line); results for sensors or events no longer in the
         site file, or now excluded, are left out.
         """
-        files = [
-            path
-            for event in load_events(self.site)
-            for sensor in self.site.sensors
-            if not self.site.is_excluded(event.name, sensor.name)
-            and (path := self.site.metrics_path(event.name, sensor.name)).exists()
-        ]
+        files = []
+        for event in load_events(self.site):
+            for sensor in self.site.sensors:
+                path = self.site.metrics_path(event.name, sensor.name)
+                if self.site.is_excluded(event.name, sensor.name) or not path.exists():
+                    continue
+                if too_few_strikes(self.site, event.name, sensor.name):
+                    logger.info(
+                        f"[metrics] {event.name}/{sensor.name}: fewer than "
+                        f"{self.site.min_strikes} strikes, left out of the summary"
+                    )
+                    continue
+                files.append(path)
         if not files:
             return
         df = pl.concat([read_table(f) for f in files], how="diagonal_relaxed").sort(
@@ -235,33 +244,37 @@ class Workflow:
                 self.site.pulse_psd,
                 self.site.pulse_psd_path(event.name, sensor.name),
                 self.site.bands,
-                self.site.extract.spike_threshold,
+                self.site.extract.click_threshold,
             )
 
         self._each(_psd, "psd")
 
-    def ambient(self) -> None:
+    def background(self) -> None:
         tables = []
 
-        def _ambient(event: Event, sensor) -> None:
+        def _background(event: Event, sensor) -> None:
             try:
-                table, spectra = ambient_noise(
+                table, spectra = background_noise(
                     sensor,
                     self.site.inventory_path(sensor.name),
                     event,
-                    self.site.ambient,
+                    self.site.background,
+                    self.site.background_segment_s,
+                    self.site.pulse_psd,
+                    self.site.bands,
+                    self.site.extract.click_threshold,
                 )
             except NoDataError:
-                logger.warning(f"[ambient] {event.name}/{sensor.name}: no data")
+                logger.warning(f"[background] {event.name}/{sensor.name}: no data")
                 return
-            write_ambient_psd(
-                self.site.ambient_path, event, sensor, spectra, self.site.ambient
+            write_background_psd(
+                self.site.background_path, event, sensor, spectra, self.site.background
             )
             tables.append(with_hydrophones(table, sensor))
 
-        self._each(_ambient, "ambient")
+        self._each(_background, "background")
         if tables:
-            _merge_table(self.site, self.site.ambient_spl_path, pl.concat(tables))
+            _merge_table(self.site, self.site.background_spl_path, pl.concat(tables))
 
     def kurtosis(self) -> None:
         tables = []
@@ -295,8 +308,8 @@ class Workflow:
                 logger.warning(f"[interpulse] missing {path}")
                 return
             metrics = read_table(path)
-            if "t5_s" not in metrics.columns:
-                logger.warning(f"[interpulse] {path} predates t5_s; rerun metrics")
+            if "t5" not in metrics.columns:
+                logger.warning(f"[interpulse] {path} predates t5; rerun metrics")
                 return
             inventory = self.site.inventory_path(sensor.name)
             segments, intervals = interpulse(
@@ -311,17 +324,17 @@ class Workflow:
             intervals.write_parquet(
                 self.site.interpulse_intervals_path(event.name, sensor.name)
             )
-            ambient = ambient_segments(
+            background = background_segments(
                 sensor,
                 inventory,
                 event,
                 self.site.interpulse,
                 self.site.bands,
-                self.site.ambient,
+                self.site.background,
             )
-            if not ambient.is_empty():
-                ambient.write_parquet(
-                    self.site.interpulse_ambient_path(event.name, sensor.name)
+            if not background.is_empty():
+                background.write_parquet(
+                    self.site.interpulse_background_path(event.name, sensor.name)
                 )
 
         self._each(_interpulse, "interpulse")
@@ -343,7 +356,7 @@ class Workflow:
         self.extract()
         self.metrics()
         self.psd()
-        self.ambient()
+        self.background()
         self.kurtosis()
         self.interpulse()
         self.report()
@@ -369,7 +382,7 @@ COMMANDS = [
     "extract",
     "metrics",
     "psd",
-    "ambient",
+    "background",
     "kurtosis",
     "interpulse",
     "report",

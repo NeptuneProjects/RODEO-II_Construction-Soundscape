@@ -27,7 +27,7 @@ pre_s = 0.6
 post_s = 0.6
 filter = { type = "highpass", freq = 10.0 }
 
-[ambient]
+[background]
 offset_s = 660.0
 duration_s = 600.0
 interval_s = 60.0

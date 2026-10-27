@@ -12,6 +12,7 @@ from soundscape.interpulse import (
     band_excess,
     decay_curves,
     excess_summary,
+    is_band_label,
     masking_factors,
     read_interpulse,
     strike_intervals,
@@ -25,9 +26,9 @@ def run(site, monkeypatch):
     rec = SyntheticRecording(duration_s=900.0, gap=(300.5, 330.0))
     for module in (detect, extract, kurtosis, spectra, interpulse):
         monkeypatch.setattr(module, "read_segment", rec.read)
-    # Ambient from the 60 s pause in piling halfway through the record.
-    site.ambient.offset_s = -455.0
-    site.ambient.duration_s = 50.0
+    # Background noise from the 60 s pause in piling halfway through the record.
+    site.background.offset_s = -455.0
+    site.background.duration_s = 50.0
     w = workflow.Workflow(site)
     w.detect()
     w.extract()
@@ -47,9 +48,9 @@ def test_intervals_skip_pauses_and_gaps(run, site):
 
 def test_t5_t95_offsets_match_t90(run, site):
     m = read_table(site.metrics_path("E1", "VLA1"))
-    assert (m["t95_s"] - m["t5_s"] - m["T90"]).abs().max() < 1e-9
+    assert (m["t95"] - m["t5"] - m["tau90"]).abs().max() < 1e-9
     # The synthetic pulse starts at the detection time, within a few ms.
-    assert m.filter("valid")["t5_s"].median() == pytest.approx(0.0, abs=0.01)
+    assert m.filter("valid")["t5"].median() == pytest.approx(0.0, abs=0.01)
 
 
 def test_segments_decay_to_noise(run, site):
@@ -70,7 +71,7 @@ def test_segments_decay_to_noise(run, site):
     noise = 10 * np.log10((707 - 20) / 1000)
     assert ok.filter("in_interval")["Lp_band"].median() == pytest.approx(noise, abs=0.5)
     # Guan's interval starts 0.1 s after the strike and ends 0.5 s before
-    # the next; ours follows T90, so excludes the pulse at both ends.
+    # the next; ours follows tau90, so excludes the pulse at both ends.
     g = ok.filter("in_guan")
     assert g["t_s"].min() == pytest.approx(0.1)
     assert (g["t_s"] + 0.1).max() <= 1.0 + 1e-6
@@ -90,7 +91,7 @@ def test_interval_medians(run, site):
     assert strong["Lp_band_guan"].median() == pytest.approx(
         strong["Lp_band"].median(), abs=0.5
     )
-    bands = [c for c in i.columns if c.startswith("L_")]
+    bands = [c for c in i.columns if is_band_label(c)]
     # For white noise the decidecade bands (11.2-707 Hz) hold their share of
     # the 1 kHz band.
     total = 10 * np.log10((10 ** (strong.select(bands).to_numpy() / 10)).sum(axis=1))
@@ -98,26 +99,26 @@ def test_interval_medians(run, site):
     assert np.median(total) == pytest.approx(strong["Lp"].median() + share, abs=0.5)
 
 
-def test_summaries_against_ambient(run, site):
+def test_summaries_against_background(run, site):
     events = ["E1"]
     seg = read_interpulse(site, events, "segments")
-    amb = read_interpulse(site, events, "ambient")
-    assert len(amb) == 2 * 500
-    ex = excess_summary(seg, amb, [3.0, 10.0])
+    bg = read_interpulse(site, events, "background")
+    assert len(bg) == 2 * 500
+    ex = excess_summary(seg, bg, [3.0, 10.0])
     assert len(ex) == 2
-    # Between pulses there is mostly the noise the ambient window holds; only
+    # Between pulses there is mostly the noise the background noise window holds; only
     # the first segment after t95 (one in about 14) still holds the decaying
     # tail of the tone burst.
     assert ex["dL"].abs().max() < 0.5
     assert 0.05 < ex["above_3"].max() < 0.1
     tail = seg.filter("valid", "in_interval", pl.col("t_s") > 0.15)
-    assert tail["Lp_band"].max() < ex["amb_median"].max() + 3
+    assert tail["Lp_band"].max() < ex["Lp_bg"].max() + 3
     assert ex["interval_share"].min() > 0.8
-    d = decay_curves(seg, amb).filter(pl.col("channel") == 0)
+    d = decay_curves(seg, bg).filter(pl.col("channel") == 0)
     assert d["dL"][0] > 20
     assert d.filter(pl.col("t_s").is_between(0.25, 1.25))["dL"].abs().max() < 1.0
-    b = band_excess(read_interpulse(site, events, "intervals"), amb)
-    assert b["nominal"].min() == pytest.approx(12.5)
+    b = band_excess(read_interpulse(site, events, "intervals"), bg)
+    assert b["nominal_Hz"].min() == pytest.approx(12.5)
     assert b["dL"].abs().median() < 0.5
 
 
@@ -155,6 +156,16 @@ def test_compare_masking(run, site, tmp_path):
     assert any("Listening space" in p.text for p in doc.paragraphs)
 
 
+def test_events_with_few_strikes_are_dropped(run, site):
+    from soundscape.events import load_events, too_few_strikes
+    from soundscape.interpulse import summarize_site
+
+    assert not too_few_strikes(site, "E1", "VLA1")
+    site.min_strikes = 10_000
+    assert too_few_strikes(site, "E1", "VLA1")
+    assert all(t.is_empty() for t in summarize_site(site, load_events(site)).values())
+
+
 def test_masking_factors():
     r, a = masking_factors([0.0, 10.0, -3.0], 15.0)
     assert r[0] == 1.0 and r[2] == 1.0
@@ -165,3 +176,25 @@ def test_masking_factors():
 def test_default_config():
     c = InterpulseConfig()
     assert c.segment_s == 0.1 and c.thresholds_db == [3.0, 10.0]
+
+
+def test_background_vs_range_recovers_slope(site):
+    from soundscape.compare import SiteData, background_vs_range
+
+    r_km = np.array([2.0, 4.0, 8.0, 16.0])
+    excess = pl.DataFrame(
+        {
+            "event": ["A", "B", "C", "D"],
+            "sensor": "VLA1",
+            "range_m": r_km * 1e3,
+            "channel": site.sensors[0].detect_channel,
+            "Lp_bg": 140.0 - 20.0 * np.log10(r_km),
+        }
+    )
+    data = [SiteData(site, [], pl.DataFrame(), None, {"excess": excess})]
+    pts, fits = background_vs_range(data)
+    assert len(pts) == 4
+    fit = fits.filter(pl.col("sensor") == "all").row(0, named=True)
+    assert fit["a_dB"] == pytest.approx(140.0)
+    assert fit["b_dB_per_decade"] == pytest.approx(20.0)
+    assert fit["r"] == pytest.approx(-1.0)

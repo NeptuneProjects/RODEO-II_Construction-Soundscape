@@ -24,13 +24,13 @@ non-negative; Lp_pk is the peak over the whole integration time.
 
 Every metric is taken over the pulse's integration time T_W: the whole
 window, or, where strikes are closer together than the window, the part of
-it closer to the strike's own detection time than to its neighbours' (ISO
+it closer to the strike's own detection time than to its neighbors' (ISO
 18406:2017, 6.4.2.1.2; see `extract.integration_bounds`). Lp_pk is thus the
 peak over the pulse, from t0 to t100.
 
 A pulse is invalid on a hydrophone whose window holds a click (see
 `click_count`), a recorder or cable fault rather than sound in the water.
-Such pulses are dropped, not repaired, and do not count towards LEp_cum on
+Such pulses are dropped, not repaired, and do not count toward LEp_cum on
 that hydrophone.
 
 The window (see ExtractConfig) is long enough to hold the whole pulse, so
@@ -119,7 +119,7 @@ def click_count(x: np.ndarray, threshold: float) -> np.ndarray:
     `x` (time last).
 
     A sample is a click where its departure from the mean of its two
-    neighbours exceeds `threshold` times the median of that departure over
+    neighbors exceeds `threshold` times the median of that departure over
     the window, and is at least half the largest |x| within two samples.
     Sound in the water is band-limited well below the sampling rate, so it
     changes little from one sample to the next compared with its amplitude
@@ -129,7 +129,7 @@ def click_count(x: np.ndarray, threshold: float) -> np.ndarray:
     x = np.asarray(x, dtype=np.float64)
     r = np.abs(x[..., 1:-1] - 0.5 * (x[..., :-2] + x[..., 2:]))
     scale = np.median(r, axis=-1, keepdims=True)
-    # A click also displaces its neighbours' departures (by half), so count
+    # A click also displaces its neighbors' departures (by half), so count
     # only local maxima.
     pad = np.pad(r, [(0, 0)] * (r.ndim - 1) + [(1, 1)])
     local_max = (r >= pad[..., :-2]) & (r > pad[..., 2:])

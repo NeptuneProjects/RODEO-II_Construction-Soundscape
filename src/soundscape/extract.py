@@ -187,7 +187,7 @@ def integration_bounds(path: Path) -> tuple[np.ndarray, np.ndarray]:
     """Sample bounds [lo, hi) of each strike's integration time in its window.
 
     Where strikes are closer together than the window, the window is cut
-    half-way to the neighbouring detection times, so that consecutive pulses
+    halfway to the neighboring detection times, so that consecutive pulses
     share no samples and the integration time is the period between strikes
     (ISO 18406:2017, 6.4.2.1.2). Otherwise it is the whole window.
     """

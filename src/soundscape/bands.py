@@ -2,7 +2,7 @@
 
 Bands follow IEC 61260-1 with base 10, called decidecades in ISO 18405: the
 exact center frequencies are 10^(n/10) Hz for integer n, and each band spans
-a factor 10^(1/10) between its edges. Bands are labelled by their nominal
+a factor 10^(1/10) between its edges. Bands are labeled by their nominal
 center frequencies (10, 12.5, 16, 20, 25, 31.5, 40, 50, 63, 80 Hz, ...).
 
 Band values are sums of spectral values over frequency bins, each bin

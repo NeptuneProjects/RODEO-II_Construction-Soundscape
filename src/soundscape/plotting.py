@@ -15,7 +15,7 @@ def plot_detections(
     """Candidate energies over time, with strikes highlighted.
 
     Use this to check detector settings: strikes should form a continuous band
-    well above the noise floor, and no strike-like candidates should be grey.
+    well above the noise floor, and no strike-like candidates should be gray.
     """
     t = scored["time"].to_numpy()
     energy_db = 10 * np.log10(scored["e"].to_numpy())

@@ -268,7 +268,7 @@ def pulse_band_stats(path: Path) -> dict | None:
 def background_band_stats(
     path: Path, event: str, sensor: str, nominal: np.ndarray
 ) -> dict | None:
-    """Background noise in decidecade bands (labelled `nominal`, as for the
+    """Background noise in decidecade bands (labeled `nominal`, as for the
     pulses) before an event: median and 5th and 95th percentiles over valid
     segments of the mean-square sound pressure level in each band (`Lp_*`,
     dB re 1 uPa), and of the sound exposure over the segment (`E_*`, dB re
@@ -1388,9 +1388,9 @@ def interpulse_note(site: SiteConfig) -> str:
     c = site.interpulse
     return (
         f"L_{{p,ip}} is the mean-square sound pressure level from {lo:g} Hz to {hi / 1e3:.1f} kHz in "
-        f"{c.segment_s * 1e3:g}-ms segments between strikes, over the inter-pulse "
-        f"interval from t_{{95}} of one pulse to t_{{5}} of the next (Guan et al. "
-        f"2015); ΔL_{{ip}} is its median less the median of the same quantity in "
+        f"{c.segment_s * 1e3:g}-ms segments between strikes (after Guan et al. "
+        f"2015), over the inter-pulse interval from t_{{95}} of one pulse to "
+        f"t_{{5}} of the next; ΔL_{{ip}} is its median less the median of the same quantity in "
         f"the background noise window before the event, and the last columns give the "
         f"percentage of inter-pulse time more than "
         + _and([f"{t:g} dB" for t in c.thresholds_db])

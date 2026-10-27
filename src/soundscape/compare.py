@@ -10,8 +10,9 @@ Output layout:
     <output>/
     ├── compare.docx
     ├── figures/{levels_vs_range,depth,psd,background_vs_range,interpulse_vs_range,
-    │            interpulse_bands}.png
-    └── tables/{summary.{csv,tex},range_fits.csv,background_fits.csv,masking.csv}
+    │            interpulse_bands,masking_bands}.png
+    └── tables/{summary.{csv,tex},range_fits.csv,background_fits.csv,masking.csv,
+                masking_bands.csv}
 """
 
 import logging
@@ -569,7 +570,7 @@ def masking_table(data: list[SiteData]) -> pl.DataFrame:
     """Listening space remaining between strikes, per site and sensor: the
     median over events of the inter-pulse excess on the detection channel,
     and the listening range and area remaining at each site's spreading
-    coefficients (Clark et al. 2009; see interpulse.masking_factors)."""
+    coefficients (see interpulse.masking_factors)."""
     rows = []
     for d in data:
         if "excess" not in d.interpulse:
@@ -593,6 +594,96 @@ def masking_table(data: list[SiteData]) -> pl.DataFrame:
                 row[f"area_left_N{n:g}"] = float(a)
             rows.append(row)
     return pl.DataFrame(rows).sort("site", "range_min_km") if rows else pl.DataFrame()
+
+
+def masking_bands_table(data: list[SiteData]) -> pl.DataFrame:
+    """Listening space remaining between strikes in each decidecade band, per
+    site and sensor: the median over events of the band's inter-pulse excess
+    on the detection channel (as in plot_interpulse_bands), and the listening
+    range and area remaining at each site's spreading coefficients."""
+    frames = []
+    for d in data:
+        if "bands" not in d.interpulse or d.interpulse["bands"].is_empty():
+            continue
+        b = detection_channels(d.site, d.interpulse["bands"])
+        t = (
+            b.with_columns(
+                (pl.col("range_m") / 1e3).alias("range_km"),
+            )
+            .with_columns(
+                pl.col("range_km").min().over("sensor").alias("range_min_km"),
+                pl.col("range_km").max().over("sensor").alias("range_max_km"),
+            )
+            .group_by("sensor", "range_min_km", "range_max_km", "nominal_Hz")
+            .agg(
+                pl.col("event").n_unique().alias("events"),
+                pl.col("dL").median().alias("dL_median"),
+                pl.col("dL").min().alias("dL_min"),
+                pl.col("dL").max().alias("dL_max"),
+            )
+        )
+        for n in d.site.interpulse.spreading:
+            r, a = masking_factors(t["dL_median"].to_numpy(), n)
+            t = t.with_columns(
+                pl.Series(f"range_left_N{n:g}", r), pl.Series(f"area_left_N{n:g}", a)
+            )
+        frames.append(t.with_columns(site=pl.lit(d.site.name)))
+    if not frames:
+        return pl.DataFrame()
+    columns = ["site", "sensor", "range_min_km", "range_max_km", "nominal_Hz"]
+    t = pl.concat(frames, how="diagonal_relaxed")
+    return t.select(columns + [c for c in t.columns if c not in columns]).sort(
+        "site", "range_min_km", "nominal_Hz"
+    )
+
+
+def plot_masking_bands(
+    table: pl.DataFrame, spreading: list[float]
+) -> plt.Figure:
+    """Detection range remaining between strikes against decidecade band, per
+    sensor, one panel per site: the line at the nominal spreading coefficient
+    (the first of `spreading`), the shading between the others."""
+    nominal, *bounds = spreading
+    lo, hi = min(bounds, default=nominal), max(bounds, default=nominal)
+    sites = table["site"].unique(maintain_order=True).to_list()
+    fig, axs = plt.subplots(
+        1,
+        len(sites),
+        figsize=(3.6 * len(sites), 3.0),
+        layout="constrained",
+        sharey=True,
+        squeeze=False,
+    )
+    for ax, site in zip(axs[0], sites):
+        d = table.filter(pl.col("site") == site)
+        order = d.group_by("sensor").agg(pl.col("range_min_km").first()).sort("range_min_km")
+        for k, (sensor, _) in enumerate(order.iter_rows()):
+            g = d.filter(pl.col("sensor") == sensor).sort("nominal_Hz")
+            f = g["nominal_Hz"]
+            ax.fill_between(
+                f,
+                100 * g[f"range_left_N{lo:g}"],
+                100 * g[f"range_left_N{hi:g}"],
+                color=f"C{k}",
+                alpha=0.2,
+                lw=0,
+            )
+            r0, r1 = g["range_min_km"][0], g["range_max_km"][0]
+            ax.plot(
+                f,
+                100 * g[f"range_left_N{nominal:g}"],
+                marker=".",
+                color=f"C{k}",
+                label=f"{sensor} ({r0:.0f}–{r1:.0f} km)",
+            )
+        ax.set_xscale("log")
+        ax.set_ylim(0, 102)
+        ax.set_xlabel("Decidecade band (Hz)")
+        ax.set_title(site)
+        ax.grid(True, lw=0.3)
+        ax.legend(fontsize="small", loc="lower right")
+    axs[0, 0].set_ylabel("Detection range remaining (%)")
+    return fig
 
 
 def compare_sites(sites: list[SiteConfig], output: Path) -> None:
@@ -659,6 +750,15 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
     masking = masking_table(data)
     if not masking.is_empty():
         masking.write_csv(tables / "masking.csv")
+    masking_bands = masking_bands_table(data)
+    if not masking_bands.is_empty():
+        masking_bands.write_csv(tables / "masking_bands.csv")
+        _save(
+            plot_masking_bands(masking_bands, ip.spreading),
+            figs / "masking_bands.png",
+            cfg.dpi,
+            cfg.titles,
+        )
 
     # Word document ---------------------------------------------------------
     doc = Document(cfg.docx_template)
@@ -722,7 +822,9 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
     if not bg_pts.is_empty():
         _background_section(doc, data, figs, bg_fits)
     if ip_range is not None:
-        _interpulse_section(doc, data, figs, masking, ip_bands is not None)
+        _interpulse_section(
+            doc, data, figs, masking, ip_bands is not None, not masking_bands.is_empty()
+        )
     path = output / "compare.docx"
     doc.save(path)
     logger.info(f"[compare] {path}")
@@ -734,8 +836,10 @@ def _interpulse_section(
     figs: Path,
     masking: pl.DataFrame,
     bands: bool,
+    masking_bands: bool,
 ) -> None:
-    """Inter-pulse figures and the listening-space table in compare.docx."""
+    """Inter-pulse figures, the listening-space table, and the listening range
+    by decidecade band in compare.docx."""
     site = data[0].site
     ip = site.interpulse
     lo, hi = interpulse_band(site)
@@ -794,13 +898,29 @@ def _interpulse_section(
         "the median over events of the inter-pulse excess over the background noise, with the "
         "smallest and largest event medians in brackets. With transmission loss "
         "N log_{10} r, a rise ΔL in the noise scales the range at which a call "
-        "can be detected by 10^{−ΔL/N} and the area by 10^{−2ΔL/N} (Clark et al. "
-        f"2009); N = {nominal:g} is nominal, and "
+        "can be detected by 10^{−ΔL/N} and the area, a simple form of the "
+        "communication space of Clark et al. (2009), by 10^{−2ΔL/N}; "
+        f"N = {nominal:g} is nominal, and "
         + _and([f"N = {n:g}" for n in bounds])
         + " bound it. This is a first-order estimate: it treats the median "
-        "excess as steady and ignores critical ratios and call structure.",
+        "excess as steady and ignores critical ratios and call structure. The "
+        "summary band combines all frequencies; the reduction in each "
+        "decidecade band is in the next figure.",
         "llrrrrr" + "r" * len(bounds),
     )
+    if masking_bands:
+        doc.figure(
+            figs / "masking_bands.png",
+            "Range at which a call can be detected between strikes, as a "
+            "percentage of its value in the background noise, in each decidecade "
+            "band, per sensor on the detection channel: 10^{−ΔL/N}, with ΔL the "
+            "median over events of the band's inter-pulse excess (the previous "
+            "figure). Lines are for "
+            f"N = {nominal:g}; shading spans "
+            + _and([f"N = {n:g}" for n in bounds])
+            + ". The area remaining is the square of the range remaining. Bands "
+            "below about 50 Hz are approximate (see above).",
+        )
 
 
 def _background_section(

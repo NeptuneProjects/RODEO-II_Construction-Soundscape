@@ -1,7 +1,8 @@
 """Sound between strikes: the inter-pulse sound field (Optional Task 2.4.4).
 
 Following Guan et al. (2015, 2017), the level is computed by the incremental
-computation method: the mean-square sound pressure level in consecutive 100 ms segments,
+computation method: the mean-square sound pressure level in consecutive 100 ms segments
+(theirs cover only the inter-pulse interval),
 
     L_p = 10 log10(mean p^2 over the segment / p0^2)    dB re 1 uPa
 
@@ -10,7 +11,8 @@ every hydrophone. Each segment is tagged with its time since the strike and
 with whether it lies in the inter-pulse interval: from t95 of the pulse to t5
 of the next on that hydrophone (the energy-based pulse duration, see
 soundscape.metrics), or, for comparison, Guan et al.'s interval from 100 ms
-after one strike to 500 ms before the next. Levels are broadband (above the
+after the peak of one pulse to 500 ms before the peak of the next, with the
+detection times in place of the peaks. Levels are broadband (above the
 10 Hz high-pass), in a summary band (by default 20 Hz to the top of the
 decidecade bands, which covers the low-frequency cetacean hearing group
 within the recorded bandwidth), and in each decidecade band, all from the DFT
@@ -86,9 +88,9 @@ def summary_band(
 
 def masking_factors(delta_db, spreading: float):
     """Listening range and area remaining when the noise rises by `delta_db`
-    and transmission loss is `spreading` log10 r (Clark et al. 2009): the
-    range scales by 10^(-dL/N) and the area by its square. No reduction for
-    dL <= 0."""
+    and transmission loss is `spreading` log10 r: the range scales by
+    10^(-dL/N) and the area, a simple form of the communication space of
+    Clark et al. (2009), by its square. No reduction for dL <= 0."""
     d = np.clip(np.asarray(delta_db, dtype=float), 0.0, None)
     r = 10 ** (-d / spreading)
     return r, r**2

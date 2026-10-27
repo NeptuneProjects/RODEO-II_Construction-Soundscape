@@ -235,8 +235,9 @@ class InterpulseConfig(StrictModel):
     method of Guan et al. 2015), broadband and in `band` (default 20 Hz to the
     top of the decidecade bands). The inter-pulse interval on a hydrophone
     runs from t95 of one pulse to t5 of the next; Guan et al.'s interval,
-    `guan_after_s` after one strike to `guan_before_s` before the next, is
-    tagged as well. Intervals longer than `max_spacing_factor` times the
+    `guan_after_s` after one strike to `guan_before_s` before the next (from
+    detection times, which stand in for their pulse peaks), is tagged as
+    well. Intervals longer than `max_spacing_factor` times the
     event's median strike spacing are pauses and are left out. Excess over
     background is summarized at `thresholds_db`, and the listening-space
     reduction uses spreading coefficients `spreading` (the first is nominal).

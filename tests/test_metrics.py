@@ -125,7 +125,7 @@ def test_spiky_channels_are_invalid_and_left_out_of_cumulative_sel():
     assert out[-1, 1] == pytest.approx(150)
 
 
-def test_integration_stops_half_way_to_neighbouring_strikes(tmp_path):
+def test_integration_stops_half_way_to_neighboring_strikes(tmp_path):
     import h5py
 
     from soundscape.extract import integration_bounds, trim
@@ -138,7 +138,7 @@ def test_integration_stops_half_way_to_neighbouring_strikes(tmp_path):
         f.attrs.update({"sampling_rate": fs, "pre_s": 0.6})
     lo, hi = integration_bounds(path)
     # Strikes 1 s apart share the 0.2 s their 1.2 s windows overlap, split
-    # at the midpoint; a strike 2 s from both neighbours keeps its window.
+    # at the midpoint; a strike 2 s from both neighbors keeps its window.
     np.testing.assert_array_equal(lo, [0, 100, 0])
     np.testing.assert_array_equal(hi, [1100, 1200, 1200])
     w = trim(np.ones((3, 1, n)), lo, hi)

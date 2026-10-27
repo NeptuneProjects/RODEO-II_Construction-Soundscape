@@ -1,0 +1,1 @@
+uv run soundscape compare --site config/sites/vineyard.toml --site config/sites/southfork.toml

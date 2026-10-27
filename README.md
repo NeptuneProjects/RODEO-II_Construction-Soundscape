@@ -317,7 +317,7 @@ Column names transliterate the symbols (see *Data dictionary*).
 | `SNR` | SNR | added at report time: `LEp_ss` less the sound exposure level of the background noise over `TW` (dB; see below) |
 
 The window (`[extract] pre_s + post_s`, 1.2 s) is long enough to hold the whole pulse, so `LEp_ss` includes the background noise in it and is biased upward at low signal-to-noise ratio.
-Where strikes are less than a window apart (about 7 % at Vineyard Wind 1), each pulse is integrated only up to half-way to the neighbouring detection times, so that the integration time is the period between strikes (ISO 18406 §6.4.2.1.2) and no sound counts twice in `LEp_cum` (`extract.integration_bounds`). Every metric, the spectral densities, and the band exposures use this integration time; clicks are sought in the whole window.
+Where strikes are less than a window apart (10 % of pulses at Vineyard Wind 1, 0.2 % at South Fork Wind), each pulse is integrated only up to half-way to the neighbouring detection times, so that the integration time is the period between strikes (ISO 18406 §6.4.2.1.2) and no sound counts twice in `LEp_cum` (`extract.integration_bounds`). Every metric, the spectral densities, and the band exposures use this integration time; clicks are sought in the whole window.
 
 The peak for `t_r` and `t_d` is taken within τ<sub>90%</sub>, so both are non-negative; `Lp_pk` is the peak over the whole integration time.
 

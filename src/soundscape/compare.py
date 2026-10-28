@@ -485,7 +485,7 @@ def plot_background_vs_range(pts: pl.DataFrame, fits: pl.DataFrame) -> plt.Figur
     ax.set_ylabel(f"Pre-piling background noise {METRIC_LABELS['Lp'][0]} (dB)")
     _range_axis(ax)
     ax.grid(True, which="both", lw=0.3)
-    ax.legend(fontsize="x-small", ncol=2, loc="lower left")
+    ax.legend(fontsize="x-small", ncol=2, loc="upper right")
     return fig
 
 

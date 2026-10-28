@@ -15,7 +15,7 @@ from docx.enum.section import WD_ORIENT, WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Emu, Pt
+from docx.shared import Emu, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 from PIL import Image
 
@@ -78,6 +78,9 @@ class Document:
             for child in list(body):
                 if child.tag != qn("w:sectPr"):
                     body.remove(child)
+        # Black captions, as in the documents pandoc writes (Word's default
+        # Caption style is blue).
+        self.doc.styles["Caption"].font.color.rgb = RGBColor(0, 0, 0)
         self.counts = {"Figure": 0, "Table": 0}
 
     @property
@@ -121,7 +124,7 @@ class Document:
         p = self.doc.add_paragraph(style="Caption")
         p.add_run(f"{kind} ")
         _seq_field(p, kind, self.counts[kind])
-        add_text(p, f". {text}")
+        add_text(p, f": {text}")
 
     def figure(self, path: Path, caption: str, max_height: float = 0.85) -> None:
         """An image at the text width, or shorter if it would be taller than

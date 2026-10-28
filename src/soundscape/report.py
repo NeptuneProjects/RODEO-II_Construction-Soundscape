@@ -10,7 +10,7 @@ Output layout:
     report/
     ├── report.docx
     ├── supplement.pdf                      (soundscape.supplement)
-    ├── figures/<event>/{metrics,psd,bands,levels}.png
+    ├── figures/<event>/{metrics_levels,metrics_other,psd,bands,levels}.png
     ├── figures/<metric>_vs_range.png
     ├── figures/coverage.png
     └── tables/{detections,<event>,<event>_event}.tex, <event>_bands.csv
@@ -421,6 +421,14 @@ def _hydrophone_legend(
         for c in channels
     ]
     ax.legend(handles=handles, fontsize="x-small", handletextpad=0.2, **kwargs)
+
+
+def metric_groups(metrics: list[str]) -> dict[str, list[str]]:
+    """The event metrics split into two figures of at most about five rows,
+    so each stays legible at page width: the levels ("levels"), and the
+    durations, signal-to-noise ratio, and kurtosis ("other")."""
+    levels = [m for m in metrics if m.startswith("L")]
+    return {"levels": levels, "other": [m for m in metrics if m not in levels]}
 
 
 def plot_event_metrics(
@@ -1396,14 +1404,21 @@ def make_report(site: SiteConfig, events: list) -> None:
             kurt.filter(pl.col("event") == event.name) if kurt is not None else None
         )
         title = f"Event {event.name} (pile {event.pile}), {_window(event)} UTC"
-        _save(
-            plot_event_metrics(
-                df_e, cfg.metrics, title, kurt_e, site.kurtosis.window_s
-            ),
-            figs / event.name / "metrics.png",
-            cfg.dpi,
-            cfg.titles,
-        )
+        for group, metrics in metric_groups(cfg.metrics).items():
+            if not metrics:
+                continue
+            _save(
+                plot_event_metrics(
+                    df_e,
+                    metrics,
+                    title,
+                    kurt_e if group == "other" else None,
+                    site.kurtosis.window_s,
+                ),
+                figs / event.name / f"metrics_{group}.png",
+                cfg.dpi,
+                cfg.titles,
+            )
         _save(
             plot_level_histograms(df_e, cfg.histogram_metric, title),
             figs / event.name / "levels.png",
@@ -1676,14 +1691,20 @@ def write_document(
 
         doc.orientation(landscape=False)
         event_figs = figs / event.name
-        rows_text = ", ".join(_word_name(m) for m in cfg.metrics)
-        if kurt_e is not None and not kurt_e.is_empty():
-            rows_text += f", and kurtosis β in {k_win:g}-s windows"
-        figure(
-            event_figs / "metrics.png",
-            f"Pulse metrics for {when} versus time at {at_range(sensors)}, colored "
-            f"by hydrophone (serial number and depth). From top: {rows_text}.",
-        )
+        groups = metric_groups(cfg.metrics)
+        for group, metrics in groups.items():
+            if not metrics:
+                continue
+            rows_text = [_word_name(m) for m in metrics]
+            if group == "other" and kurt_e is not None and not kurt_e.is_empty():
+                rows_text.append(f"kurtosis β in {k_win:g}-s windows")
+            kind = "Levels" if group == "levels" else "Durations and other metrics"
+            figure(
+                event_figs / f"metrics_{group}.png",
+                f"{kind} of the pulses for {when} versus time at "
+                f"{at_range(sensors)}, colored by hydrophone (serial number and "
+                f"depth). From top: {_and(rows_text)}.",
+            )
         figure(
             event_figs / "psd.png",
             f"Mean-square sound pressure spectral density level L_{{p,f}} of the pulses for {when} (red) and of "

@@ -139,7 +139,7 @@ def test_compare_masking(run, site, tmp_path):
     assert (out / "figures" / "interpulse_vs_range.png").exists()
     assert (out / "figures" / "interpulse_bands.png").exists()
     m = pl.read_csv(out / "tables" / "masking.csv")
-    # Noise only between pulses: no excess, so the listening space is intact.
+    # Noise only between pulses: no excess, so the communication space is intact.
     assert m["dL_median"].abs().max() < 0.5
     assert m["area_left"].min() > 0.95
     mb = pl.read_csv(out / "tables" / "masking_bands.csv")
@@ -151,7 +151,7 @@ def test_compare_masking(run, site, tmp_path):
     assert mb["range_left"].min() > 10 ** (-1.0 / 10)
     assert (out / "figures" / "masking_bands.png").exists()
     doc = docx.Document(str(out / "compare.docx"))
-    assert any("Listening space" in p.text for p in doc.paragraphs)
+    assert any("Communication space remaining" in p.text for p in doc.paragraphs)
     assert any("detected between strikes, as a percentage" in p.text for p in doc.paragraphs)
 
 

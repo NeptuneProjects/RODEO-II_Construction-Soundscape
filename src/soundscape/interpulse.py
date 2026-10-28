@@ -85,10 +85,10 @@ def summary_band(
 
 
 def masking_factors(delta_db, spreading: float):
-    """Listening range and area remaining when the noise rises by `delta_db`
-    and transmission loss is `spreading` log10 r: the range scales by
-    10^(-dL/N) and the area, a simple form of the communication space of
-    Clark et al. (2009), by its square. No reduction for dL <= 0."""
+    """Detection range and communication space (Clark et al. 2009) remaining
+    when the noise rises by `delta_db` and transmission loss is `spreading`
+    log10 r: the range scales by 10^(-dL/N) and the communication space, an
+    area, by its square. No reduction for dL <= 0."""
     d = np.clip(np.asarray(delta_db, dtype=float), 0.0, None)
     r = 10 ** (-d / spreading)
     return r, r**2

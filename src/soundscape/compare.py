@@ -485,7 +485,7 @@ def plot_background_vs_range(pts: pl.DataFrame, fits: pl.DataFrame) -> plt.Figur
     ax.set_ylabel(f"Pre-piling background noise {METRIC_LABELS['Lp'][0]} (dB)")
     _range_axis(ax)
     ax.grid(True, which="both", lw=0.3)
-    ax.legend(fontsize="x-small", ncol=2, loc="upper right")
+    ax.legend(fontsize="x-small", ncol=1, loc="upper right")
     return fig
 
 
@@ -567,9 +567,9 @@ def plot_interpulse_bands(data: list[SiteData]) -> plt.Figure | None:
 
 
 def masking_table(data: list[SiteData]) -> pl.DataFrame:
-    """Listening space remaining between strikes, per site and sensor: the
+    """Communication space remaining between strikes, per site and sensor: the
     median over events of the inter-pulse excess on the detection channel,
-    and the listening range and area remaining at the site's spreading
+    and the detection range and communication space remaining at the site's spreading
     coefficient (see interpulse.masking_factors)."""
     rows = []
     for d in data:
@@ -595,9 +595,9 @@ def masking_table(data: list[SiteData]) -> pl.DataFrame:
 
 
 def masking_bands_table(data: list[SiteData]) -> pl.DataFrame:
-    """Listening space remaining between strikes in each decidecade band, per
+    """Communication space remaining between strikes in each decidecade band, per
     site and sensor: the median over events of the band's inter-pulse excess
-    on the detection channel (as in plot_interpulse_bands), and the listening
+    on the detection channel (as in plot_interpulse_bands), and the detection
     range and area remaining at the site's spreading coefficient."""
     frames = []
     for d in data:
@@ -819,7 +819,7 @@ def _interpulse_section(
     bands: bool,
     masking_bands: bool,
 ) -> None:
-    """Inter-pulse figures, the listening-space table, and the listening range
+    """Inter-pulse figures, the communication space table, and the detection range
     by decidecade band in compare.docx."""
     site = data[0].site
     ip = site.interpulse
@@ -872,14 +872,15 @@ def _interpulse_section(
     doc.table(
         columns,
         rows,
-        "Listening space remaining between strikes for low-frequency cetaceans "
+        "Communication space remaining between strikes for low-frequency cetaceans "
         f"({band}), per site and sensor on the detection channel. ΔL_{{ip}} is "
         "the median over events of the inter-pulse excess over the background noise, with the "
         "smallest and largest event medians in brackets. With cylindrical "
         f"spreading, transmission loss {ip.spreading:g} log_{{10}} r, a rise ΔL "
         "in the noise scales the range at which a call can be detected by "
-        f"10^{{−ΔL/{ip.spreading:g}}} and the area, a simple form of the "
-        "communication space of Clark et al. (2009), by the square of that. "
+        f"10^{{−ΔL/{ip.spreading:g}}} and the communication space of Clark et "
+        "al. (2009), the area within which the call can be detected, by the "
+        "square of that. "
         "This is a first-order estimate: it treats the median "
         "excess as steady and ignores critical ratios and call structure. The "
         "summary band combines all frequencies; the reduction in each "

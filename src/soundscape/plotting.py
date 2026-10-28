@@ -1,7 +1,9 @@
 """Diagnostic figures."""
 
+import textwrap
 from pathlib import Path
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
@@ -52,7 +54,18 @@ def plot_detections(
         f"{title}: {strike.sum()} strikes, band {config.band[0]:g}-"
         f"{config.band[1]:g} Hz, threshold {config.threshold:g}"
     )
-    ax0.legend(loc="upper right", markerscale=4, fontsize="small")
+    # Outside the axes, to the left, with wrapped labels, so the legend hides
+    # no data.
+    handles, labels = ax0.get_legend_handles_labels()
+    fig.legend(
+        handles,
+        [textwrap.fill(label, 16) for label in labels],
+        loc="center right",
+        bbox_to_anchor=(0.0, 0.62),
+        markerscale=4,
+        fontsize="small",
+        frameon=False,
+    )
 
     cf = scored["e_rel"].to_numpy()
     ax1.scatter(t[other], cf[other], s=2, c="0.7")
@@ -62,7 +75,10 @@ def plot_detections(
     ax1.set_yscale("log")
     ax1.set_ylabel("Relative mean-square\nsound pressure")
     ax1.set_xlabel("Time (UTC)")
-    fig.autofmt_xdate()
+    # Hours and minutes on the ticks; the date once, at the lower right.
+    locator = mdates.AutoDateLocator()
+    ax1.xaxis.set_major_locator(locator)
+    ax1.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(destination, dpi=150, bbox_inches="tight")

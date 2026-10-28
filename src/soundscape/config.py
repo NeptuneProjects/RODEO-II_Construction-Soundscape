@@ -236,7 +236,7 @@ class InterpulseConfig(StrictModel):
     top of the decidecade bands). The inter-pulse interval on a hydrophone
     runs from t95 of one pulse to t5 of the next. Intervals longer than `max_spacing_factor` times the
     event's median strike spacing are pauses and are left out. Excess over
-    background is summarized at `thresholds_db`, and the listening-space
+    background is summarized at `thresholds_db`, and the communication space
     reduction uses transmission loss `spreading` log10 r (cylindrical by
     default, for the shallow-water waveguide).
     """

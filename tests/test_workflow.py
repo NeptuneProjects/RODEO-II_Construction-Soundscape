@@ -7,6 +7,7 @@ import h5py
 import numpy as np
 import polars as pl
 import pytest
+from docx.shared import RGBColor
 
 from soundscape import detect, extract, kurtosis, spectra, supplement, workflow
 from soundscape.compare import compare_sites
@@ -211,7 +212,7 @@ def test_report(wf, site):
     wf.report()
 
     figs = site.report_dir / "figures"
-    for name in ("metrics.png", "levels.png", "psd.png", "bands.png"):
+    for name in ("metrics_levels.png", "metrics_other.png", "levels.png", "psd.png", "bands.png"):
         assert (figs / "E1" / name).stat().st_size > 0
     for metric in site.report.range_metrics:
         assert (figs / f"{metric}_vs_range.png").exists()
@@ -263,10 +264,12 @@ def test_report(wf, site):
     assert [r.cells[2].text for r in stats_rows[1:]] == ["722013", "722014"]
     assert [r.cells[3].text for r in stats_rows[1:]] == ["16.2", "17.7"]
     assert stats_rows[0].cells[4].text.startswith("Lp,pk")
-    # Range figures and four figures for the event (no inventory, so no
-    # coverage figure).
-    assert len(doc.inline_shapes) == len(site.report.range_metrics) + 4
+    # Range figures and five figures for the event, the metrics in two (no
+    # inventory, so no coverage figure).
+    assert len(doc.inline_shapes) == len(site.report.range_metrics) + 5
     captions = [p for p in doc.paragraphs if p.style.name == "Caption"]
+    # Captions are black, as in the pandoc documents.
+    assert doc.styles["Caption"].font.color.rgb == RGBColor(0, 0, 0)
     assert len(captions) == len(doc.inline_shapes) + len(doc.tables)
     assert sum("SEQ Table" in p._p.xml for p in captions) == 3
     # The event table sits on a landscape page between portrait ones.
@@ -280,7 +283,7 @@ def test_report_without_titles(wf, site):
     wf.extract()
     wf.metrics()
     wf.report()
-    assert (site.report_dir / "figures" / "E1" / "metrics.png").exists()
+    assert (site.report_dir / "figures" / "E1" / "metrics_levels.png").exists()
     assert (site.report_dir / "report.docx").exists()
 
 

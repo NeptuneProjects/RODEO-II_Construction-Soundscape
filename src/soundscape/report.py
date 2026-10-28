@@ -803,51 +803,6 @@ def plot_metric_vs_range(df: pl.DataFrame, metric: str, site_name: str) -> plt.F
     return fig
 
 
-def plot_interpulse_decay(
-    decay: pl.DataFrame, thresholds: list[float], site_name: str
-) -> plt.Figure:
-    """Median summary-band level against time since the strike, relative to
-    the background noise median, on each sensor's detection channel (`decay` already
-    filtered to them): one panel per sensor, one line per event, colored by
-    range. Times where fewer than half the event's intervals reach are
-    dropped (the strike spacing varies)."""
-    sensors = (
-        decay.group_by("sensor").agg(pl.col("range_m").min()).sort("range_m")["sensor"]
-    )
-    fig, axs = plt.subplots(
-        1,
-        len(sensors),
-        figsize=(2.6 * len(sensors) + 1.0, 3.0),
-        layout="constrained",
-        sharey=True,
-        squeeze=False,
-    )
-    norm = plt.Normalize(decay["range_m"].min() / 1e3, decay["range_m"].max() / 1e3)
-    cmap = plt.get_cmap("viridis")
-    for ax, sensor in zip(axs[0], sensors):
-        d = decay.filter(pl.col("sensor") == sensor)
-        for (_,), c in d.group_by(["event"], maintain_order=True):
-            c = c.filter(pl.col("n") >= 0.5 * pl.col("n").max()).sort("t_s")
-            ax.plot(
-                c["t_s"] + 0.05,
-                c["dL"],
-                lw=0.8,
-                color=cmap(norm(c["range_m"][0] / 1e3)),
-            )
-        ax.axhline(0, color="k", lw=0.6)
-        for t in thresholds:
-            ax.axhline(t, color="gray", lw=0.6, ls=":")
-        ax.set_title(sensor)
-        ax.set_xlabel("Time since strike (s)")
-        ax.grid(True, lw=0.3)
-    axs[0, 0].set_ylabel("Level above background noise (dB)")
-    fig.colorbar(
-        plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axs[0, -1], label="Range (km)"
-    )
-    fig.suptitle(f"{site_name}: inter-pulse decay, detection channels")
-    return fig
-
-
 def plot_interpulse_cdf(hist: pl.DataFrame, site_name: str) -> plt.Figure:
     """Cumulative distributions of the 100 ms summary-band levels between
     pulses and in the background noise windows, pooled over events, on each sensor's
@@ -1346,7 +1301,7 @@ def _and(items: list[str]) -> str:
 def interpulse_summaries(site: SiteConfig) -> dict[str, pl.DataFrame]:
     """Site-wide inter-pulse summaries written by the interpulse stage; empty
     if not run."""
-    paths = {k: site.interpulse_summary_path(k) for k in ("excess", "decay", "hist")}
+    paths = {k: site.interpulse_summary_path(k) for k in ("excess", "hist")}
     if not all(p.exists() for p in paths.values()):
         return {}
     out = {k: pl.read_csv(p) for k, p in paths.items()}
@@ -1492,16 +1447,6 @@ def make_report(site: SiteConfig, events: list) -> None:
         )
 
     if inter:
-        _save(
-            plot_interpulse_decay(
-                detection_channels(site, inter["decay"]),
-                site.interpulse.thresholds_db,
-                site.name,
-            ),
-            figs / "interpulse_decay.png",
-            cfg.dpi,
-            cfg.titles,
-        )
         _save(
             plot_interpulse_cdf(detection_channels(site, inter["hist"]), site.name),
             figs / "interpulse_cdf.png",
@@ -1654,17 +1599,6 @@ def write_document(
     if inter:
         lo, hi = interpulse_band(site)
         doc.heading("Inter-pulse sound field", 2)
-        figure(
-            figs / "interpulse_decay.png",
-            f"Decay of the sound field between strikes at {site.name}: median "
-            f"mean-square sound pressure level L_{{p}} in {lo:g} Hz to {hi / 1e3:.1f} kHz over "
-            f"consecutive {site.interpulse.segment_s * 1e3:g}-ms segments after "
-            f"each strike, relative to the median of the same quantity over the "
-            f"background noise window before the event, on each sensor's detection "
-            f"channel. Lines are events, colored by range; dotted lines mark "
-            + _and([f"{t:g} dB" for t in site.interpulse.thresholds_db])
-            + " above the background noise.",
-        )
         figure(
             figs / "interpulse_cdf.png",
             f"Cumulative distributions of the {site.interpulse.segment_s * 1e3:g}-ms "

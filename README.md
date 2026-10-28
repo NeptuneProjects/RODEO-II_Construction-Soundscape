@@ -165,7 +165,7 @@ results/<site>/
 ├── background.h5                      # background noise segment levels, band levels, spectral densities per event/sensor
 ├── background_spl.csv                 # background noise Lp and beta per 1 min interval
 ├── kurtosis.csv                    # beta per 60 s window of each event
-├── interpulse_{excess,decay,bands,hist}.csv  # inter-pulse summaries
+├── interpulse_{excess,bands,hist}.csv  # inter-pulse summaries
 ├── logs/<command>_<time>.log       # one log per run, as printed to the terminal
 └── report/                         # figures and LaTeX tables
 ```
@@ -188,7 +188,6 @@ Every table identifies its rows by `event`, `sensor`, `channel`, and where relev
 | `events/<e>/interpulse_intervals_<s>.parquet` | inter-pulse interval | `start_s` (its start, t<sub>95</sub> of the strike, from the detection time), `duration_s`, `n_segments`; medians over its segments of `Lp`, `Lp_band`, and each decidecade band `Lp_<f>Hz` |
 | `events/<e>/interpulse_background_<s>.parquet` | 100 ms segment of the background noise window | `start` (segment start time), `Lp`, `Lp_band`, `Lp_<f>Hz` |
 | `interpulse_excess.csv` | hydrophone | `Lp_median`, `Lp_p5`, `Lp_p95` (inter-pulse L<sub>p,ip</sub>), `Lp_bg` (background noise median), `dL` (ΔL<sub>ip</sub>, dB), `above_<t>` (fraction of inter-pulse time more than t dB above `Lp_bg`), `interval_share` (fraction of the strike spacing in the interval) |
-| `interpulse_decay.csv` | hydrophone and time since strike | `t_s`, `dL` (median level less `Lp_bg`), `n` (segments) |
 | `interpulse_bands.csv` | hydrophone and decidecade band | `nominal_Hz`, `dL` |
 | `interpulse_hist.csv` | hydrophone, `kind` (`interpulse` or `background`), and level bin | `Lp_band` (bin's lower edge), `count` |
 | `compare/tables/summary.csv` | event, sensor, detection channel | `range_km`, `pulses`, medians of `range_metrics`, `LEp_cum_event` (L<sub>E,p,cum</sub> over the event) |
@@ -214,7 +213,6 @@ and for the whole site:
 - `figures/coverage.png`: when each sensor was recording, with every event in the site file on the same time axis, its window, and the sensors that recorded it. It is drawn from the inventories, so it needs no metrics.
 - `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
 - `tables/detections.tex`: strikes and median SNR<sub>det</sub> per event and sensor.
-- `figures/interpulse_decay.png`: median inter-pulse level above the background noise against time since the strike, per sensor, one line per event colored by range (after `interpulse`).
 - `figures/interpulse_cdf.png`: cumulative distributions of the 100 ms levels between strikes and in the background noise windows, per sensor.
 
 After `interpulse`, the event tables also give the inter-pulse level L<sub>p,ip</sub>, its median excess over the background noise ΔL<sub>ip</sub>, and the percentage of inter-pulse time more than each of `[interpulse] thresholds_db` above the background noise.

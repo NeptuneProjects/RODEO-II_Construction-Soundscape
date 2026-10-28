@@ -10,7 +10,6 @@ from soundscape.compare import compare_sites
 from soundscape.config import InterpulseConfig
 from soundscape.interpulse import (
     band_excess,
-    decay_curves,
     excess_summary,
     is_band_label,
     masking_factors,
@@ -53,7 +52,7 @@ def test_t5_t95_offsets_match_t90(run, site):
     assert m.filter("valid")["t5"].median() == pytest.approx(0.0, abs=0.01)
 
 
-def test_segments_decay_to_noise(run, site):
+def test_segments_between_strikes(run, site):
     s = pl.read_parquet(site.interpulse_segments_path("E1", "VLA1"))
     assert {"Lp", "Lp_band", "in_interval", "valid"} <= set(s.columns)
     assert "in_guan" not in s.columns
@@ -108,22 +107,19 @@ def test_summaries_against_background(run, site):
     tail = seg.filter("valid", "in_interval", pl.col("t_s") > 0.15)
     assert tail["Lp_band"].max() < ex["Lp_bg"].max() + 3
     assert ex["interval_share"].min() > 0.8
-    d = decay_curves(seg, bg).filter(pl.col("channel") == 0)
-    assert d["dL"][0] > 20
-    assert d.filter(pl.col("t_s").is_between(0.25, 1.25))["dL"].abs().max() < 1.0
     b = band_excess(read_interpulse(site, events, "intervals"), bg)
     assert b["nominal_Hz"].min() == pytest.approx(12.5)
     assert b["dL"].abs().median() < 0.5
 
 
 def test_summaries_and_report(run, site):
-    for kind in ("excess", "decay", "bands", "hist"):
+    for kind in ("excess", "bands", "hist"):
         assert site.interpulse_summary_path(kind).exists()
     ex = pl.read_csv(site.interpulse_summary_path("excess"))
     assert "definition" not in ex.columns
     workflow.Workflow(site).report()
     figs = site.report_dir / "figures"
-    assert (figs / "interpulse_decay.png").exists()
+    assert not (figs / "interpulse_decay.png").exists()
     assert (figs / "interpulse_cdf.png").exists()
     tex = (site.report_dir / "tables" / "E1_event.tex").read_text()
     assert "L_{p,\\mathrm{ip}}" in tex and "> 3 dB" in tex

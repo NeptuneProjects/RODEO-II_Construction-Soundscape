@@ -439,22 +439,6 @@ def excess_summary(
     )
 
 
-def decay_curves(segments: pl.DataFrame, background: pl.DataFrame) -> pl.DataFrame:
-    """Median summary-band level against time since the strike, relative to
-    the background noise median, per event and hydrophone: KEYS, t_s, dL, n."""
-    bg = background_medians(background, ["Lp_band"])
-    return (
-        segments.filter("valid")
-        .join(bg, on=KEYS, how="inner")
-        .group_by(*KEYS, "t_s")
-        .agg(
-            (pl.col("Lp_band") - pl.col("Lp_band_bg")).median().alias("dL"),
-            pl.len().alias("n"),
-        )
-        .sort(*KEYS, "t_s")
-    )
-
-
 def band_excess(intervals: pl.DataFrame, background: pl.DataFrame) -> pl.DataFrame:
     """Median excess over the background noise in each decidecade band, per event and
     hydrophone: KEYS, nominal_Hz, dL. Interval levels are the medians over
@@ -496,7 +480,6 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
     and sensor at a time (the segment files are large):
 
         excess       `excess_summary` per hydrophone
-        decay        `decay_curves` per hydrophone
         bands        `band_excess` per hydrophone
         hist         counts of summary-band segment levels in HIST_BIN_DB bins
                      (`Lp_band`, the bin's lower edge) per hydrophone, for
@@ -504,7 +487,7 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
     """
     thresholds = site.interpulse.thresholds_db
     out: dict[str, list[pl.DataFrame]] = {
-        k: [] for k in ("excess", "decay", "bands", "hist")
+        k: [] for k in ("excess", "bands", "hist")
     }
 
     def hist(df: pl.DataFrame, kind: str) -> pl.DataFrame:
@@ -533,7 +516,6 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
                 continue
             seg, iv, bg = (pl.read_parquet(p) for p in paths)
             out["excess"].append(excess_summary(seg, bg, thresholds))
-            out["decay"].append(decay_curves(seg, bg))
             out["bands"].append(band_excess(iv, bg))
             out["hist"] += [
                 hist(seg.filter("valid", "in_interval"), "interpulse"),

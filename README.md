@@ -184,10 +184,10 @@ Every table identifies its rows by `event`, `sensor`, `channel`, and where relev
 | `background_spl.csv` | 1 min interval of the background noise window | `interval_start`; `Lp`, mean-square sound pressure level; `beta`, kurtosis β |
 | `kurtosis.csv` | 60 s window of an event | `window_start`, `n_strikes` (detected strikes in it), `beta` |
 | `report/tables/<e>_bands.csv` | hydrophone and decidecade band | `nominal_Hz` (ISO 266 label), `f_n` (exact center frequency, Hz); median, 5th and 95th percentiles (`_median`, `_p5`, `_p95`) of `LEp_ss` (pulse band L<sub>E,p,ss,n</sub>), `Lp_bg` (background noise band L<sub>p,n</sub>), and `LEp_bg` (background noise band L<sub>E,p,bg,n</sub> over T<sub>W</sub>) |
-| `events/<e>/interpulse_segments_<s>.parquet` | 100 ms segment after a strike | `t_s` (time since the strike), `spacing_s` (to the next strike), `Lp` (broadband), `Lp_band` (summary band), `in_interval` (from t<sub>95</sub> to the next t<sub>5</sub>), `in_guan` (Guan et al.'s interval) |
-| `events/<e>/interpulse_intervals_<s>.parquet` | inter-pulse interval | `start_s` (its start, t<sub>95</sub> of the strike, from the detection time), `duration_s`, `n_segments`; medians over its segments of `Lp`, `Lp_band`, `Lp_band_guan`, and each decidecade band `Lp_<f>Hz` |
+| `events/<e>/interpulse_segments_<s>.parquet` | 100 ms segment after a strike | `t_s` (time since the strike), `spacing_s` (to the next strike), `Lp` (broadband), `Lp_band` (summary band), `in_interval` (from t<sub>95</sub> to the next t<sub>5</sub>) |
+| `events/<e>/interpulse_intervals_<s>.parquet` | inter-pulse interval | `start_s` (its start, t<sub>95</sub> of the strike, from the detection time), `duration_s`, `n_segments`; medians over its segments of `Lp`, `Lp_band`, and each decidecade band `Lp_<f>Hz` |
 | `events/<e>/interpulse_background_<s>.parquet` | 100 ms segment of the background noise window | `start` (segment start time), `Lp`, `Lp_band`, `Lp_<f>Hz` |
-| `interpulse_excess.csv` | hydrophone and `definition` (`interval` or `guan`) | `Lp_median`, `Lp_p5`, `Lp_p95` (inter-pulse L<sub>p,ip</sub>), `Lp_bg` (background noise median), `dL` (ΔL<sub>ip</sub>, dB), `above_<t>` (fraction of inter-pulse time more than t dB above `Lp_bg`), `interval_share` (fraction of the strike spacing in the interval) |
+| `interpulse_excess.csv` | hydrophone | `Lp_median`, `Lp_p5`, `Lp_p95` (inter-pulse L<sub>p,ip</sub>), `Lp_bg` (background noise median), `dL` (ΔL<sub>ip</sub>, dB), `above_<t>` (fraction of inter-pulse time more than t dB above `Lp_bg`), `interval_share` (fraction of the strike spacing in the interval) |
 | `interpulse_decay.csv` | hydrophone and time since strike | `t_s`, `dL` (median level less `Lp_bg`), `n` (segments) |
 | `interpulse_bands.csv` | hydrophone and decidecade band | `nominal_Hz`, `dL` |
 | `interpulse_hist.csv` | hydrophone, `kind` (`interpulse` or `background`), and level bin | `Lp_band` (bin's lower edge), `count` |
@@ -309,9 +309,9 @@ Column names transliterate the symbols (see *Data dictionary*).
 | `Lp_pk` | L<sub>p,pk</sub> | peak sound pressure level, 20 log10 (p<sub>pk</sub> / p₀) (dB re 1 uPa) |
 | `Lp_pkpk` | L<sub>p,pk-pk</sub> | peak-to-peak sound pressure level, 20 log10 (p<sub>pk-pk</sub> / p₀) (dB re 1 uPa) |
 | `Lp_90` | L<sub>p,90</sub> | mean-square sound pressure level over τ<sub>90%</sub> (dB re 1 uPa) |
-| `LEp_ss` | L<sub>E,p,ss</sub> | single-strike sound exposure level (SEL<sub>ss</sub> in ISO 18406), 10 log10 (∫p² dt / E<sub>p,0</sub>) over the integration time T<sub>W</sub>, i.e. 100 % of the pulse energy (dB re 1 uPa² s) |
+| `LEp_ss` | L<sub>E,p,ss</sub> | single-strike sound exposure level (SEL<sub>ss</sub> in ISO 18406), 10 log10 (∫p² dt / E<sub>p,0</sub>) over the integration time T<sub>W</sub>, i.e. 100% of the pulse energy (dB re 1 uPa² s) |
 | `LEp_cum` | L<sub>E,p,cum</sub> | cumulative sound exposure level (SEL<sub>cum</sub> in ISO 18406), running over valid strikes in time order (dB re 1 uPa² s) |
-| `tau90` | τ<sub>90%</sub> | pulse duration: the 90 % energy signal duration, from 5 % to 95 % of the pulse's sound exposure (s; reported in ms) |
+| `tau90` | τ<sub>90%</sub> | pulse duration: the 90% energy signal duration, from 5% to 95% of the pulse's sound exposure (s; reported in ms) |
 | `t_r`, `t_d` | t<sub>r</sub>, t<sub>d</sub> | rise time, from the start of τ<sub>90%</sub> to the peak within it, and decay time, from that peak to its end (s; reported in ms) |
 | `t5`, `t95` | t<sub>5</sub>, t<sub>95</sub> | start and end of τ<sub>90%</sub> relative to the detection time (s) |
 | `TW` | T<sub>W</sub> | the pulse's integration time (s): the window, or less where strikes are closer together (see below) |
@@ -319,7 +319,7 @@ Column names transliterate the symbols (see *Data dictionary*).
 | `SNR` | SNR | added at report time: `LEp_ss` less the sound exposure level of the background noise over `TW` (dB; see below) |
 
 The window (`[extract] pre_s + post_s`, 1.2 s) is long enough to hold the whole pulse, so `LEp_ss` includes the background noise in it and is biased upward at low signal-to-noise ratio.
-Where strikes are less than a window apart (10 % of pulses at Vineyard Wind 1, 0.2 % at South Fork Wind), each pulse is integrated only up to halfway to the neighboring detection times, so that the integration time is the period between strikes (ISO 18406 §6.4.2.1.2) and no sound counts twice in `LEp_cum` (`extract.integration_bounds`). Every metric, the spectral densities, and the band exposures use this integration time; clicks are sought in the whole window.
+Where strikes are less than a window apart (10% of pulses at Vineyard Wind 1, 0.2% at South Fork Wind), each pulse is integrated only up to halfway to the neighboring detection times, so that the integration time is the period between strikes (ISO 18406 §6.4.2.1.2) and no sound counts twice in `LEp_cum` (`extract.integration_bounds`). Every metric, the spectral densities, and the band exposures use this integration time; clicks are sought in the whole window.
 
 The peak for `t_r` and `t_d` is taken within τ<sub>90%</sub>, so both are non-negative; `Lp_pk` is the peak over the whole integration time.
 
@@ -356,10 +356,10 @@ Background noise is not reported as one broadband level in the tables: half its 
 
 The `interpulse` stage (Optional Task 2.4.4) follows Guan et al. (2015, JASA 138:3447; 2017, POMA 27:070023).
 It reads the raw data from each strike's detection time to the next and computes the mean-square sound pressure level in consecutive 100 ms segments (`[interpulse] segment_s`), broadband, in the summary band (`band`, default 20 Hz to the top decidecade band, which covers low-frequency cetaceans within the recorded bandwidth), and in each decidecade band, from the DFT of each segment.
-Segments are tagged as inside the inter-pulse interval, from t95 of one pulse to t5 of the next on that hydrophone (`t95` and `t5` in the metrics tables, relative to the detection time), and inside Guan et al.'s interval, 0.1 s after one strike to 0.5 s before the next (`guan_after_s`, `guan_before_s`), measured from detection times where Guan et al. use pulse peaks.
+Segments are tagged as inside the inter-pulse interval, from t95 of one pulse to t5 of the next on that hydrophone (`t95` and `t5` in the metrics tables, relative to the detection time).
 Event-sensor pairs with fewer than `min_strikes` (100) detected strikes, such as an abandoned soft start, are left out of the analysis from `metrics.csv` on.
 Intervals with an invalid pulse at either end, in a recording gap, or longer than `max_spacing_factor` (2) times the median strike spacing (a pause) are left out.
-Each interval is summarized by the median of its segments, because the 5 % of each pulse's energy outside τ<sub>90%</sub> would dominate a mean square.
+Each interval is summarized by the median of its segments, because the 5% of each pulse's energy outside τ<sub>90%</sub> would dominate a mean square.
 The same segments over the background noise window before each event give the reference; the excess ΔL_ip is the median inter-pulse level less the background noise median.
 With transmission loss N log₁₀ r, the excess scales the detection range by 10^(−ΔL/N) and the listening area, a simple form of the communication space of Clark et al. (2009), by 10^(−2ΔL/N).
 It takes about 2 min per event and sensor (3,000 strikes) and 2.2 GB of memory; rerun `metrics` first if its tables predate `t5`.

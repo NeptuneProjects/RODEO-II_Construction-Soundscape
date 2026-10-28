@@ -1344,13 +1344,12 @@ def _and(items: list[str]) -> str:
 
 
 def interpulse_summaries(site: SiteConfig) -> dict[str, pl.DataFrame]:
-    """Site-wide inter-pulse summaries written by the interpulse stage
-    (excess restricted to the t95-to-t5 interval); empty if not run."""
+    """Site-wide inter-pulse summaries written by the interpulse stage; empty
+    if not run."""
     paths = {k: site.interpulse_summary_path(k) for k in ("excess", "decay", "hist")}
     if not all(p.exists() for p in paths.values()):
         return {}
     out = {k: pl.read_csv(p) for k, p in paths.items()}
-    out["excess"] = out["excess"].filter(pl.col("definition") == "interval")
     pairs = out["excess"].select("event", "sensor").unique()
     few = [(e, s) for e, s in pairs.iter_rows() if too_few_strikes(site, e, s)]
     if few:
@@ -1703,9 +1702,9 @@ def write_document(
             "symbols of ISO 18405; L_{E,p,ss} is the single-strike sound exposure "
             "level (SEL_{ss}), over the pulse's integration time (the "
             f"{site.extract.pre_s + site.extract.post_s:g}-s pulse window, or the "
-            f"period between strikes where they are closer), which holds 100 % of "
+            f"period between strikes where they are closer), which holds 100% of "
             f"the pulse energy, and L_{{p,90}} is the mean-square sound pressure "
-            f"level over the 90 % energy signal duration τ_{{90%}}.",
+            f"level over the 90% energy signal duration τ_{{90%}}.",
             align,
             font_pt=7.5,
         )

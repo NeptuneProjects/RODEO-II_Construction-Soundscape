@@ -234,10 +234,7 @@ class InterpulseConfig(StrictModel):
     each strike's detection time to the next (the incremental computation
     method of Guan et al. 2015), broadband and in `band` (default 20 Hz to the
     top of the decidecade bands). The inter-pulse interval on a hydrophone
-    runs from t95 of one pulse to t5 of the next; Guan et al.'s interval,
-    `guan_after_s` after one strike to `guan_before_s` before the next (from
-    detection times, which stand in for their pulse peaks), is tagged as
-    well. Intervals longer than `max_spacing_factor` times the
+    runs from t95 of one pulse to t5 of the next. Intervals longer than `max_spacing_factor` times the
     event's median strike spacing are pauses and are left out. Excess over
     background is summarized at `thresholds_db`, and the listening-space
     reduction uses spreading coefficients `spreading` (the first is nominal).
@@ -247,8 +244,6 @@ class InterpulseConfig(StrictModel):
     chunk_s: float = Field(default=300.0, gt=0.0)
     band: tuple[float, float | None] = (20.0, None)
     max_spacing_factor: float = Field(default=2.0, gt=1.0)
-    guan_after_s: float = Field(default=0.1, ge=0.0)
-    guan_before_s: float = Field(default=0.5, ge=0.0)
     thresholds_db: list[float] = [3.0, 10.0]
     spreading: list[float] = [15.0, 10.0, 20.0]
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)

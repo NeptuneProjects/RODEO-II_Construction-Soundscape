@@ -45,6 +45,10 @@ def british_spellings(text: str) -> list[str]:
     return out
 
 
+# A number followed by a space (or a no-break or thin space) and a percent sign.
+SPACED_PERCENT = re.compile("[0-9][ \u00a0\u2009\u202f]%")
+
+
 def test_british_spellings_are_found():
     assert british_spellings("the neighbouring centre, labelled grey") == [
         "neighbouring", "centre", "labelled", "grey"
@@ -89,6 +93,8 @@ def test_no_ambient_in_report_wording(site, monkeypatch, tmp_path):
     assert not bad, bad[:5]
     british = sorted({w for t in texts for w in british_spellings(t)})
     assert not british, british
+    spaced = [t for t in texts if SPACED_PERCENT.search(t)]
+    assert not spaced, spaced[:5]
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,5 +103,8 @@ DOCS = [ROOT / "README.md", *sorted((ROOT / "reports" / "hdr_report").glob("*.md
 
 @pytest.mark.parametrize("path", DOCS, ids=lambda p: p.name)
 def test_documents_use_american_spelling(path):
-    british = sorted(set(british_spellings(path.read_text())))
+    text = path.read_text()
+    british = sorted(set(british_spellings(text)))
     assert not british, british
+    spaced = SPACED_PERCENT.findall(text)
+    assert not spaced, spaced

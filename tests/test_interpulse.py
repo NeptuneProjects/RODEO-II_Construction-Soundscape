@@ -55,7 +55,8 @@ def test_t5_t95_offsets_match_t90(run, site):
 
 def test_segments_decay_to_noise(run, site):
     s = pl.read_parquet(site.interpulse_segments_path("E1", "VLA1"))
-    assert {"Lp", "Lp_band", "in_interval", "in_guan", "valid"} <= set(s.columns)
+    assert {"Lp", "Lp_band", "in_interval", "valid"} <= set(s.columns)
+    assert "in_guan" not in s.columns
     ok = s.filter("valid", pl.col("strike") > 100)
     by_t = (
         ok.group_by(pl.col("t_s").round(1))
@@ -70,11 +71,7 @@ def test_segments_decay_to_noise(run, site):
     # Unit-variance white noise through 20-707 Hz of a 1 kHz Nyquist band.
     noise = 10 * np.log10((707 - 20) / 1000)
     assert ok.filter("in_interval")["Lp_band"].median() == pytest.approx(noise, abs=0.5)
-    # Guan's interval starts 0.1 s after the strike and ends 0.5 s before
-    # the next; ours follows tau90, so excludes the pulse at both ends.
-    g = ok.filter("in_guan")
-    assert g["t_s"].min() == pytest.approx(0.1)
-    assert (g["t_s"] + 0.1).max() <= 1.0 + 1e-6
+    # The interval follows tau90, so excludes the pulse at both ends.
     inside = ok.filter("in_interval")
     assert inside["t_s"].min() >= 0.1
     assert inside["Lp_band"].max() < noise + 10
@@ -88,9 +85,6 @@ def test_interval_medians(run, site):
     assert strong["duration_s"].median() == pytest.approx(1.5 - 0.045, abs=0.05)
     # Between pulses there is only the noise: about 0 dB above 10 Hz.
     assert strong["Lp"].median() == pytest.approx(0.0, abs=0.5)
-    assert strong["Lp_band_guan"].median() == pytest.approx(
-        strong["Lp_band"].median(), abs=0.5
-    )
     bands = [c for c in i.columns if is_band_label(c)]
     # For white noise the decidecade bands (11.2-707 Hz) hold their share of
     # the 1 kHz band.
@@ -126,7 +120,7 @@ def test_summaries_and_report(run, site):
     for kind in ("excess", "decay", "bands", "hist"):
         assert site.interpulse_summary_path(kind).exists()
     ex = pl.read_csv(site.interpulse_summary_path("excess"))
-    assert set(ex["definition"]) == {"interval", "guan"}
+    assert "definition" not in ex.columns
     workflow.Workflow(site).report()
     figs = site.report_dir / "figures"
     assert (figs / "interpulse_decay.png").exists()

@@ -11,11 +11,11 @@ transliterate the symbols:
     LEp_ss   L_E,p,ss      single-strike sound exposure level (SEL_ss)  dB re 1 uPa^2 s
     LEp_cum  L_E,p,cum     cumulative sound exposure level (SEL_cum),
                            running over valid strikes in time order     dB re 1 uPa^2 s
-    tau90    tau_90%       pulse duration: 90 % energy signal duration  s
+    tau90    tau_90%       pulse duration: 90% energy signal duration   s
     t_r      t_r           start of tau90 to the largest p^2 within it  s
     t_d      t_d           that peak to the end of tau90                s
     t5, t95  t_5, t_95     start and end of tau90 from the detection
-                           time (5 % and 95 % of the sound exposure)    s
+                           time (5% and 95% of the sound exposure)      s
     TW       T_W           integration time of the pulse                s
     clicks                 clicks from the recording chain in the window
 

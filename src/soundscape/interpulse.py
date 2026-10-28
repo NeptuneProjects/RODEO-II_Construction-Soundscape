@@ -10,9 +10,7 @@ starting at each strike's detection time and running to the next strike, on
 every hydrophone. Each segment is tagged with its time since the strike and
 with whether it lies in the inter-pulse interval: from t95 of the pulse to t5
 of the next on that hydrophone (the energy-based pulse duration, see
-soundscape.metrics), or, for comparison, Guan et al.'s interval from 100 ms
-after the peak of one pulse to 500 ms before the peak of the next, with the
-detection times in place of the peaks. Levels are broadband (above the
+soundscape.metrics). Levels are broadband (above the
 10 Hz high-pass), in a summary band (by default 20 Hz to the top of the
 decidecade bands, which covers the low-frequency cetacean hearing group
 within the recorded bandwidth), and in each decidecade band, all from the DFT
@@ -20,8 +18,8 @@ of the segment (10 Hz resolution for 100 ms, so bands below about 50 Hz,
 narrower than a bin, are approximate).
 
 Each interval is summarized by the median over its segments, not by its
-mean square: the interval holds the last 5 % of one pulse's energy and the
-first 5 % of the next, which would otherwise dominate it. The same segments
+mean square: the interval holds the last 5% of one pulse's energy and the
+first 5% of the next, which would otherwise dominate it. The same segments
 over the background noise window before each event give the background noise distribution,
 computed the same way so that the two compare like for like.
 
@@ -195,14 +193,13 @@ def interpulse(
         segments: one row per segment and hydrophone: channel, strike (of the
             interval's first strike), t_s (segment start after that strike),
             spacing_s, Lp, Lp_band, in_interval (inside t95 to the next t5),
-            in_guan (inside Guan et al.'s interval), valid (both strikes'
+            valid (both strikes'
             pulses valid on the hydrophone and the segment not in a gap).
         intervals: one row per interval and hydrophone: channel, strike, time,
             spacing_s, start_s and duration_s of the inter-pulse interval
             (t95 to the next t5), n_segments (valid segments inside it), and
             the median over them of Lp, Lp_band and each decidecade band level
-            `L_<nominal>`, and Lp_band_guan, the median of Lp_band over Guan
-            et al.'s interval. Levels are NaN where no valid segment lies in
+            `L_<nominal>`. Levels are NaN where no valid segment lies in
             the interval.
     """
     iv = strike_intervals(metrics, config)
@@ -257,11 +254,6 @@ def interpulse(
         in_interval = (t_s >= per["t95"][:, f0]) & (
             t_s + config.segment_s <= sp + per["t5"][:, f1]
         )
-        in_guan = np.broadcast_to(
-            (t_s >= config.guan_after_s - 1e-9)
-            & (t_s + config.segment_s <= sp - config.guan_before_s + 1e-9),
-            valid.shape,
-        )
         strike = strike_ids[k][which]
         seg_frames.append(
             pl.DataFrame(
@@ -273,7 +265,6 @@ def interpulse(
                     "Lp": lv["Lp"].reshape(-1).astype(np.float32),
                     "Lp_band": lv["Lp_band"].reshape(-1).astype(np.float32),
                     "in_interval": in_interval.reshape(-1),
-                    "in_guan": in_guan.reshape(-1),
                     "valid": valid.reshape(-1),
                 }
             )
@@ -287,7 +278,6 @@ def interpulse(
                 "channel": np.repeat(channels, len(j)),
                 "strike": np.tile(strike, n_ch),
                 "use": use.reshape(-1),
-                "guan": (valid & in_guan).reshape(-1),
                 "Lp": lv["Lp"].reshape(-1),
                 "Lp_band": lv["Lp_band"].reshape(-1),
                 **{
@@ -299,7 +289,6 @@ def interpulse(
         med = rows.group_by("channel", "strike").agg(
             pl.col("use").sum().alias("n_segments"),
             *[pl.col(c).filter("use").median() for c in ["Lp", "Lp_band", *names]],
-            pl.col("Lp_band").filter("guan").median().alias("Lp_band_guan"),
         )
         start95 = per["t95"][:, first[k]]
         end5 = spacing[k] + per["t5"][:, first[k] + 1]
@@ -419,21 +408,20 @@ def excess_summary(
     segments: pl.DataFrame,
     background: pl.DataFrame,
     thresholds_db: list[float],
-    column: str = "in_interval",
 ) -> pl.DataFrame:
-    """Per event and hydrophone, over valid inter-pulse segments (`column`
-    tags which): the summary-band level (median, 5th and 95th percentiles),
+    """Per event and hydrophone, over valid inter-pulse segments: the
+    summary-band level (median, 5th and 95th percentiles),
     the background noise median, the median excess dL = median - background noise median, and
     the fraction of inter-pulse time more than each threshold above the
     background noise median (`above_<t>`); also the share of the strike spacing taken
     up by the interval (`interval_share`)."""
     bg = background_medians(background, ["Lp_band"])
     seg = segments.join(bg, on=KEYS, how="inner")
-    inside = seg.filter("valid", pl.col(column))
+    inside = seg.filter("valid", "in_interval")
     share = (
         seg.filter("valid")
         .group_by(KEYS)
-        .agg(pl.col(column).mean().alias("interval_share"))
+        .agg(pl.col("in_interval").mean().alias("interval_share"))
     )
     excess = pl.col("Lp_band") - pl.col("Lp_band_bg")
     out = inside.group_by(KEYS).agg(
@@ -507,8 +495,7 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
     """Site-wide inter-pulse summaries over the events' outputs, one event
     and sensor at a time (the segment files are large):
 
-        excess       `excess_summary` per hydrophone, `definition` "interval"
-                     (t95 to the next t5) or "guan"
+        excess       `excess_summary` per hydrophone
         decay        `decay_curves` per hydrophone
         bands        `band_excess` per hydrophone
         hist         counts of summary-band segment levels in HIST_BIN_DB bins
@@ -545,15 +532,7 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
             if not all(p.exists() for p in paths):
                 continue
             seg, iv, bg = (pl.read_parquet(p) for p in paths)
-            for definition, column in (
-                ("interval", "in_interval"),
-                ("guan", "in_guan"),
-            ):
-                out["excess"].append(
-                    excess_summary(seg, bg, thresholds, column).with_columns(
-                        definition=pl.lit(definition)
-                    )
-                )
+            out["excess"].append(excess_summary(seg, bg, thresholds))
             out["decay"].append(decay_curves(seg, bg))
             out["bands"].append(band_excess(iv, bg))
             out["hist"] += [

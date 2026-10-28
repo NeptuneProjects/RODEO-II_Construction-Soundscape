@@ -141,11 +141,14 @@ def test_compare_masking(run, site, tmp_path):
     m = pl.read_csv(out / "tables" / "masking.csv")
     # Noise only between pulses: no excess, so the listening space is intact.
     assert m["dL_median"].abs().max() < 0.5
-    assert m["area_left_N15"].min() > 0.95
+    assert m["area_left"].min() > 0.95
     mb = pl.read_csv(out / "tables" / "masking_bands.csv")
     assert mb.select("site", "sensor").unique().height == m.height
     assert mb["nominal_Hz"].n_unique() > 10
-    assert mb["range_left_N15"].min() > 0.9
+    # Under 1 dB of excess in any band: over 80% of the range is left with
+    # cylindrical spreading.
+    assert mb["dL_median"].max() < 1.0
+    assert mb["range_left"].min() > 10 ** (-1.0 / 10)
     assert (out / "figures" / "masking_bands.png").exists()
     doc = docx.Document(str(out / "compare.docx"))
     assert any("Listening space" in p.text for p in doc.paragraphs)

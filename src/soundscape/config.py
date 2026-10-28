@@ -237,7 +237,8 @@ class InterpulseConfig(StrictModel):
     runs from t95 of one pulse to t5 of the next. Intervals longer than `max_spacing_factor` times the
     event's median strike spacing are pauses and are left out. Excess over
     background is summarized at `thresholds_db`, and the listening-space
-    reduction uses spreading coefficients `spreading` (the first is nominal).
+    reduction uses transmission loss `spreading` log10 r (cylindrical by
+    default, for the shallow-water waveguide).
     """
 
     segment_s: float = Field(default=0.1, gt=0.0)
@@ -245,7 +246,7 @@ class InterpulseConfig(StrictModel):
     band: tuple[float, float | None] = (20.0, None)
     max_spacing_factor: float = Field(default=2.0, gt=1.0)
     thresholds_db: list[float] = [3.0, 10.0]
-    spreading: list[float] = [15.0, 10.0, 20.0]
+    spreading: float = Field(default=10.0, gt=0.0)
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
 
 

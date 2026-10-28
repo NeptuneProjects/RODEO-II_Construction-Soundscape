@@ -193,8 +193,8 @@ Every table identifies its rows by `event`, `sensor`, `channel`, and where relev
 | `compare/tables/summary.csv` | event, sensor, detection channel | `range_km`, `pulses`, medians of `range_metrics`, `LEp_cum_event` (L<sub>E,p,cum</sub> over the event) |
 | `compare/tables/range_fits.csv` | site and `metric` | least-squares fit of the per-event medians to a − b log10(R / 1 km): `a_dB` (level at 1 km), `b_dB_per_decade` |
 | `compare/tables/background_fits.csv` | site and sensor (`all` for every sensor) | the same fit of the background noise level: `n`, `range_min_km`, `range_max_km`, `a_dB`, `b_dB_per_decade`, `r` (correlation of the level with log10 R) |
-| `compare/tables/masking.csv` | site and sensor | `dL_median`, `dL_min`, `dL_max` (over events); `range_left_N<N>`, `area_left_N<N>` (fractions of listening range and area left for spreading N log10 r) |
-| `compare/tables/masking_bands.csv` | site, sensor, and decidecade band `nominal_Hz` | `range_min_km`, `range_max_km`, `events`; `dL_median`, `dL_min`, `dL_max` (the band's inter-pulse excess over events); `range_left_N<N>`, `area_left_N<N>` as in `masking.csv` |
+| `compare/tables/masking.csv` | site and sensor | `dL_median`, `dL_min`, `dL_max` (over events); `range_left`, `area_left` (fractions of listening range and area left for cylindrical spreading, `[interpulse] spreading` log10 r) |
+| `compare/tables/masking_bands.csv` | site, sensor, and decidecade band `nominal_Hz` | `range_min_km`, `range_max_km`, `events`; `dL_median`, `dL_min`, `dL_max` (the band's inter-pulse excess over events); `range_left`, `area_left` as in `masking.csv` |
 
 ## Figures and tables
 
@@ -255,7 +255,7 @@ reads each site's results (valid pulses from events it does not exclude) and wri
 - `figures/background_vs_range.png`, `tables/background_fits.csv`: pre-piling background noise level (median 100 ms Lp in the inter-pulse summary band, from `interpulse`) against range, with fits of a − b log10 R per site and per sensor and the correlation r; at South Fork it falls about 23 dB per decade, showing that the construction vessels and equipment at the pile dominate the pre-piling background noise.
 - `figures/interpulse_vs_range.png`: inter-pulse excess over the background noise, and the percentage of inter-pulse time above each threshold, against range.
 - `figures/interpulse_bands.png`: inter-pulse excess over the background noise per decidecade band and sensor.
-- `tables/masking.csv`: median inter-pulse excess per site and sensor, and the listening range and area remaining at each of `[interpulse] spreading`.
+- `tables/masking.csv`: median inter-pulse excess per site and sensor, and the listening range and area remaining for cylindrical spreading (`[interpulse] spreading`, default 10).
 - `tables/masking_bands.csv`, `figures/masking_bands.png`: the same for the median excess in each decidecade band; the figure shows the detection range remaining against band frequency.
 - `compare.docx`: the above with captions.
 
@@ -359,7 +359,7 @@ Event-sensor pairs with fewer than `min_strikes` (100) detected strikes, such as
 Intervals with an invalid pulse at either end, in a recording gap, or longer than `max_spacing_factor` (2) times the median strike spacing (a pause) are left out.
 Each interval is summarized by the median of its segments, because the 5% of each pulse's energy outside τ<sub>90%</sub> would dominate a mean square.
 The same segments over the background noise window before each event give the reference; the excess ΔL_ip is the median inter-pulse level less the background noise median.
-With transmission loss N log₁₀ r, the excess scales the detection range by 10^(−ΔL/N) and the listening area, a simple form of the communication space of Clark et al. (2009), by 10^(−2ΔL/N).
+With cylindrical spreading, transmission loss 10 log₁₀ r (`[interpulse] spreading`), the excess scales the detection range by 10^(−ΔL/10) and the listening area, a simple form of the communication space of Clark et al. (2009), by 10^(−ΔL/5).
 It takes about 2 min per event and sensor (3,000 strikes) and 2.2 GB of memory; rerun `metrics` first if its tables predate `t5`.
 
 ### Differences from the 2025 South Fork analysis

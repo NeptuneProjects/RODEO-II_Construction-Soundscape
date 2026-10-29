@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPORT="$ROOT/reports/hdr_report"
 STYLES="$REPORT/styles.docx"
-SECTIONS=("metrics" "pulse_detector" "interpulse" "background")
+SECTIONS=("metrics" "pulse_detector" "interpulse" "background" "correlation")
 
 if [[ $# -ge 1 ]]; then
     DRAFT="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"

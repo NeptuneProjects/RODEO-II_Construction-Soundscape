@@ -5,14 +5,12 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
+from rodeo import plotting
 from scipy.signal.windows import hann
 from tritonoa.data.reader import read_numpy
 
-from rodeo import plotting
-
 plt.style.use(Path("config/jasa_fig_style.mplstyle"))
-
-STATION_ORDER = ["SHRU921_Tetra", "SHRU905_VLA1", "SHRU920_VLA2"]
 
 
 def parse_stations(files: list[Path]) -> list[str]:
@@ -21,9 +19,12 @@ def parse_stations(files: list[Path]) -> list[str]:
 
 def main(args: argparse.Namespace) -> None:
     files = list(args.data.glob("*.npz"))
-    files.sort(key=lambda x: STATION_ORDER.index("_".join(x.stem.split("_")[1:])))
-    stations = parse_stations(files)
     streams = [read_numpy(file) for file in files]
+    # Nearest sensor first: the strike arrives there first.
+    order = np.argsort([ds.stats.time_init for ds in streams])
+    files = [files[k] for k in order]
+    streams = [streams[k] for k in order]
+    stations = parse_stations(files)
 
     fig = plotting.plot_pulse_dispersion(
         streams,

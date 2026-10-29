@@ -422,3 +422,5 @@ Apart from the three shell scripts above, `scripts/` holds the propagation, plot
 These scripts take their input and output paths as command-line arguments, read the earlier output formats, and need the `full` extra (`uv sync --extra full`).
 The legacy soundscape pipeline (inventory, manual pulse extraction, metrics, background noise, pulse spectra) has been replaced by the `soundscape` package.
 The 2025 event, detector, and equipment tables that some of these scripts read (`config/legacy/`) have been removed; their contents now live in `config/sites/southfork.toml` and `config/sites/southfork/piles.csv`.
+The 2025 inventory configuration (`config/inventory.toml`) has been removed as well.
+`scripts/extract_dispersion_data.py` now reads the workflow's detections and inventories and the site file's calibration (run `detect` and `inventory` first, on the server) and writes the strike windows that `scripts/plotting/plot_dispersion.py` plots.

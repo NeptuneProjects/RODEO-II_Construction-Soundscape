@@ -167,7 +167,7 @@ def test_stacked_image():
     corr = np.full((5, 5), 0.5)
     np.fill_diagonal(corr, 1.0)
     corr[2] = corr[:, 2] = np.nan
-    grid, t, image = stacked(corr, time, max_dt=3.0, n_grid=7)
+    _grid, t, image = stacked(corr, time, max_dt=3.0, n_grid=7)
     assert t.tolist() == [0.0, 1.5, 3.0, 4.5, 6.0]
     assert np.all(np.isnan(image[2]))
     np.testing.assert_allclose(image[0, [0, 3]], [1.0, 0.5])

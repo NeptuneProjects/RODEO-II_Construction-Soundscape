@@ -1001,19 +1001,19 @@ wheels = [
 
 [[package]]
 name = "juliacall"
-version = "0.9.36"
+version = "0.9.37"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "juliapkg" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/99/90195276278570b6cbcddc073c23e74dece3f532197b5d76e9707661070e/juliacall-0.9.36.tar.gz", hash = "sha256:75abfe60fffc48161f5b4b3619ee0e2299df75c738aa88da4302ec718c6c9c7d", size = 499998, upload-time = "2026-09-18T22:00:56.065Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/8e/bf4fdb7bcb077747ba0031bea51023e559476c0ab7fc8ba8ea0d59a608eb/juliacall-0.9.37.tar.gz", hash = "sha256:246db2ec648cd50dcd446d02323e0b187949a2ab50e06e32fe6db1a4323eba75", size = 502805, upload-time = "2026-10-19T19:03:30.597Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/f4/a3b1e086a91ecfe6ac8d5617963d594714e9a5cfa824128f238eb4110f3d/juliacall-0.9.36-py3-none-any.whl", hash = "sha256:9dc27dbe9da5a78e8d402ffebe0470708ebca4b5fcf7890017819e7dc1a2b85b", size = 12751, upload-time = "2026-09-18T22:00:54.01Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/fc/97ba79312c411bb25e31ea460b7080b2da932c884086967e5d06ddf80107/juliacall-0.9.37-py3-none-any.whl", hash = "sha256:e8413f2081e77c04a4ba379bdb93620c0753bd7bc335127773c318ce3526b1b9", size = 12774, upload-time = "2026-10-19T19:03:29.144Z" },
 ]
 
 [[package]]
 name = "juliapkg"
-version = "0.1.27"
+version = "0.1.28"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -1021,9 +1021,9 @@ dependencies = [
     { name = "tomli" },
     { name = "tomlkit" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/cb/e1bdfe4e8ad365532f560a39c87a70a9ef40464d82226bbc022654d54243/juliapkg-0.1.27.tar.gz", hash = "sha256:89cbdc56030f3de82c26bc84e2c0e99740675b6c14a746585522b84f52c47e08", size = 26018, upload-time = "2026-09-19T13:03:33.308Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/b1/965f7b066df488d7328fb448cf09b5647d2958266742e8e124239135c9fb/juliapkg-0.1.28.tar.gz", hash = "sha256:24f3ca545263e090f57521f47900bbb94ee7ebc9d91c55c82e4148aaf1b58e36", size = 27403, upload-time = "2026-10-24T21:24:35.341Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/fc/019ecccb5ed710aa38ae4173facf0bb411d855d2d137ad29ec31c16342da/juliapkg-0.1.27-py3-none-any.whl", hash = "sha256:c2f6c53a65a4f4a1c124db8400ad48c9f142b2def67b2db86703f0cedc42c150", size = 23087, upload-time = "2026-09-19T13:03:31.648Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/18/5b8ebec81b05ce0bf355118992cdb94a97cdfe19e60662f99e2059e61b73/juliapkg-0.1.28-py3-none-any.whl", hash = "sha256:e09640eb5d3465eda0ea40fda912048cc06f34e1a3880eb9e46f4e2c836d8d48", size = 23609, upload-time = "2026-10-24T21:24:34.26Z" },
 ]
 
 [[package]]
@@ -2490,8 +2490,8 @@ wheels = [
 
 [[package]]
 name = "rodeo"
-version = "0.1.0"
-source = { git = "https://github.com/NeptuneProjects/RODEO-II.git#a41600c4a3f9b8c8d9564db341f45412d54e4e66" }
+version = "0.1.1"
+source = { git = "https://github.com/NeptuneProjects/RODEO-II.git#c1d766746765afd7cfd05518418aca024f8dc3bb" }
 dependencies = [
     { name = "bathyreq" },
     { name = "cmasher" },
@@ -2726,6 +2726,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyproj" },
     { name = "python-docx" },
+    { name = "rodeo" },
     { name = "scipy" },
     { name = "tritonoa" },
 ]
@@ -2734,7 +2735,6 @@ dependencies = [
 full = [
     { name = "jupyterlab" },
     { name = "netcdf4" },
-    { name = "rodeo" },
 ]
 
 [package.dev-dependencies]
@@ -2754,7 +2754,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2" },
     { name = "pyproj" },
     { name = "python-docx", specifier = ">=1.2.0" },
-    { name = "rodeo", marker = "extra == 'full'", git = "https://github.com/NeptuneProjects/RODEO-II.git" },
+    { name = "rodeo", git = "https://github.com/NeptuneProjects/RODEO-II.git" },
     { name = "scipy" },
     { name = "tritonoa", git = "https://github.com/TritonOA/TritonOA.git" },
 ]

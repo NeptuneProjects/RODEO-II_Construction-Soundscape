@@ -14,7 +14,9 @@ uv sync --group dev
 ```
 
 [TritonOA](https://github.com/TritonOA/TritonOA) is used to read raw recordings and is installed from GitHub.
-The analyses in `scripts/` outside the workflow need the `full` extra (`uv sync --extra full`), which also installs [rodeo](https://github.com/NeptuneProjects/RODEO-II) from the main branch on GitHub, at the commit recorded in `uv.lock`.
+[rodeo](https://github.com/NeptuneProjects/RODEO-II) is installed from the main branch on GitHub, at the commit recorded in `uv.lock`.
+Its Julia module `CrossCorr.jl` computes the correlation between pulses (the `correlation` stage) through [juliacall](https://github.com/JuliaPy/PythonCall.jl), which installs Julia and the module's packages (listed in rodeo's `juliapkg.json`) into `.venv/julia_env` the first time the stage runs.
+The analyses in `scripts/` outside the workflow need the `full` extra (`uv sync --extra full`).
 To pick up newer rodeo commits, run `uv lock --upgrade-package rodeo`.
 To work on rodeo alongside this project, run `uv pip install -e ../core` after `uv sync`; the next `uv sync` restores the locked commit.
 
@@ -29,11 +31,13 @@ graph LR
    A --> F[background]
    B --> H[kurtosis]
    D --> I[interpulse]
+   D --> J[correlation]
    D --> G[report]
    E --> G
    F --> G
    H --> G
    I --> G
+   J --> G
 ```
 
 | Stage       | What it does                                                                 |
@@ -46,6 +50,7 @@ graph LR
 | `background` | Background noise (ISO 18406) in a window preceding each event: levels, band levels, and spectral densities over pulse-length segments; kurtosis per minute. |
 | `kurtosis`  | Kurtosis of the recording in 60 s windows over each event (Martin et al. 2020). |
 | `interpulse` | Sound between strikes in 100 ms segments, and the same over the background noise window (Guan et al. 2015); writes site-wide summaries. |
+| `correlation` | Maximum normalized cross-correlation between every pair of pulses on each hydrophone, 10–200 Hz; writes site-wide summaries against the time between strikes. |
 | `report`    | Figures, LaTeX tables, and a Word document (see [Figures and tables](#figures-and-tables)). |
 | `supplement` | PDF data supplement tabulating every pulse (see [Data supplement](#data-supplement)). |
 
@@ -174,12 +179,14 @@ results/<site>/
 │   ├── psd_<sensor>.h5
 │   ├── interpulse_segments_<sensor>.parquet   # 100 ms levels between strikes
 │   ├── interpulse_intervals_<sensor>.parquet  # medians per interval, per band
-│   └── interpulse_background_<sensor>.parquet    # 100 ms levels before the event
+│   ├── interpulse_background_<sensor>.parquet    # 100 ms levels before the event
+│   └── correlation_<sensor>.h5     # rho and lag of every pair of pulses, per channel
 ├── metrics.csv                     # all events, sensors, channels
 ├── background.h5                      # background noise segment levels, band levels, spectral densities per event/sensor
 ├── background_spl.csv                 # background noise Lp and beta per 1 min interval
 ├── kurtosis.csv                    # beta per 60 s window of each event
 ├── interpulse_{excess,bands,hist}.csv  # inter-pulse summaries
+├── correlation_{bins,hist,summary}.csv  # correlation against time between strikes
 ├── logs/<command>_<time>.log       # one log per run, as printed to the terminal
 └── report/                         # figures and LaTeX tables
 ```
@@ -204,6 +211,10 @@ Every table identifies its rows by `event`, `sensor`, `channel`, and where relev
 | `interpulse_excess.csv` | hydrophone | `Lp_median`, `Lp_p5`, `Lp_p95` (inter-pulse L<sub>p,ip</sub>), `Lp_bg` (background noise median), `dL` (ΔL<sub>ip</sub>, dB), `above_<t>` (fraction of inter-pulse time more than t dB above `Lp_bg`), `interval_share` (fraction of the strike spacing in the interval) |
 | `interpulse_bands.csv` | hydrophone and decidecade band | `nominal_Hz`, `dL` |
 | `interpulse_hist.csv` | hydrophone, `kind` (`interpulse` or `background`), and level bin | `Lp_band` (bin's lower edge), `count` |
+| `events/<e>/correlation_<s>.h5` | channel, pulse i, pulse j | `corr`, the maximum normalized cross-correlation coefficient ρ<sub>ij</sub> (NaN where either pulse is invalid on the hydrophone); `lag`, its lag (s; positive when pulse i arrives later in its window than pulse j); with `strike` and `time` of each pulse |
+| `correlation_bins.csv` | hydrophone and bin of time between strikes | `dt_s` (bin center, `[correlation] bin_s` wide), `n` (pairs), `rho_p5`, `rho_median`, `rho_p95` |
+| `correlation_hist.csv` | hydrophone, bin of time between strikes, and bin of ρ<sub>ij</sub> | `dt_s`, `rho` (bin's lower edge, 0.02 wide), `count` |
+| `correlation_summary.csv` | hydrophone | `n_pulses` (valid), `rho_first` (median ρ<sub>ij</sub> of the first time bin, consecutive strikes), `T_<x>` (time between strikes at which `rho_median` first falls below x, by linear interpolation from ρ = 1 at 0 s; `inf` if it never does within `max_dt_s`) |
 | `compare/tables/summary.csv` | event, sensor, detection channel | `range_km`, `pulses`, medians of `range_metrics`, `LEp_cum_event` (L<sub>E,p,cum</sub> over the event) |
 | `compare/tables/range_fits.csv` | site and `metric` | least-squares fit of the per-event medians to a − b log10(R / 1 km): `a_dB` (level at 1 km), `b_dB_per_decade` |
 | `compare/tables/background_fits.csv` | site and sensor (`all` for every sensor) | the same fit of the background noise level: `n`, `range_min_km`, `range_max_km`, `a_dB`, `b_dB_per_decade`, `r` (correlation of the level with log10 R) |
@@ -221,6 +232,8 @@ Every table identifies its rows by `event`, `sensor`, `channel`, and where relev
 - `tables/<event>.tex`: per-pulse metrics, one row per hydrophone (sensor, range, serial number, depth), each as the median with the 5th and 95th percentiles in brackets. Times are in ms.
 - `tables/<event>_event.tex`: event-level quantities per hydrophone: serial number, valid pulses, L<sub>E,p,cum</sub> over them, the percentage of them with SNR below 10 dB, kurtosis over the 60 s windows that contain strikes, and background noise kurtosis (median [5th, 95th percentile]), with the mean wind speed and significant wave height if configured.
 - `tables/<event>_bands.csv`: the band statistics behind `bands.png`, per sensor, hydrophone, and band, with the background noise mean-square sound pressure level in each band (see *Data dictionary*).
+- `figures/<event>/correlation.png`: ρ<sub>ij</sub> of each pulse with every later pulse within `max_dt_s`, against the time between the strikes and the time of the first strike, one panel per hydrophone (rows) and sensor (columns).
+- `tables/<event>_correlation.tex`: per hydrophone, the valid pulses, the median ρ<sub>ij</sub> of consecutive strikes, and the decorrelation times T<sub>x</sub> for each of `[correlation] levels`.
 
 and for the whole site:
 
@@ -228,6 +241,7 @@ and for the whole site:
 - `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
 - `tables/detections.tex`: strikes and median SNR<sub>det</sub> per event and sensor.
 - `figures/interpulse_cdf.png`: cumulative distributions of the 100 ms levels between strikes and in the background noise windows, per sensor.
+- `figures/correlation_density.png`: probability density of ρ<sub>ij</sub> against the time between strikes, pooled over the events, with its median, per hydrophone and sensor.
 
 After `interpulse`, the event tables also give the inter-pulse level L<sub>p,ip</sub>, its median excess over the background noise ΔL<sub>ip</sub>, and the percentage of inter-pulse time more than each of `[interpulse] thresholds_db` above the background noise.
 
@@ -376,6 +390,16 @@ The same segments over the background noise window before each event give the re
 With cylindrical spreading, transmission loss 10 log₁₀ r (`[interpulse] spreading`), the excess scales the detection range by 10^(−ΔL/10) and the communication space of Clark et al. (2009), the area within which a call can be detected, by 10^(−ΔL/5).
 It takes about 2 min per event and sensor (3,000 strikes) and 2.2 GB of memory; rerun `metrics` first if its tables predate `t5`.
 
+### Correlation between pulses
+
+The `correlation` stage measures how similar the pulses of an event are to one another, as in Jenkins & Lin (Sci. Rep., Eqs. 5–6 and Fig. 3).
+For pulses p<sub>i</sub> and p<sub>j</sub> on one hydrophone, ρ<sub>ij</sub> is the maximum over lag τ of their normalized cross-correlation, R<sub>ij</sub>(τ) / (R<sub>ii</sub>(0) R<sub>jj</sub>(0))<sup>1/2</sup>; it is 1 for identical waveforms at any delay within the window.
+Each pulse window from `extract` is linearly detrended, tapered over 5% of its length at each end (`taper_pc`), band-passed from 10 Hz to 200 Hz (`band`; the bubble curtains attenuated much of the pile-driving energy above 200 Hz), and downsampled by the largest integer factor that keeps the sampling rate at or above 1 kHz (`target_fs`).
+ρ<sub>ij</sub> and its lag are computed for every pair of pulses valid on the hydrophone (as in `metrics.csv`) by rodeo's `CrossCorr.corr_matrix` on `threads` Julia threads, and the full matrices are saved.
+The summaries take every pair no more than `max_dt_s` (300 s) apart and give, in `bin_s` (2 s) bins of the time between strikes, the 5th, 50th and 95th percentiles of ρ<sub>ij</sub> and its histogram; the decorrelation time T<sub>x</sub> is the time between strikes at which the median first falls below x (`levels`, 0.9 and 0.8).
+The largest event (4,877 strikes) takes about 10 s per hydrophone on 256 threads of castilon, and its matrices take 190 MB each in memory.
+Event-sensor pairs with fewer than `min_strikes` strikes are skipped.
+
 ## Adding a site
 
 1. Write `config/sites/<site>/events.csv` and `piles.csv`.
@@ -392,7 +416,7 @@ The tests use synthetic recordings and need no data.
 
 ## Legacy scripts
 
-Apart from the three shell scripts above, `scripts/` holds the propagation, coherence, plotting, and reporting code from the 2025 South Fork analysis.
+Apart from the three shell scripts above, `scripts/` holds the propagation, plotting, and reporting code from the 2025 South Fork analysis.
 These scripts take their input and output paths as command-line arguments, read the earlier output formats, and need the `full` extra (`uv sync --extra full`).
 The legacy soundscape pipeline (inventory, manual pulse extraction, metrics, background noise, pulse spectra) has been replaced by the `soundscape` package.
 The 2025 event, detector, and equipment tables that some of these scripts read (`config/legacy/`) have been removed; their contents now live in `config/sites/southfork.toml` and `config/sites/southfork/piles.csv`.

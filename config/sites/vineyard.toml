@@ -43,6 +43,15 @@ filter = { type = "highpass", freq = 10.0 }
 nperseg = 16384
 overlap = 0.95
 
+# Correlation between every pair of pulses on each hydrophone, 10-200 Hz: the
+# bubble curtains attenuated much of the pile-driving energy above 200 Hz.
+# Summaries describe the correlation out to 300 s between strikes; `threads`
+# is the number of Julia threads for the full matrices (castilon has 384 cores).
+[correlation]
+band = [10.0, 200.0]
+max_dt_s = 300.0
+threads = 256
+
 [report]
 style = "config/jasa_fig_style.mplstyle"
 author = "William F. Jenkins, Ph.D."

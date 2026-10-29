@@ -17,18 +17,18 @@ dependencies = [
     "pydantic>=2",
     "pyproj",
     "python-docx>=1.2.0",
+    "rodeo",
     "scipy",
     "TritonOA",
 ]
 
 [project.optional-dependencies]
 # Analyses in scripts/ outside the soundscape workflow: propagation modeling,
-# pulse coherence, CTD and meteorological figures, and the study area map.
-# Only what rodeo does not already provide.
+# CTD and meteorological figures, and the study area map. Only what rodeo
+# (bathyreq, cmasher, cmocean, juliacall, tqdm) does not already provide.
 full = [
     "jupyterlab", # the notebooks in scripts/
     "netcdf4",    # scripts/plotting/plot_pile_sim.py
-    "rodeo",      # brings bathyreq, cmasher, cmocean, juliacall, tqdm
 ]
 
 [dependency-groups]

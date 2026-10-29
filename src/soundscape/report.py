@@ -1,8 +1,8 @@
 """Figures, LaTeX tables, and a Word document from the workflow outputs.
 
 Figures (data coverage, event metrics, pulse PSD distributions, decidecade
-band levels, level histograms, metrics versus range) and tables (event
-summaries) for any site. The Word document collects them with captions. The
+band levels, level histograms, correlation between pulses, metrics versus
+range) and tables (event summaries) for any site. The Word document collects them with captions. The
 pulse-by-pulse table is a separate PDF (see soundscape.supplement).
 
 Output layout:
@@ -10,10 +10,10 @@ Output layout:
     report/
     ├── report.docx
     ├── supplement.pdf                      (soundscape.supplement)
-    ├── figures/<event>/{metrics_levels,metrics_other,psd,bands,levels}.png
+    ├── figures/<event>/{metrics_levels,metrics_other,psd,bands,levels,correlation}.png
     ├── figures/<metric>_vs_range.png
-    ├── figures/coverage.png
-    └── tables/{detections,<event>,<event>_event}.tex, <event>_bands.csv
+    ├── figures/{coverage,interpulse_cdf,correlation_density}.png
+    └── tables/{detections,<event>,<event>_event,<event>_correlation}.tex, <event>_bands.csv
 """
 
 import logging
@@ -29,6 +29,7 @@ import polars as pl
 from matplotlib.ticker import NullFormatter, ScalarFormatter
 
 from soundscape.config import SiteConfig
+from soundscape.correlation import RHO_BIN, level_label, read_correlation, stacked
 from soundscape.document import Document
 from soundscape.events import distance_m, load_events, source_range, too_few_strikes
 from soundscape.interpulse import summary_band
@@ -63,6 +64,8 @@ METRIC_LABELS = {
     # its median excess over the background noise.
     "Lp_ip": ("$L_{p,\\mathrm{ip}}$", DB),
     "dL_ip": ("$\\Delta L_\\mathrm{ip}$", "dB"),
+    # Maximum normalized cross-correlation coefficient between two pulses.
+    "rho": ("$\\rho_{ij}$", ""),
 }
 
 # The same labels for Word (see soundscape.document for the markup).
@@ -82,6 +85,7 @@ WORD_LABELS = {
     "WVHT": ("H_{1/3}", "m"),
     "Lp_ip": ("L_{p,ip}", "dB re 1 µPa"),
     "dL_ip": ("ΔL_{ip}", "dB"),
+    "rho": ("ρ_{ij}", ""),
 }
 
 # Factors from the units in the metrics tables to the units shown, and the
@@ -852,6 +856,170 @@ def plot_interpulse_cdf(hist: pl.DataFrame, site_name: str) -> plt.Figure:
     return fig
 
 
+# Lower end of the color scale of rho (as in Jenkins & Lin, Sci. Rep., Fig. 3),
+# and upper end of the color scale of its probability density (a density of
+# 10 is 20% of pairs in one RHO_BIN-wide bin).
+RHO_MIN = 0.2
+RHO_DENSITY_MAX = 10.0
+
+
+def _hydrophone_grid(n_rows: int, n_cols: int) -> tuple[plt.Figure, np.ndarray]:
+    """Panels for each hydrophone (rows) at each sensor (columns)."""
+    return plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(2.3 * n_cols + 0.9, 1.6 * n_rows + 0.7),
+        layout="constrained",
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+
+
+def _panel_label(ax: plt.Axes, text: str, top: bool = True) -> None:
+    ax.text(
+        0.03,
+        0.95 if top else 0.05,
+        text,
+        transform=ax.transAxes,
+        fontsize="x-small",
+        va="top" if top else "bottom",
+        ha="left",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 1.0},
+    )
+
+
+def plot_event_correlation(
+    paths: dict[str, Path], sensors: list[tuple[str, float]], max_dt: float, title: str
+) -> plt.Figure:
+    """rho_ij of each pulse i with every later pulse j within `max_dt`,
+    against the time between the strikes, for each hydrophone (rows) at each
+    sensor (columns, by range); `paths` are the sensors' correlation files."""
+    files = {s: read_correlation(paths[s]) for s, _ in sensors}
+    n_rows = max(len(a["channels"]) for _, a in files.values())
+    fig, axs = _hydrophone_grid(n_rows, len(sensors))
+    mesh = None
+    for col, (s, r) in enumerate(sensors):
+        data, attrs = files[s]
+        axs[0, col].set_title(f"{s} ({r / 1e3:.1f} km)", fontsize="small")
+        for row in range(n_rows):
+            ax = axs[row, col]
+            if row >= len(attrs["channels"]):
+                ax.set_visible(False)
+                continue
+            grid, t, image = stacked(data["corr"][row], data["time"], max_dt)
+            mesh = ax.pcolormesh(
+                grid,
+                t / 60,
+                image,
+                shading="nearest",
+                cmap="viridis",
+                vmin=RHO_MIN,
+                vmax=1.0,
+                rasterized=True,
+            )
+            _panel_label(
+                ax,
+                hydrophone_label(
+                    s,
+                    attrs["channels"][row],
+                    str(attrs["serial_number"][row]) or None,
+                    float(attrs["depth_m"][row]),
+                ),
+            )
+    for ax in axs[-1]:
+        ax.set_xlabel("$t_j - t_i$ (s)")
+    for ax in axs[:, 0]:
+        ax.set_ylabel("Time of strike $i$ (min)")
+    axs[0, 0].set_xlim(0, max_dt)
+    if mesh is not None:
+        fig.colorbar(mesh, ax=axs, label=METRIC_LABELS["rho"][0], shrink=0.6)
+    fig.suptitle(title)
+    return fig
+
+
+def correlation_density(
+    h: pl.DataFrame, bin_s: float, max_dt: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """From histogram counts of one hydrophone (dt_s, rho, count): the edges
+    of the time bins, the probability density of rho in each (n_rho, n_dt),
+    which integrates to 1 over rho, and the median of rho in each time bin
+    (to within RHO_BIN). Empty time bins are NaN."""
+    n_rho = round(1 / RHO_BIN)
+    n_dt = int(np.ceil(max_dt / bin_s))
+    wide = (
+        h.with_columns(
+            r=(pl.col("rho") / RHO_BIN).round().cast(pl.Int64),
+            b=(pl.col("dt_s") / bin_s - 0.5).round().cast(pl.Int64),
+        )
+        .group_by("b", "r")
+        .agg(pl.col("count").sum())
+    )
+    counts = np.zeros((n_rho, n_dt))
+    counts[wide["r"].to_numpy(), wide["b"].to_numpy()] = wide["count"].to_numpy()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        total = counts.sum(axis=0)
+        density = counts / total / RHO_BIN
+        cdf = np.cumsum(counts, axis=0) / total
+    median = np.where(total > 0, (np.argmax(cdf >= 0.5, axis=0) + 0.5) * RHO_BIN, np.nan)
+    return np.arange(n_dt + 1) * bin_s, density, median
+
+
+def plot_correlation_density(
+    hist: pl.DataFrame, site_name: str, bin_s: float, max_dt: float
+) -> plt.Figure:
+    """Probability density of rho_ij against the time between strikes,
+    pooled over the events, for each hydrophone (rows) at each sensor
+    (columns, by range), with the median."""
+    sensors = (
+        hist.group_by("sensor").agg(pl.col("range_m").min()).sort("range_m")["sensor"]
+    )
+    channels = {
+        s: sorted(hist.filter(pl.col("sensor") == s)["channel"].unique().to_list())
+        for s in sensors
+    }
+    n_rows = max(len(c) for c in channels.values())
+    fig, axs = _hydrophone_grid(n_rows, len(sensors))
+    im = None
+    for col, s in enumerate(sensors):
+        axs[0, col].set_title(s, fontsize="small")
+        for row in range(n_rows):
+            ax = axs[row, col]
+            if row >= len(channels[s]):
+                ax.set_visible(False)
+                continue
+            h = hist.filter(pl.col("sensor") == s, pl.col("channel") == channels[s][row])
+            edges, density, median = correlation_density(h, bin_s, max_dt)
+            im = ax.pcolormesh(
+                edges,
+                np.arange(round(1 / RHO_BIN) + 1) * RHO_BIN,
+                density,
+                cmap="Greys",
+                vmin=0,
+                vmax=RHO_DENSITY_MAX,
+                rasterized=True,
+            )
+            ax.plot((edges[:-1] + edges[1:]) / 2, median, color="C3", lw=1.0)
+            first = h.row(0, named=True)
+            _panel_label(
+                ax,
+                hydrophone_label(
+                    s, first["channel"], first["serial_number"], first["depth_m"]
+                ),
+                top=False,
+            )
+    for ax in axs[-1]:
+        ax.set_xlabel("$t_j - t_i$ (s)")
+    for ax in axs[:, 0]:
+        ax.set_ylabel(METRIC_LABELS["rho"][0])
+    axs[0, 0].set_xlim(0, max_dt)
+    axs[0, 0].set_ylim(RHO_MIN, 1.0)
+    if im is not None:
+        fig.colorbar(im, ax=axs, label="Probability density", shrink=0.6)
+    fig.suptitle(f"{site_name}: all events")
+    return fig
+
+
 def plot_data_coverage(
     events: list,
     recorded: dict[str, list[tuple[np.datetime64, np.datetime64]]],
@@ -1360,6 +1528,56 @@ def interpulse_note(site: SiteConfig) -> str:
     )
 
 
+def correlation_summaries(site: SiteConfig) -> dict[str, pl.DataFrame]:
+    """Site-wide correlation summaries written by the correlation stage
+    ("hist" and "summary"); empty if not run."""
+    paths = {k: site.correlation_summary_path(k) for k in ("hist", "summary")}
+    if not all(p.exists() for p in paths.values()):
+        return {}
+    return {
+        k: pl.read_csv(p, schema_overrides={"serial_number": pl.String})
+        for k, p in paths.items()
+    }
+
+
+def correlation_rows(
+    site: SiteConfig, summary: pl.DataFrame, tex: bool = True
+) -> tuple[list[str], list[list[str]], str]:
+    """Columns, rows, and alignment of one event's correlation summary, one
+    row per hydrophone: number of valid pulses, the median rho_ij of pairs
+    less than one bin apart (consecutive strikes), and the decorrelation time
+    at each level, "> max_dt" where the median stays above the level."""
+    c = site.correlation
+    text = tex_escape if tex else str
+    if tex:
+        rho = METRIC_LABELS["rho"][0]
+        first = f"Median {rho}, $t_j - t_i < {c.bin_s:g}$ s"
+        times = [f"$T_{{{v:g}}}$ (s)" for v in c.levels]
+    else:
+        first = f"Median ρ_{{ij}}, t_{{j}} − t_{{i}} < {c.bin_s:g} s"
+        times = [f"T_{{{v:g}}} (s)" for v in c.levels]
+    columns = HYDROPHONE_COLUMNS + ["Pulses", first, *times]
+    rows = []
+    for r in _by_hydrophone(summary).iter_rows(named=True):
+        t = [r[level_label(v)] for v in c.levels]
+        rows.append(
+            _hydrophone_cells(r, text)
+            + [f"{r['n_pulses']:,}", _num(r["rho_first"], 2)]
+            + [text(f"> {c.max_dt_s:g}") if np.isinf(v) else _num(v, 0) for v in t]
+        )
+    return columns, rows, HYDROPHONE_ALIGN + "rr" + "r" * len(c.levels)
+
+
+def correlation_note(site: SiteConfig) -> str:
+    """Caption text (Word) describing how rho_ij is computed."""
+    lo, hi = site.correlation.band
+    return (
+        f"ρ_{{ij}} is the maximum over lag of the normalized cross-correlation "
+        f"of pulses i and j on one hydrophone, after both pulses are band-passed "
+        f"from {lo:g} Hz to {hi:g} Hz; ρ_{{ij}} = 1 for identical waveforms."
+    )
+
+
 def make_report(site: SiteConfig, events: list) -> None:
     """Write all figures and tables for the given events, and the Word
     document that collects them."""
@@ -1391,6 +1609,7 @@ def make_report(site: SiteConfig, events: list) -> None:
     )
     kurt = read_table(site.kurtosis_path) if site.kurtosis_path.exists() else None
     inter = interpulse_summaries(site)
+    corr = correlation_summaries(site)
     if kurt is None:
         logger.warning(f"[report] missing {site.kurtosis_path}; run kurtosis first")
     met = pl.read_csv(cfg.met, try_parse_dates=True) if cfg.met is not None else None
@@ -1460,6 +1679,16 @@ def make_report(site: SiteConfig, events: list) -> None:
         (tables / f"{event.name}_event.tex").write_text(
             _tabular(columns, rows, align, weather_note(weather, _tex_label))
         )
+        write_event_correlation(site, event, df_e, corr, title, figs, tables)
+
+    if corr:
+        c = site.correlation
+        _save(
+            plot_correlation_density(corr["hist"], site.name, c.bin_s, c.max_dt_s),
+            figs / "correlation_density.png",
+            cfg.dpi,
+            cfg.titles,
+        )
 
     if inter:
         _save(
@@ -1480,7 +1709,40 @@ def make_report(site: SiteConfig, events: list) -> None:
     (tables / "detections.tex").write_text(detections_table(site, events))
     logger.info(f"[report] tables -> {tables}")
 
-    write_document(site, events, df, background_spl, met, kurt, inter)
+    write_document(site, events, df, background_spl, met, kurt, inter, corr)
+
+
+def _event_correlation(corr: dict, event) -> pl.DataFrame | None:
+    if not corr:
+        return None
+    return corr["summary"].filter(pl.col("event") == event.name)
+
+
+def write_event_correlation(
+    site: SiteConfig,
+    event,
+    df_e: pl.DataFrame,
+    corr: dict,
+    title: str,
+    figs: Path,
+    tables: Path,
+) -> None:
+    """Correlation figure and table for one event."""
+    sensors = sensors_by_range(df_e)
+    paths = {s: site.correlation_path(event.name, s) for s, _ in sensors}
+    sensors = [(s, r) for s, r in sensors if paths[s].exists()]
+    if sensors:
+        _save(
+            plot_event_correlation(paths, sensors, site.correlation.max_dt_s, title),
+            figs / event.name / "correlation.png",
+            site.report.dpi,
+            site.report.titles,
+        )
+    summary = _event_correlation(corr, event)
+    if summary is not None and not summary.is_empty():
+        (tables / f"{event.name}_correlation.tex").write_text(
+            _tabular(*correlation_rows(site, summary))
+        )
 
 
 def write_band_outputs(
@@ -1543,6 +1805,7 @@ def write_document(
     met: pl.DataFrame | None = None,
     kurt: pl.DataFrame | None = None,
     inter: dict[str, pl.DataFrame] | None = None,
+    corr: dict[str, pl.DataFrame] | None = None,
 ) -> Path:
     """Word document of the figures (as already written to the report
     directory) and tables, with captions, for pasting into a shared report.
@@ -1621,6 +1884,20 @@ def write_document(
             f"intervals (from t_{{95}} of one pulse to t_{{5}} of the next) and in "
             f"the background noise windows before each event, pooled over the events at "
             f"{site.name}, on each sensor's detection channel.",
+        )
+
+    cc = site.correlation
+    if corr:
+        doc.heading("Correlation between pulses", 2)
+        figure(
+            figs / "correlation_density.png",
+            f"Probability density of the maximum normalized cross-correlation "
+            f"coefficient ρ_{{ij}} against the time between strikes t_{{j}} − "
+            f"t_{{i}}, over every pair of pulses no more than {cc.max_dt_s:g} s "
+            f"apart in all events at {site.name}, for each hydrophone (rows) at "
+            f"each sensor (columns). The density is computed in {cc.bin_s:g}-s "
+            f"bins of t_{{j}} − t_{{i}} and {RHO_BIN:g}-wide bins of ρ_{{ij}}; "
+            f"the red line is the median. " + correlation_note(site),
         )
 
     per_pulse = [m for m in cfg.metrics if m != "LEp_cum"]
@@ -1730,6 +2007,32 @@ def write_document(
             f"Distribution of {_word_label(cfg.histogram_metric)} for {when} at "
             f"{at_range(sensors)}, by hydrophone.",
         )
+        corr_e = _event_correlation(corr, event)
+        if corr_e is not None and not corr_e.is_empty():
+            figure(
+                event_figs / "correlation.png",
+                f"Maximum normalized cross-correlation coefficient ρ_{{ij}} "
+                f"between each pulse i of {when} and every later pulse j no more "
+                f"than {cc.max_dt_s:g} s after it, against the time between the "
+                f"strikes t_{{j}} − t_{{i}} (horizontal) and the time of strike i "
+                f"(vertical), at {at_range(sensors)} (columns), by hydrophone "
+                f"(rows). Blank rows are pulses that are not valid on the "
+                f"hydrophone. " + correlation_note(site),
+            )
+            columns, rows, align = correlation_rows(site, corr_e, tex=False)
+            doc.table(
+                columns,
+                rows,
+                f"Correlation between pulses for {when}, for each hydrophone: the "
+                f"number of valid pulses; the median of ρ_{{ij}} over pairs of "
+                f"strikes less than {cc.bin_s:g} s apart, which are consecutive "
+                f"strikes during full-energy piling; and T_{{x}}, the time between "
+                f"strikes at which the median of ρ_{{ij}}, in {cc.bin_s:g}-s bins "
+                f"of t_{{j}} − t_{{i}}, first falls below x. A value of "
+                f"“> {cc.max_dt_s:g}” means that the median stays at or "
+                f"above x out to {cc.max_dt_s:g} s. " + correlation_note(site),
+                align,
+            )
 
     path = site.report_dir / "report.docx"
     doc.save(path)

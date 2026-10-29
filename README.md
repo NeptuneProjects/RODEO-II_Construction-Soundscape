@@ -54,6 +54,15 @@ soundscape extract --site config/sites/southfork.toml --event A08 --sensor VLA1
 
 `--event` and `--sensor` are repeatable. Naming an event explicitly runs it even if the site configuration excludes it.
 
+Three shell scripts in `scripts/` wrap the usual runs, and work from any directory:
+
+```bash
+scripts/run_site.sh southfork           # detect --reselect, then metrics through supplement
+scripts/run_site.sh vineyard report     # only the named steps
+scripts/compare.sh                      # cross-site outputs in results/compare
+scripts/publish.sh [reference.docx]     # reports/hdr_report/*.md to Word with pandoc
+```
+
 ## Site configuration
 
 Each site is one TOML file in `config/sites/`, with its tables alongside:
@@ -391,6 +400,6 @@ The tests use synthetic recordings and need no data.
 `config/legacy/events/` holds the 2025 South Fork event table, the hand-tuned STA/LTA detector settings for each event (`*.toml`, read only by `scripts/reports/table_detector.py`), and the piling intervals identified by hand in 2025 (`events_full.csv`).
 `config/legacy/experiment/` holds the original South Fork equipment, hydrophone, and turbine tables; their contents now live in `config/sites/southfork.toml` and `config/sites/southfork/piles.csv`, and only `scripts/plotting/study_area.ipynb` still reads them.
 
-`scripts/` holds the propagation, coherence, plotting, and reporting code from the 2025 South Fork analysis.
+Apart from the three shell scripts above, `scripts/` holds the propagation, coherence, plotting, and reporting code from the 2025 South Fork analysis.
 These scripts read paths from a `.env` file and the earlier output formats, and need the `legacy` extra (`uv sync --extra legacy`).
 The legacy soundscape pipeline (inventory, manual pulse extraction, metrics, background noise, pulse spectra) has been replaced by the `soundscape` package.

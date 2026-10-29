@@ -30,7 +30,9 @@ The time between strikes i and j is time[j] - time[i].
 
 import logging
 import os
+import signal
 import sys
+import threading
 from pathlib import Path
 
 import h5py
@@ -105,6 +107,11 @@ def _julia(threads: int):
         from rodeo.utils import initialize_julia
 
         jl = initialize_julia("CrossCorr")
+        # Julia takes over SIGINT when it handles signals, so Ctrl-C would be
+        # ignored or crash the process. Python's handler raises
+        # KeyboardInterrupt instead, once the running Julia call returns.
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, signal.default_int_handler)
         n = jl.seval("Threads.nthreads()")
         if n != threads:
             logger.warning(f"[correlation] Julia is running on {n} threads")

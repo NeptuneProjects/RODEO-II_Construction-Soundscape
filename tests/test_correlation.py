@@ -216,3 +216,21 @@ def test_density_median_is_interpolated():
     assert np.isnan(median[1])
     assert np.nansum(percent[:, 0]) == pytest.approx(100.0)
     assert percent[25:27, 0].tolist() == pytest.approx([40.0, 60.0])
+
+
+def test_compare_correlation_vs_range(run, site, tmp_path):
+    from soundscape.compare import compare_sites
+
+    out = tmp_path / "compare"
+    compare_sites([site], out)
+    assert (out / "figures" / "correlation_vs_range.png").exists()
+    pts = pl.read_csv(out / "tables" / "correlation_vs_range.csv")
+    # One row per event and sensor, on the detection channel.
+    assert len(pts) == 1 and pts["channel"].to_list() == [0]
+    assert {"rho_first", "rho_1min", "rho_5min", "range_km"} <= set(pts.columns)
+    # max_dt_s is 60 s in this fixture, so the bin nearest 5 min is the last.
+    assert pts["rho_5min"][0] > 0.9
+    doc = docx.Document(str(out / "compare.docx"))
+    assert any(
+        p.text == "Correlation between pulses versus range" for p in doc.paragraphs
+    )

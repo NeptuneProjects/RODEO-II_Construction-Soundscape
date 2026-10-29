@@ -590,9 +590,7 @@ def plot_correlation_vs_range(pts: pl.DataFrame) -> plt.Figure:
     for ax, (col, title) in zip(axs, panels):
         for k, site in enumerate(sites):
             d = pts.filter(pl.col("site") == site, pl.col(col).is_not_null())
-            ax.plot(
-                d["range_km"], d[col], MARKERS[k], ms=4, color=f"C{k}", label=site
-            )
+            ax.plot(d["range_km"], d[col], MARKERS[k], ms=4, color=f"C{k}", label=site)
         ax.set_title(title, fontsize="small")
         ax.set_xlabel("Range (km)")
         _range_axis(ax)

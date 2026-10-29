@@ -1030,7 +1030,9 @@ def plot_correlation_density(
             if row >= len(channels[s]):
                 ax.set_visible(False)
                 continue
-            h = hist.filter(pl.col("sensor") == s, pl.col("channel") == channels[s][row])
+            h = hist.filter(
+                pl.col("sensor") == s, pl.col("channel") == channels[s][row]
+            )
             edges, percent, median = correlation_density(h, bin_s, max_dt)
             im = ax.pcolormesh(
                 edges,

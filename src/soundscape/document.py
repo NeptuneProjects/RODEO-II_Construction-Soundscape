@@ -186,6 +186,9 @@ class Document:
     def caption(self, kind: str, text: str) -> None:
         self.counts[kind] += 1
         p = self.doc.add_paragraph(style="Caption")
+        # A caption is never split across pages; a table caption, also kept
+        # with its table, moves to the next page with it.
+        p.paragraph_format.keep_together = True
         p.add_run(f"{kind} ")
         _seq_field(p, kind, self.counts[kind])
         add_text(p, f": {text}")

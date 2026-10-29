@@ -354,8 +354,9 @@ def test_tables_kept_on_one_page():
         for row in table.rows
     ]
     assert keep == [True, True, True, False]
-    # The caption stays with the table.
-    assert doc.doc.paragraphs[-2].paragraph_format.keep_with_next
+    # The caption is never split, and stays with the table.
+    caption = doc.doc.paragraphs[-2].paragraph_format
+    assert caption.keep_with_next and caption.keep_together
 
 
 def test_compare(wf, site, tmp_path):

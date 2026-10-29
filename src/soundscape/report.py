@@ -857,10 +857,10 @@ def plot_interpulse_cdf(hist: pl.DataFrame, site_name: str) -> plt.Figure:
 
 
 # Lower end of the color scale of rho (as in Jenkins & Lin, Sci. Rep., Fig. 3),
-# and upper end of the color scale of its probability density (a density of
-# 10 is 20% of pairs in one RHO_BIN-wide bin).
+# and upper end of the color scale of the percentage of pairs in each
+# RHO_BIN-wide bin of rho.
 RHO_MIN = 0.2
-RHO_DENSITY_MAX = 10.0
+RHO_PERCENT_MAX = 20.0
 
 
 def _hydrophone_grid(n_rows: int, n_cols: int) -> tuple[plt.Figure, np.ndarray]:
@@ -876,17 +876,47 @@ def _hydrophone_grid(n_rows: int, n_cols: int) -> tuple[plt.Figure, np.ndarray]:
     )
 
 
-def _panel_label(ax: plt.Axes, text: str, top: bool = True) -> None:
+def _panel_label(
+    ax: plt.Axes, text: str, top: bool = True, right: bool = False
+) -> None:
     ax.text(
-        0.03,
+        0.97 if right else 0.03,
         0.95 if top else 0.05,
         text,
         transform=ax.transAxes,
         fontsize="x-small",
         va="top" if top else "bottom",
-        ha="left",
+        ha="right" if right else "left",
         bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 1.0},
     )
+
+
+# Largest distance (s) from a strike to the edge of its row in the image of
+# rho_ij against time, so that pauses in piling stay blank.
+ROW_HALF_S = 15.0
+
+
+def strike_rows(t: np.ndarray, image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Row edges for an image with one row per strike at times `t` (s): each
+    row reaches halfway to the neighboring strikes but no more than
+    ROW_HALF_S from its own, and a blank (NaN) row fills each pause between
+    rows. The first and last strikes, with a neighbor on one side only, reach
+    as far on the other. Returns the edges (n_rows + 1) and the image with the
+    blank rows."""
+    gap = np.minimum(np.diff(t) / 2, ROW_HALF_S)
+    if len(gap) == 0:
+        gap = np.array([ROW_HALF_S])
+    hi = t + np.r_[gap, gap[-1:]]
+    lo = t - np.r_[gap[:1], gap]
+    blank = np.full(image.shape[1], np.nan, image.dtype)
+    edges, rows = [lo[0]], []
+    for i in range(len(t)):
+        rows.append(image[i])
+        edges.append(hi[i])
+        if i + 1 < len(t) and lo[i + 1] > hi[i]:
+            rows.append(blank)
+            edges.append(lo[i + 1])
+    return np.array(edges), np.array(rows)
 
 
 def plot_event_correlation(
@@ -908,11 +938,12 @@ def plot_event_correlation(
                 ax.set_visible(False)
                 continue
             grid, t, image = stacked(data["corr"][row], data["time"], max_dt)
+            y, image = strike_rows(t, image)
+            step = grid[1] - grid[0]
             mesh = ax.pcolormesh(
-                grid,
-                t / 60,
+                np.r_[grid - step / 2, grid[-1] + step / 2],
+                y / 60,
                 image,
-                shading="nearest",
                 cmap="viridis",
                 vmin=RHO_MIN,
                 vmax=1.0,
@@ -926,6 +957,7 @@ def plot_event_correlation(
                     str(attrs["serial_number"][row]) or None,
                     float(attrs["depth_m"][row]),
                 ),
+                right=True,
             )
     for ax in axs[-1]:
         ax.set_xlabel("$t_j - t_i$ (s)")
@@ -942,9 +974,10 @@ def correlation_density(
     h: pl.DataFrame, bin_s: float, max_dt: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """From histogram counts of one hydrophone (dt_s, rho, count): the edges
-    of the time bins, the probability density of rho in each (n_rho, n_dt),
-    which integrates to 1 over rho, and the median of rho in each time bin
-    (to within RHO_BIN). Empty time bins are NaN."""
+    of the time bins, the percentage of the pairs in each time bin that fall
+    in each RHO_BIN-wide bin of rho (n_rho, n_dt), and the median of rho in
+    each time bin, interpolated linearly within the bin where the cumulative
+    fraction reaches one half. Empty time bins are NaN."""
     n_rho = round(1 / RHO_BIN)
     n_dt = int(np.ceil(max_dt / bin_s))
     wide = (
@@ -959,16 +992,20 @@ def correlation_density(
     counts[wide["r"].to_numpy(), wide["b"].to_numpy()] = wide["count"].to_numpy()
     with np.errstate(invalid="ignore", divide="ignore"):
         total = counts.sum(axis=0)
-        density = counts / total / RHO_BIN
+        percent = 100 * counts / total
         cdf = np.cumsum(counts, axis=0) / total
-    median = np.where(total > 0, (np.argmax(cdf >= 0.5, axis=0) + 0.5) * RHO_BIN, np.nan)
-    return np.arange(n_dt + 1) * bin_s, density, median
+        k = np.argmax(cdf >= 0.5, axis=0)
+        cols = np.arange(n_dt)
+        below = np.where(k > 0, cdf[k - 1, cols], 0.0)
+        frac = (0.5 - below) / (cdf[k, cols] - below)
+    median = np.where(total > 0, (k + frac) * RHO_BIN, np.nan)
+    return np.arange(n_dt + 1) * bin_s, percent, median
 
 
 def plot_correlation_density(
     hist: pl.DataFrame, site_name: str, bin_s: float, max_dt: float
 ) -> plt.Figure:
-    """Probability density of rho_ij against the time between strikes,
+    """Distribution of rho_ij against the time between strikes,
     pooled over the events, for each hydrophone (rows) at each sensor
     (columns, by range), with the median."""
     sensors = (
@@ -982,21 +1019,25 @@ def plot_correlation_density(
     fig, axs = _hydrophone_grid(n_rows, len(sensors))
     im = None
     for col, s in enumerate(sensors):
-        axs[0, col].set_title(s, fontsize="small")
+        # The sensor's range from the pile, or its span over the pooled events.
+        r = hist.filter(pl.col("sensor") == s)["range_m"] / 1e3
+        lo, hi = f"{r.min():.1f}", f"{r.max():.1f}"
+        span = lo if lo == hi else f"{lo}–{hi}"
+        axs[0, col].set_title(f"{s} ({span} km)", fontsize="small")
         for row in range(n_rows):
             ax = axs[row, col]
             if row >= len(channels[s]):
                 ax.set_visible(False)
                 continue
             h = hist.filter(pl.col("sensor") == s, pl.col("channel") == channels[s][row])
-            edges, density, median = correlation_density(h, bin_s, max_dt)
+            edges, percent, median = correlation_density(h, bin_s, max_dt)
             im = ax.pcolormesh(
                 edges,
                 np.arange(round(1 / RHO_BIN) + 1) * RHO_BIN,
-                density,
+                percent,
                 cmap="Greys",
                 vmin=0,
-                vmax=RHO_DENSITY_MAX,
+                vmax=RHO_PERCENT_MAX,
                 rasterized=True,
             )
             ax.plot((edges[:-1] + edges[1:]) / 2, median, color="C3", lw=1.0)
@@ -1015,8 +1056,9 @@ def plot_correlation_density(
     axs[0, 0].set_xlim(0, max_dt)
     axs[0, 0].set_ylim(RHO_MIN, 1.0)
     if im is not None:
-        fig.colorbar(im, ax=axs, label="Probability density", shrink=0.6)
-    fig.suptitle(f"{site_name}: all events")
+        fig.colorbar(im, ax=axs, label="Percentage of pairs", shrink=0.6)
+    n = hist["event"].n_unique()
+    fig.suptitle(f"{site_name}: {n} event{'s' * (n != 1)} pooled")
     return fig
 
 
@@ -1891,13 +1933,15 @@ def write_document(
         doc.heading("Correlation between pulses", 2)
         figure(
             figs / "correlation_density.png",
-            f"Probability density of the maximum normalized cross-correlation "
+            f"Distribution of the maximum normalized cross-correlation "
             f"coefficient ρ_{{ij}} against the time between strikes t_{{j}} − "
             f"t_{{i}}, over every pair of pulses no more than {cc.max_dt_s:g} s "
             f"apart in all events at {site.name}, for each hydrophone (rows) at "
-            f"each sensor (columns). The density is computed in {cc.bin_s:g}-s "
-            f"bins of t_{{j}} − t_{{i}} and {RHO_BIN:g}-wide bins of ρ_{{ij}}; "
-            f"the red line is the median. " + correlation_note(site),
+            f"each sensor (columns, titled with the range of distances from the "
+            f"piles to the sensor over the events). The shading is the percentage of the pairs "
+            f"in each {cc.bin_s:g}-s bin of t_{{j}} − t_{{i}} whose ρ_{{ij}} "
+            f"falls in each {RHO_BIN:g}-wide bin of ρ_{{ij}}; the red line is "
+            f"the median. " + correlation_note(site),
         )
 
     per_pulse = [m for m in cfg.metrics if m != "LEp_cum"]
@@ -2016,8 +2060,8 @@ def write_document(
                 f"than {cc.max_dt_s:g} s after it, against the time between the "
                 f"strikes t_{{j}} − t_{{i}} (horizontal) and the time of strike i "
                 f"(vertical), at {at_range(sensors)} (columns), by hydrophone "
-                f"(rows). Blank rows are pulses that are not valid on the "
-                f"hydrophone. " + correlation_note(site),
+                f"(rows). Blank rows are pauses in piling and pulses that are "
+                f"not valid on the hydrophone. " + correlation_note(site),
             )
             columns, rows, align = correlation_rows(site, corr_e, tex=False)
             doc.table(

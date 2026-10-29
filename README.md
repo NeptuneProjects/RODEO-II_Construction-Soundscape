@@ -241,7 +241,7 @@ and for the whole site:
 - `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
 - `tables/detections.tex`: strikes and median SNR<sub>det</sub> per event and sensor.
 - `figures/interpulse_cdf.png`: cumulative distributions of the 100 ms levels between strikes and in the background noise windows, per sensor.
-- `figures/correlation_density.png`: probability density of ρ<sub>ij</sub> against the time between strikes, pooled over the events, with its median, per hydrophone and sensor.
+- `figures/correlation_density.png`: distribution of ρ<sub>ij</sub> against the time between strikes, pooled over the events: the percentage of pairs in each 0.02-wide bin of ρ<sub>ij</sub> at each time between strikes, with the median, per hydrophone and sensor.
 
 After `interpulse`, the event tables also give the inter-pulse level L<sub>p,ip</sub>, its median excess over the background noise ΔL<sub>ip</sub>, and the percentage of inter-pulse time more than each of `[interpulse] thresholds_db` above the background noise.
 

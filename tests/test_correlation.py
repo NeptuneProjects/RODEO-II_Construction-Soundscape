@@ -188,3 +188,31 @@ def test_report(run, site):
         t for t in doc.tables if any("T0.9" in c.text for c in t.rows[0].cells)
     )
     assert [c.text for c in table.rows[1].cells][-2:] == ["> 60", "> 60"]
+
+
+def test_strike_rows_leave_pauses_blank():
+    from soundscape.report import ROW_HALF_S, strike_rows
+
+    t = np.array([0.0, 1.5, 3.0, 300.0, 301.5])
+    image = np.arange(10.0).reshape(5, 2)
+    edges, rows = strike_rows(t, image)
+    # One blank row for the pause between 3 s and 300 s.
+    assert len(rows) == 6 and len(edges) == 7
+    assert np.all(np.isnan(rows[3]))
+    np.testing.assert_allclose(
+        edges, [-0.75, 0.75, 2.25, 3.0 + ROW_HALF_S, 300 - ROW_HALF_S, 300.75, 302.25]
+    )
+
+
+def test_density_median_is_interpolated():
+    from soundscape.report import correlation_density
+
+    # 40% of pairs in the 0.50-0.52 bin and 60% in 0.52-0.54: the median
+    # lies a sixth of the way into the second bin.
+    h = pl.DataFrame({"dt_s": [1.0, 1.0], "rho": [0.50, 0.52], "count": [40, 60]})
+    edges, percent, median = correlation_density(h, bin_s=2.0, max_dt=4.0)
+    assert edges.tolist() == [0.0, 2.0, 4.0]
+    assert median[0] == pytest.approx(0.52 + 0.02 / 6)
+    assert np.isnan(median[1])
+    assert np.nansum(percent[:, 0]) == pytest.approx(100.0)
+    assert percent[25:27, 0].tolist() == pytest.approx([40.0, 60.0])

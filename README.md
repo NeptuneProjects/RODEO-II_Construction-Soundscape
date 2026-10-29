@@ -5,7 +5,7 @@ Scripps Institution of Oceanography
 University of California San Diego
 
 Soundscape metrics for impulsive pile-driving noise recorded at offshore wind farm construction sites.
-The analysis was developed for South Fork Wind (2023) and is generalized so the same workflow runs on any site, currently South Fork Wind and Vineyard Wind.
+The analysis was developed for South Fork Wind (2023) and is generalized so the same workflow runs on any site, currently South Fork Wind and Vineyard Wind 1.
 
 ## Installation
 
@@ -375,16 +375,6 @@ Each interval is summarized by the median of its segments, because the 5% of eac
 The same segments over the background noise window before each event give the reference; the excess ΔL_ip is the median inter-pulse level less the background noise median.
 With cylindrical spreading, transmission loss 10 log₁₀ r (`[interpulse] spreading`), the excess scales the detection range by 10^(−ΔL/10) and the communication space of Clark et al. (2009), the area within which a call can be detected, by 10^(−ΔL/5).
 It takes about 2 min per event and sensor (3,000 strikes) and 2.2 GB of memory; rerun `metrics` first if its tables predate `t5`.
-
-### Differences from the 2025 South Fork analysis
-
-Checked on 1,200 A10-B Tetra pulses from the earlier analysis:
-
-- `Lp_pk`, `Lp_pkpk`, `t_r`, and `t_d` reproduce the earlier values.
-- The earlier `SEL` was the mean-square sound pressure level over τ<sub>90%</sub> (now `Lp_90`), not a sound exposure level. The single-strike `LEp_ss` is 2.1 dB lower on average (−3.2 to +0.2 dB), and `LEp_cum` changes accordingly.
-- The earlier `kurtosis` was excess kurtosis (β₂ − 3) of each pulse; it is now β over 60 s windows.
-- The mean-square sound pressure level over the whole window, which depended on the window length, is no longer computed.
-- Strike detection was an STA/LTA detector tuned by hand per event and channel. It is now automatic.
 
 ## Adding a site
 

@@ -2,10 +2,8 @@
 
 
 import argparse
-import os
 from pathlib import Path
 
-import dotenv
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,7 +12,6 @@ from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
 from rodeo import plotting
 
-dotenv.load_dotenv()
 plt.style.use(Path("config/jasa_fig_style.mplstyle"))
 
 STATIONS = ["SHRU921/Tetra", "SHRU905/VLA1", "SHRU920/VLA2"]
@@ -69,13 +66,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data",
         type=Path,
-        default=Path(os.getenv("MAXCORRPATH")),
+        default=Path("data/max_corr"),
         help="Path to the data file.",
     )
     parser.add_argument(
         "--outdir",
         type=Path,
-        default=Path(os.getenv("EVENTRESULTS")),
+        required=True,
         help="Path to save.",
     )
     args = parser.parse_args()

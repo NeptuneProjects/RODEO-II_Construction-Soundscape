@@ -2,17 +2,14 @@
 
 
 import argparse
-import os
 from pathlib import Path
 
-import dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 from tritonoa.modeling.at.kraken import run_kraken
 
 from rodeo import model, plotting
 
-dotenv.load_dotenv()
 plt.style.use(Path("config/jasa_fig_style.mplstyle"))
 
 SAVEPATH = Path.cwd() / "results"
@@ -40,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--savepath",
         type=Path,
-        default=Path(os.getenv("RESULTS")),
+        default=Path("results"),
         help="Path to save the figure",
     )
     parser.add_argument(

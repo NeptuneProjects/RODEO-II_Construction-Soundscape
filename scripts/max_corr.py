@@ -6,7 +6,6 @@ import logging
 import os
 from pathlib import Path
 
-import dotenv
 import h5py
 import numpy as np
 from tqdm import tqdm
@@ -20,7 +19,6 @@ from rodeo.utils import (
     logging_kwargs,
 )
 
-dotenv.load_dotenv()
 logging.basicConfig(**logging_kwargs)
 
 
@@ -230,7 +228,7 @@ if __name__ == "__main__":
         "--input",
         type=Path,
         help="Path to the input HDF5 file containing the signals.",
-        default=Path(os.getenv("DBPATH")),
+        required=True,
     )
     parser.add_argument(
         "--event",
@@ -262,7 +260,7 @@ if __name__ == "__main__":
         "--output",
         type=Path,
         help="Path to the output HDF5 file to save the results.",
-        default=Path(os.getenv("MAXCORRPATH")),
+        default=Path("data/max_corr"),
     )
     args = parser.parse_args()
     os.environ["JULIA_NUM_THREADS"] = str(args.max_workers)

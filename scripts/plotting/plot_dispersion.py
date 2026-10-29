@@ -2,17 +2,14 @@
 
 
 import argparse
-import os
 from pathlib import Path
 
-import dotenv
 import matplotlib.pyplot as plt
 from scipy.signal.windows import hann
 from tritonoa.data.reader import read_numpy
 
 from rodeo import plotting
 
-dotenv.load_dotenv()
 plt.style.use(Path("config/jasa_fig_style.mplstyle"))
 
 STATION_ORDER = ["SHRU921_Tetra", "SHRU905_VLA1", "SHRU920_VLA2"]
@@ -51,11 +48,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data",
         type=Path,
-        default=Path(os.getenv("DISPDATA")),
+        default=Path("data/dispersion"),
         help="Path to the data files.",
     )
     parser.add_argument(
-        "--output", type=Path, default=Path(os.getenv("RESULTS")), help="Output file."
+        "--output", type=Path, default=Path("results"), help="Output file."
     )
     parser.add_argument("--channel", type=int, default=0, help="Channel to plot.")
     parser.add_argument("--tperseg", type=float, default=0.05, help="Time per segment.")

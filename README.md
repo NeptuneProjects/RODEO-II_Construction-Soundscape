@@ -398,6 +398,6 @@ The tests use synthetic recordings and need no data.
 ## Legacy scripts
 
 Apart from the three shell scripts above, `scripts/` holds the propagation, coherence, plotting, and reporting code from the 2025 South Fork analysis.
-These scripts read paths from a `.env` file and the earlier output formats, and need the `legacy` extra (`uv sync --extra legacy`).
+These scripts take their input and output paths as command-line arguments, read the earlier output formats, and need the `full` extra (`uv sync --extra full`).
 The legacy soundscape pipeline (inventory, manual pulse extraction, metrics, background noise, pulse spectra) has been replaced by the `soundscape` package.
 The 2025 event, detector, and equipment tables that some of these scripts read (`config/legacy/`) have been removed; their contents now live in `config/sites/southfork.toml` and `config/sites/southfork/piles.csv`.

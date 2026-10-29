@@ -2,17 +2,14 @@
 
 import argparse
 import logging
-import os
 from pathlib import Path
 import tomllib
 
-import dotenv
 import numpy as np
 import polars as pl
 from tritonoa.data.reader import read_inventory
 from tritonoa.data.time import TIME_PRECISION
 
-dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 
@@ -97,19 +94,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--metrics",
         type=Path,
-        default=Path(os.getenv("METRICSFILE")),
+        required=True,
         help="Metrics file.",
     )
     parser.add_argument(
         "--inventory",
         type=Path,
-        default=Path(os.getenv("INVCONFIG")),
+        default=Path("config/inventory.toml"),
         help="Inventory file.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(os.getenv("DISPDATA")),
+        default=Path("data/dispersion"),
         help="Output directory.",
     )
     args = parser.parse_args()

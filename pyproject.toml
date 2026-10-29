@@ -22,20 +22,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Legacy South Fork scripts in scripts/ (not yet ported to the soundscape package).
-legacy = [
-    "basemap",
-    "bathyreq",
-    "cmasher",
-    "cmocean",
-    "juliacall",
-    "jupyterlab",
-    "netcdf4",
-    "pandas",
-    "python-dotenv",
-    "rodeo",
-    "seaborn",
-    "tqdm",
+# Analyses in scripts/ outside the soundscape workflow: propagation modeling,
+# pulse coherence, CTD and meteorological figures, and the study area map.
+# Only what rodeo does not already provide.
+full = [
+    "jupyterlab",  # the notebooks in scripts/
+    "netcdf4",     # scripts/plotting/plot_pile_sim.py
+    "rodeo",       # ../core; brings bathyreq, cmasher, cmocean, juliacall, tqdm
 ]
 
 [dependency-groups]

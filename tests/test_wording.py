@@ -23,13 +23,45 @@ BRITISH = re.compile(
 )
 # Words ending in -ise that are spelled that way in American English too.
 AMERICAN_ISE = {
-    "advertise", "advise", "arise", "chastise", "circumcise", "comprise",
-    "compromise", "concise", "demise", "despise", "devise", "disguise",
-    "enterprise", "excise", "exercise", "expertise", "franchise", "improvise",
-    "incise", "merchandise", "noise", "otherwise", "poise", "precise",
-    "premise", "promise", "raise", "revise", "rise", "supervise", "surmise",
-    "surprise", "televise", "wise", "clockwise", "likewise", "pairwise",
-    "stepwise", "elementwise",
+    "advertise",
+    "advise",
+    "arise",
+    "chastise",
+    "circumcise",
+    "comprise",
+    "compromise",
+    "concise",
+    "demise",
+    "despise",
+    "devise",
+    "disguise",
+    "enterprise",
+    "excise",
+    "exercise",
+    "expertise",
+    "franchise",
+    "improvise",
+    "incise",
+    "merchandise",
+    "noise",
+    "otherwise",
+    "poise",
+    "precise",
+    "premise",
+    "promise",
+    "raise",
+    "revise",
+    "rise",
+    "supervise",
+    "surmise",
+    "surprise",
+    "televise",
+    "wise",
+    "clockwise",
+    "likewise",
+    "pairwise",
+    "stepwise",
+    "elementwise",
 }
 
 
@@ -37,7 +69,7 @@ def british_spellings(text: str) -> list[str]:
     """Words in `text` spelled the British way."""
     out = []
     for m in BRITISH.finditer(text):
-        word = re.match(r"[A-Za-z-]+", text[m.start():]).group(0).lower()
+        word = re.match(r"[A-Za-z-]+", text[m.start() :]).group(0).lower()
         # The word and its base forms (raised -> raise, rising -> rise).
         forms = {word, word[:-1], word[:-2], word[:-3] + "e"}
         if not forms & AMERICAN_ISE:
@@ -51,13 +83,17 @@ SPACED_PERCENT = re.compile("[0-9][ \u00a0\u2009\u202f]%")
 
 def test_british_spellings_are_found():
     assert british_spellings("the neighbouring centre, labelled grey") == [
-        "neighbouring", "centre", "labelled", "grey"
+        "neighbouring",
+        "centre",
+        "labelled",
+        "grey",
     ]
     assert british_spellings("normalised; summarise; organisation") == [
-        "normalised", "summarise", "organisation"
+        "normalised",
+        "summarise",
+        "organisation",
     ]
     assert british_spellings("noise, otherwise, precise, raised, exercises") == []
-
 
 
 def test_no_ambient_in_report_wording(site, monkeypatch, tmp_path):

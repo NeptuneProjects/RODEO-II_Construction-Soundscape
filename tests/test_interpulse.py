@@ -152,7 +152,9 @@ def test_compare_masking(run, site, tmp_path):
     assert (out / "figures" / "masking_bands.png").exists()
     doc = docx.Document(str(out / "compare.docx"))
     assert any("Communication space remaining" in p.text for p in doc.paragraphs)
-    assert any("detected between strikes, as a percentage" in p.text for p in doc.paragraphs)
+    assert any(
+        "detected between strikes, as a percentage" in p.text for p in doc.paragraphs
+    )
 
 
 def test_events_with_few_strikes_are_dropped(run, site):

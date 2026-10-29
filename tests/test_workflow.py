@@ -212,7 +212,13 @@ def test_report(wf, site):
     wf.report()
 
     figs = site.report_dir / "figures"
-    for name in ("metrics_levels.png", "metrics_other.png", "levels.png", "psd.png", "bands.png"):
+    for name in (
+        "metrics_levels.png",
+        "metrics_other.png",
+        "levels.png",
+        "psd.png",
+        "bands.png",
+    ):
         assert (figs / "E1" / name).stat().st_size > 0
     for metric in site.report.range_metrics:
         assert (figs / f"{metric}_vs_range.png").exists()

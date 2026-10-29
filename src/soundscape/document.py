@@ -112,7 +112,9 @@ def styles_only(source: Path, destination: Path | BinaryIO) -> None:
         if child.tag != qn("w:sectPr"):
             body.remove(child)
     rels = doc.part.rels
-    for r_id in [k for k, r in rels.items() if r.reltype.rsplit("/", 1)[-1] not in _STYLE_PARTS]:
+    for r_id in [
+        k for k, r in rels.items() if r.reltype.rsplit("/", 1)[-1] not in _STYLE_PARTS
+    ]:
         rels.pop(r_id)
     doc.save(destination if not isinstance(destination, Path) else str(destination))
 

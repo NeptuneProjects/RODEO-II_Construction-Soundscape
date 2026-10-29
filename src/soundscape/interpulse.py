@@ -486,9 +486,7 @@ def summarize_site(site, events: list) -> dict[str, pl.DataFrame]:
                      `kind` "interpulse" (inside the interval) and "background"
     """
     thresholds = site.interpulse.thresholds_db
-    out: dict[str, list[pl.DataFrame]] = {
-        k: [] for k in ("excess", "bands", "hist")
-    }
+    out: dict[str, list[pl.DataFrame]] = {k: [] for k in ("excess", "bands", "hist")}
 
     def hist(df: pl.DataFrame, kind: str) -> pl.DataFrame:
         return (

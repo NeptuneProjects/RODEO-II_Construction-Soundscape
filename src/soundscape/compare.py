@@ -723,7 +723,11 @@ def plot_masking_bands(table: pl.DataFrame) -> plt.Figure:
     )
     for ax, site in zip(axs[0], sites):
         d = table.filter(pl.col("site") == site)
-        order = d.group_by("sensor").agg(pl.col("range_min_km").first()).sort("range_min_km")
+        order = (
+            d.group_by("sensor")
+            .agg(pl.col("range_min_km").first())
+            .sort("range_min_km")
+        )
         for k, (sensor, _) in enumerate(order.iter_rows()):
             g = d.filter(pl.col("sensor") == sensor).sort("nominal_Hz")
             r0, r1 = g["range_min_km"][0], g["range_max_km"][0]

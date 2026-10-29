@@ -168,7 +168,8 @@ cython_debug/
 /references
 /reports
 /results
+tmp/
 *.npy
 *.npz
-tmp/
 *.code-workspace
+dl.sh

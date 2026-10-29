@@ -10,9 +10,10 @@ Output layout:
     report/
     ├── report.docx
     ├── supplement.pdf                      (soundscape.supplement)
-    ├── figures/<event>/{metrics_levels,metrics_other,psd,bands,levels,correlation}.png
+    ├── figures/<event>/{metrics_levels,metrics_other,psd,bands,levels,correlation,
+    │                    correlation_density}.png
     ├── figures/<metric>_vs_range.png
-    ├── figures/{coverage,interpulse_cdf,correlation_density}.png
+    ├── figures/{coverage,interpulse_cdf}.png
     └── tables/{detections,<event>,<event>_event,<event>_correlation}.tex, <event>_bands.csv
 """
 
@@ -1003,11 +1004,11 @@ def correlation_density(
 
 
 def plot_correlation_density(
-    hist: pl.DataFrame, site_name: str, bin_s: float, max_dt: float
+    hist: pl.DataFrame, title: str, bin_s: float, max_dt: float
 ) -> plt.Figure:
-    """Distribution of rho_ij against the time between strikes,
-    pooled over the events, for each hydrophone (rows) at each sensor
-    (columns, by range), with the median."""
+    """Distribution of rho_ij against the time between strikes, over the
+    events in `hist` (one event in the report), for each hydrophone (rows) at
+    each sensor (columns, by range), with the median."""
     sensors = (
         hist.group_by("sensor").agg(pl.col("range_m").min()).sort("range_m")["sensor"]
     )
@@ -1057,8 +1058,7 @@ def plot_correlation_density(
     axs[0, 0].set_ylim(RHO_MIN, 1.0)
     if im is not None:
         fig.colorbar(im, ax=axs, label="Percentage of pairs", shrink=0.6)
-    n = hist["event"].n_unique()
-    fig.suptitle(f"{site_name}: {n} event{'s' * (n != 1)} pooled")
+    fig.suptitle(title)
     return fig
 
 
@@ -1723,15 +1723,6 @@ def make_report(site: SiteConfig, events: list) -> None:
         )
         write_event_correlation(site, event, df_e, corr, title, figs, tables)
 
-    if corr:
-        c = site.correlation
-        _save(
-            plot_correlation_density(corr["hist"], site.name, c.bin_s, c.max_dt_s),
-            figs / "correlation_density.png",
-            cfg.dpi,
-            cfg.titles,
-        )
-
     if inter:
         _save(
             plot_interpulse_cdf(detection_channels(site, inter["hist"]), site.name),
@@ -1769,14 +1760,24 @@ def write_event_correlation(
     figs: Path,
     tables: Path,
 ) -> None:
-    """Correlation figure and table for one event."""
+    """Correlation figures (rho_ij of each strike, and its distribution) and
+    table for one event."""
+    c = site.correlation
     sensors = sensors_by_range(df_e)
     paths = {s: site.correlation_path(event.name, s) for s, _ in sensors}
     sensors = [(s, r) for s, r in sensors if paths[s].exists()]
     if sensors:
         _save(
-            plot_event_correlation(paths, sensors, site.correlation.max_dt_s, title),
+            plot_event_correlation(paths, sensors, c.max_dt_s, title),
             figs / event.name / "correlation.png",
+            site.report.dpi,
+            site.report.titles,
+        )
+    hist = corr["hist"].filter(pl.col("event") == event.name) if corr else None
+    if hist is not None and not hist.is_empty():
+        _save(
+            plot_correlation_density(hist, title, c.bin_s, c.max_dt_s),
+            figs / event.name / "correlation_density.png",
             site.report.dpi,
             site.report.titles,
         )
@@ -1929,20 +1930,6 @@ def write_document(
         )
 
     cc = site.correlation
-    if corr:
-        doc.heading("Correlation between pulses", 2)
-        figure(
-            figs / "correlation_density.png",
-            f"Distribution of the maximum normalized cross-correlation "
-            f"coefficient ρ_{{ij}} against the time between strikes t_{{j}} − "
-            f"t_{{i}}, over every pair of pulses no more than {cc.max_dt_s:g} s "
-            f"apart in all events at {site.name}, for each hydrophone (rows) at "
-            f"each sensor (columns, titled with the range of distances from the "
-            f"piles to the sensor over the events). The shading is the percentage of the pairs "
-            f"in each {cc.bin_s:g}-s bin of t_{{j}} − t_{{i}} whose ρ_{{ij}} "
-            f"falls in each {RHO_BIN:g}-wide bin of ρ_{{ij}}; the red line is "
-            f"the median. " + correlation_note(site),
-        )
 
     per_pulse = [m for m in cfg.metrics if m != "LEp_cum"]
     for event in events:
@@ -2062,6 +2049,16 @@ def write_document(
                 f"(vertical), at {at_range(sensors)} (columns), by hydrophone "
                 f"(rows). Blank rows are pauses in piling and pulses that are "
                 f"not valid on the hydrophone. " + correlation_note(site),
+            )
+            figure(
+                event_figs / "correlation_density.png",
+                f"Distribution of ρ_{{ij}} against the time between strikes "
+                f"t_{{j}} − t_{{i}}, over every pair of pulses of {when} no more "
+                f"than {cc.max_dt_s:g} s apart, at {at_range(sensors)} "
+                f"(columns), by hydrophone (rows). The shading is the percentage "
+                f"of the pairs in each {cc.bin_s:g}-s bin of t_{{j}} − t_{{i}} "
+                f"whose ρ_{{ij}} falls in each {RHO_BIN:g}-wide bin of "
+                f"ρ_{{ij}}; the red line is the median.",
             )
             columns, rows, align = correlation_rows(site, corr_e, tex=False)
             doc.table(

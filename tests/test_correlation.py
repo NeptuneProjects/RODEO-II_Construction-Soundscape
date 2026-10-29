@@ -179,11 +179,14 @@ def test_report(run, site):
     workflow.Workflow(site).report()
     figs = site.report_dir / "figures"
     assert (figs / "E1" / "correlation.png").exists()
-    assert (figs / "correlation_density.png").exists()
+    assert (figs / "E1" / "correlation_density.png").exists()
+    assert not (figs / "correlation_density.png").exists()
     tex = (site.report_dir / "tables" / "E1_correlation.tex").read_text()
     assert "$T_{0.9}$ (s)" in tex and "> 60" in tex
     doc = docx.Document(str(site.report_dir / "report.docx"))
-    assert any(p.text == "Correlation between pulses" for p in doc.paragraphs)
+    texts = [p.text for p in doc.paragraphs]
+    assert "Correlation between pulses" not in texts
+    assert any("Distribution of ρ" in t and "event E1" in t for t in texts)
     table = next(
         t for t in doc.tables if any("T0.9" in c.text for c in t.rows[0].cells)
     )

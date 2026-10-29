@@ -220,6 +220,7 @@ Every table identifies its rows by `event`, `sensor`, `channel`, and where relev
 | `compare/tables/background_fits.csv` | site and sensor (`all` for every sensor) | the same fit of the background noise level: `n`, `range_min_km`, `range_max_km`, `a_dB`, `b_dB_per_decade`, `r` (correlation of the level with log10 R) |
 | `compare/tables/masking.csv` | site and sensor | `dL_median`, `dL_min`, `dL_max` (over events); `range_left`, `area_left` (fractions of detection range and communication space left for cylindrical spreading, `[interpulse] spreading` log10 r) |
 | `compare/tables/masking_bands.csv` | site, sensor, and decidecade band `nominal_Hz` | `range_min_km`, `range_max_km`, `events`; `dL_median`, `dL_min`, `dL_max` (the band's inter-pulse excess over events); `range_left`, `area_left` as in `masking.csv` |
+| `compare/tables/correlation_vs_range.csv` | site, event, and sensor (detection channel) | `range_km`, `n_pulses`, `rho_first` (median ρ<sub>ij</sub> of consecutive strikes), `rho_1min` and `rho_5min` (median ρ<sub>ij</sub> in the 2 s bin of time between strikes nearest 1 and 5 min), `T_<x>` as in `correlation_summary.csv` |
 
 ## Figures and tables
 
@@ -233,6 +234,7 @@ Every table identifies its rows by `event`, `sensor`, `channel`, and where relev
 - `tables/<event>_event.tex`: event-level quantities per hydrophone: serial number, valid pulses, L<sub>E,p,cum</sub> over them, the percentage of them with SNR below 10 dB, kurtosis over the 60 s windows that contain strikes, and background noise kurtosis (median [5th, 95th percentile]), with the mean wind speed and significant wave height if configured.
 - `tables/<event>_bands.csv`: the band statistics behind `bands.png`, per sensor, hydrophone, and band, with the background noise mean-square sound pressure level in each band (see *Data dictionary*).
 - `figures/<event>/correlation.png`: ρ<sub>ij</sub> of each pulse with every later pulse within `max_dt_s`, against the time between the strikes and the time of the first strike, one panel per hydrophone (rows) and sensor (columns).
+- `figures/<event>/correlation_density.png`: distribution of ρ<sub>ij</sub> against the time between strikes over the event: the percentage of pairs in each 0.02-wide bin of ρ<sub>ij</sub> at each time between strikes, with the median, per hydrophone and sensor.
 - `tables/<event>_correlation.tex`: per hydrophone, the valid pulses, the median ρ<sub>ij</sub> of consecutive strikes, and the decorrelation times T<sub>x</sub> for each of `[correlation] levels`.
 
 and for the whole site:
@@ -241,7 +243,6 @@ and for the whole site:
 - `figures/<metric>_vs_range.png`: each of `range_metrics` against range on each sensor's detection channel, colored by strike number, with the median and interquartile range per event and sensor.
 - `tables/detections.tex`: strikes and median SNR<sub>det</sub> per event and sensor.
 - `figures/interpulse_cdf.png`: cumulative distributions of the 100 ms levels between strikes and in the background noise windows, per sensor.
-- `figures/correlation_density.png`: distribution of ρ<sub>ij</sub> against the time between strikes, pooled over the events: the percentage of pairs in each 0.02-wide bin of ρ<sub>ij</sub> at each time between strikes, with the median, per hydrophone and sensor.
 
 After `interpulse`, the event tables also give the inter-pulse level L<sub>p,ip</sub>, its median excess over the background noise ΔL<sub>ip</sub>, and the percentage of inter-pulse time more than each of `[interpulse] thresholds_db` above the background noise.
 
@@ -285,6 +286,7 @@ reads each site's results (valid pulses from events it does not exclude) and wri
 - `figures/interpulse_bands.png`: inter-pulse excess over the background noise per decidecade band and sensor.
 - `tables/masking.csv`: median inter-pulse excess per site and sensor, and the detection range and communication space remaining for cylindrical spreading (`[interpulse] spreading`, default 10).
 - `tables/masking_bands.csv`, `figures/masking_bands.png`: the same for the median excess in each decidecade band; the figure shows the detection range remaining against band frequency.
+- `figures/correlation_vs_range.png`, `tables/correlation_vs_range.csv`: median ρ<sub>ij</sub> (from `correlation`) of consecutive strikes and at about 1 min and 5 min between strikes, per event and sensor, against range.
 - `compare.docx`: the above with captions.
 
 Except for the depth figure, levels are on each sensor's detection channel.

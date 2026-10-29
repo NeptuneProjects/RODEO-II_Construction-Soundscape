@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soundscape"
-version = "0.2.2"
+version = "0.2.3"
 description = "Soundscape analysis of offshore pile driving, generalized across wind farm sites"
 authors = [{ name = "William F. Jenkins", email = "wfjenkins@ucsd.edu" }]
 requires-python = ">= 3.12"

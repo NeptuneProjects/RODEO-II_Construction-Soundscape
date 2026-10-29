@@ -2490,8 +2490,8 @@ wheels = [
 
 [[package]]
 name = "rodeo"
-version = "0.0.8"
-source = { editable = "../core" }
+version = "0.1.0"
+source = { git = "https://github.com/NeptuneProjects/RODEO-II.git#a41600c4a3f9b8c8d9564db341f45412d54e4e66" }
 dependencies = [
     { name = "bathyreq" },
     { name = "cmasher" },
@@ -2505,22 +2505,6 @@ dependencies = [
     { name = "scipy" },
     { name = "tqdm" },
     { name = "tritonoa" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "bathyreq" },
-    { name = "cmasher" },
-    { name = "cmocean" },
-    { name = "h5py" },
-    { name = "juliacall" },
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "polars" },
-    { name = "pyproj" },
-    { name = "scipy" },
-    { name = "tqdm" },
-    { name = "tritonoa", git = "ssh://git@github.com/TritonOA/TritonOA.git" },
 ]
 
 [[package]]
@@ -2770,9 +2754,9 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2" },
     { name = "pyproj" },
     { name = "python-docx", specifier = ">=1.2.0" },
-    { name = "rodeo", marker = "extra == 'full'", editable = "../core" },
+    { name = "rodeo", marker = "extra == 'full'", git = "https://github.com/NeptuneProjects/RODEO-II.git" },
     { name = "scipy" },
-    { name = "tritonoa", git = "ssh://git@github.com/TritonOA/TritonOA.git" },
+    { name = "tritonoa", git = "https://github.com/TritonOA/TritonOA.git" },
 ]
 provides-extras = ["full"]
 
@@ -2941,7 +2925,7 @@ wheels = [
 [[package]]
 name = "tritonoa"
 version = "0.0.77"
-source = { git = "ssh://git@github.com/TritonOA/TritonOA.git#d9f5e3dae538e735e5c7c7d43bd39958df9ec174" }
+source = { git = "https://github.com/TritonOA/TritonOA.git#d9f5e3dae538e735e5c7c7d43bd39958df9ec174" }
 dependencies = [
     { name = "h5py" },
     { name = "matplotlib" },

@@ -13,7 +13,10 @@ The analysis was developed for South Fork Wind (2023) and is generalized so the 
 uv sync --group dev
 ```
 
-[TritonOA](https://github.com/TritonOA/TritonOA) is used to read raw recordings and is installed from GitHub over SSH.
+[TritonOA](https://github.com/TritonOA/TritonOA) is used to read raw recordings and is installed from GitHub.
+The analyses in `scripts/` outside the workflow need the `full` extra (`uv sync --extra full`), which also installs [rodeo](https://github.com/NeptuneProjects/RODEO-II) from the main branch on GitHub, at the commit recorded in `uv.lock`.
+To pick up newer rodeo commits, run `uv lock --upgrade-package rodeo`.
+To work on rodeo alongside this project, run `uv pip install -e ../core` after `uv sync`; the next `uv sync` restores the locked commit.
 
 ## Workflow
 

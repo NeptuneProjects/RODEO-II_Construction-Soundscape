@@ -13,7 +13,7 @@ dependencies = [
     "matplotlib",
     "numpy",
     "pillow>=12.3.0",
-    "polars<2",  # TritonOA inventory loading breaks on polars 2
+    "polars<2",           # TritonOA inventory loading breaks on polars 2
     "pydantic>=2",
     "pyproj",
     "python-docx>=1.2.0",
@@ -26,9 +26,9 @@ dependencies = [
 # pulse coherence, CTD and meteorological figures, and the study area map.
 # Only what rodeo does not already provide.
 full = [
-    "jupyterlab",  # the notebooks in scripts/
-    "netcdf4",     # scripts/plotting/plot_pile_sim.py
-    "rodeo",       # ../core; brings bathyreq, cmasher, cmocean, juliacall, tqdm
+    "jupyterlab", # the notebooks in scripts/
+    "netcdf4",    # scripts/plotting/plot_pile_sim.py
+    "rodeo",      # brings bathyreq, cmasher, cmocean, juliacall, tqdm
 ]
 
 [dependency-groups]
@@ -38,8 +38,8 @@ dev = ["pytest"]
 soundscape = "soundscape.workflow:main"
 
 [tool.uv.sources]
-rodeo = { path = "../core", editable = true }
-TritonOA = { git = "ssh://git@github.com/TritonOA/TritonOA.git" }
+rodeo = { git = "https://github.com/NeptuneProjects/RODEO-II.git" }
+TritonOA = { git = "https://github.com/TritonOA/TritonOA.git" }
 
 [tool.hatch.metadata]
 allow-direct-references = true

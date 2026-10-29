@@ -12,7 +12,7 @@ from docx.shared import RGBColor
 from soundscape import detect, extract, kurtosis, spectra, supplement, workflow
 from soundscape.compare import compare_sites
 from soundscape.config import Exclusion
-from soundscape.document import Document
+from soundscape.document import Document, styles_only
 from soundscape.events import load_events
 from soundscape.metrics import read_table
 from soundscape.report import write_coverage_figure
@@ -285,6 +285,50 @@ def test_report_without_titles(wf, site):
     wf.report()
     assert (site.report_dir / "figures" / "E1" / "metrics_levels.png").exists()
     assert (site.report_dir / "report.docx").exists()
+
+
+def test_styles_only_drops_content_and_keeps_source(tmp_path):
+    import hashlib
+    import zipfile
+
+    import docx as python_docx
+    from docx.shared import Inches
+    from PIL import Image
+
+    png = tmp_path / "image.png"
+    Image.new("RGB", (400, 400), "red").save(png)
+    draft = python_docx.Document()
+    draft.add_heading("Draft", 1)
+    draft.add_paragraph("Body text.")
+    draft.add_picture(str(png))
+    # A margin Word stores exactly (in twentieths of a point).
+    draft.sections[0].left_margin = Inches(1.3)
+    source = tmp_path / "draft.docx"
+    draft.save(str(source))
+    before = hashlib.md5(source.read_bytes()).hexdigest()
+
+    styles = tmp_path / "styles.docx"
+    styles_only(source, styles)
+    assert hashlib.md5(source.read_bytes()).hexdigest() == before
+    names = zipfile.ZipFile(styles).namelist()
+    assert not [n for n in names if n.startswith("word/media/")]
+    copy = python_docx.Document(str(styles))
+    assert not copy.paragraphs or not any(p.text for p in copy.paragraphs)
+    assert copy.sections[0].left_margin == Inches(1.3)
+    assert "Heading 1" in [s.name for s in copy.styles]
+
+
+def test_template_without_caption_style(tmp_path):
+    import docx as python_docx
+
+    template = python_docx.Document()
+    caption = template.styles["Caption"].element
+    caption.getparent().remove(caption)
+    path = tmp_path / "template.docx"
+    template.save(str(path))
+    doc = Document(path)
+    doc.caption("Figure", "A caption.")
+    assert doc.doc.paragraphs[-1].style.name == "Caption"
 
 
 def test_rich_text(tmp_path):

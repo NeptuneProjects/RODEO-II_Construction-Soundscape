@@ -7,11 +7,14 @@ press F9 to update fields).
 Text may mark subscripts and superscripts as `L_{p,pk}` and `uPa^{2}`.
 """
 
+import io
 import re
 from pathlib import Path
+from typing import BinaryIO
 
 import docx
 from docx.enum.section import WD_ORIENT, WD_SECTION
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -64,23 +67,69 @@ def _repeat_header(row) -> None:
     tr_pr.append(header)
 
 
+# Parts of a .docx that carry its styles and page setup rather than its content.
+_STYLE_PARTS = {
+    "styles",
+    "stylesWithEffects",
+    "numbering",
+    "settings",
+    "theme",
+    "fontTable",
+    "webSettings",
+    "header",
+    "footer",
+    "footnotes",
+    "endnotes",
+}
+
+
+def styles_only(source: Path, destination: Path | BinaryIO) -> None:
+    """Copy a .docx keeping only its styles and page setup.
+
+    The body is emptied except for the final section properties (page size,
+    margins, headers, and footers), and every part the body referred to
+    (images, charts, comments, hyperlinks, custom XML) is dropped, so the copy
+    is small enough to serve as a style template. `source` is not modified.
+    """
+    doc = docx.Document(str(source))
+    body = doc.element.body
+    for child in list(body):
+        if child.tag != qn("w:sectPr"):
+            body.remove(child)
+    rels = doc.part.rels
+    for r_id in [k for k, r in rels.items() if r.reltype.rsplit("/", 1)[-1] not in _STYLE_PARTS]:
+        rels.pop(r_id)
+    doc.save(destination if not isinstance(destination, Path) else str(destination))
+
+
 class Document:
     """A Word document of headings, text, figures, and tables.
 
     `template` is a .docx whose styles (and page setup) are used; its content
-    is discarded. Download the shared report as .docx to match its styles.
+    is discarded (see `styles_only`). Download the shared report as .docx to
+    match its styles.
     """
 
     def __init__(self, template: Path | None = None):
-        self.doc = docx.Document(str(template) if template else None)
-        if template is not None:
-            body = self.doc.element.body
-            for child in list(body):
-                if child.tag != qn("w:sectPr"):
-                    body.remove(child)
+        if template is None:
+            self.doc = docx.Document()
+        else:
+            buffer = io.BytesIO()
+            styles_only(template, buffer)
+            buffer.seek(0)
+            self.doc = docx.Document(buffer)
+        # Word defines the Caption style in a file only once it is used, so a
+        # template may lack it.
+        styles = self.doc.styles
+        if "Caption" not in [s.name for s in styles]:
+            caption = styles.add_style("Caption", WD_STYLE_TYPE.PARAGRAPH)
+            caption.base_style = styles["Normal"]
+            caption.font.size = Pt(9)
+            caption.font.italic = True
+            caption.quick_style = True
         # Black captions, as in the documents pandoc writes (Word's default
         # Caption style is blue).
-        self.doc.styles["Caption"].font.color.rgb = RGBColor(0, 0, 0)
+        styles["Caption"].font.color.rgb = RGBColor(0, 0, 0)
         self.counts = {"Figure": 0, "Table": 0}
 
     @property

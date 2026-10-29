@@ -8,19 +8,26 @@ from pathlib import Path
 
 from tritonoa.data.formats.shru import SHRUReader
 
-parser = argparse.ArgumentParser()
-parser.add_argument("files", nargs="+", type=Path)
-parser.add_argument("--out", type=Path, default=Path("."))
-args = parser.parse_args()
-args.out.mkdir(parents=True, exist_ok=True)
 
-reader = SHRUReader()
-for path in args.files:
-    ds = reader.read(path)  # all records and channels; unconditioned, so ADC counts
-    ds.data = ds.data / 2**23  # 24-bit counts -> ±1 full scale
-    wav = args.out / f"{path.stem}.wav"
-    ds.write_wav(wav)
-    print(
-        f"{wav}: {ds.data.shape[0]} channels, {ds.stats.sampling_rate:g} Hz, "
-        f"start {ds.stats.time_init}"
-    )
+def convert_shru_to_wav(files, out):
+    out.mkdir(parents=True, exist_ok=True)
+
+    reader = SHRUReader()
+    for path in files:
+        ds = reader.read(path)  # all records and channels; unconditioned, so ADC counts
+        ds.data = ds.data / 2**23  # 24-bit counts -> ±1 full scale
+        wav = out / f"{path.stem}.wav"
+        ds.write_wav(wav)
+        print(
+            f"{wav}: {ds.data.shape[0]} channels, {ds.stats.sampling_rate:g} Hz, "
+            f"start {ds.stats.time_init}"
+        )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("files", nargs="+", type=Path)
+    parser.add_argument("--out", type=Path, default=Path("."))
+    args = parser.parse_args()
+
+    convert_shru_to_wav(args.files, args.out)

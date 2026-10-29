@@ -67,6 +67,21 @@ def _repeat_header(row) -> None:
     tr_pr.append(header)
 
 
+def _keep_together(table) -> None:
+    """Move the whole table to the next page rather than split it, when it
+    fits on one page: no row breaks across pages, and every row but the last
+    is kept with the next. A table longer than a page still breaks, with its
+    header row repeated."""
+    for i, row in enumerate(table.rows):
+        cant_split = OxmlElement("w:cantSplit")
+        cant_split.set(qn("w:val"), "true")
+        row._tr.get_or_add_trPr().append(cant_split)
+        if i < len(table.rows) - 1:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    p.paragraph_format.keep_with_next = True
+
+
 # Parts of a .docx that carry its styles and page setup rather than its content.
 _STYLE_PARTS = {
     "styles",
@@ -171,6 +186,9 @@ class Document:
     def caption(self, kind: str, text: str) -> None:
         self.counts[kind] += 1
         p = self.doc.add_paragraph(style="Caption")
+        # A caption is never split across pages; a table caption, also kept
+        # with its table, moves to the next page with it.
+        p.paragraph_format.keep_together = True
         p.add_run(f"{kind} ")
         _seq_field(p, kind, self.counts[kind])
         add_text(p, f": {text}")
@@ -195,9 +213,9 @@ class Document:
         align: str | None = None,
         font_pt: float = 8.0,
     ) -> None:
-        """A table with its caption above. `align` has one letter per column
-        (l, c, r). A row's trailing empty cells are merged into the last
-        nonempty one."""
+        """A table with its caption above, kept on one page where it fits
+        (see `_keep_together`). `align` has one letter per column (l, c, r).
+        A row's trailing empty cells are merged into the last nonempty one."""
         self.caption("Table", caption)
         self.doc.paragraphs[-1].paragraph_format.keep_with_next = True
         align = align or "l" * len(columns)
@@ -221,6 +239,7 @@ class Document:
                 last = max(j for j, v in enumerate(values) if v or j == 0)
                 if last < len(columns) - 1:
                     cells[last].merge(cells[-1])
+        _keep_together(table)
         # Space after the table, so consecutive tables or figures separate.
         self.doc.add_paragraph()
 

@@ -10,13 +10,13 @@ Output layout:
     <output>/
     ├── compare.docx
     ├── figures/{levels_vs_range,depth,psd,background_vs_range,interpulse_vs_range,
-    │            interpulse_bands,masking_bands}.png
+    │            interpulse_bands,masking_bands,correlation_vs_range}.png
     └── tables/{summary.{csv,tex},range_fits.csv,background_fits.csv,masking.csv,
-                masking_bands.csv}
+                masking_bands.csv,correlation_vs_range.csv}
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -33,6 +33,7 @@ from soundscape.interpulse import masking_factors
 from soundscape.metrics import read_table
 from soundscape.report import (
     METRIC_LABELS,
+    RHO_MIN,
     WORD_LABELS,
     _and,
     _axis_label,
@@ -65,6 +66,8 @@ class SiteData:
     df: pl.DataFrame  # valid pulses, all channels, with a `site` column
     background_spl: pl.DataFrame | None
     interpulse: dict[str, pl.DataFrame]  # see report.interpulse_summaries
+    # "summary" and "bins" of the correlation stage (see correlation.summarize)
+    correlation: dict[str, pl.DataFrame] = field(default_factory=dict)
 
 
 def load_site_data(site: SiteConfig) -> SiteData | None:
@@ -87,7 +90,14 @@ def load_site_data(site: SiteConfig) -> SiteData | None:
         inter["bands"] = pl.read_csv(site.interpulse_summary_path("bands"))
     names = [e.name for e in events]
     inter = {k: v.filter(pl.col("event").is_in(names)) for k, v in inter.items()}
-    return SiteData(site, events, df, background, inter)
+    corr = {
+        k: pl.read_csv(p, schema_overrides={"serial_number": pl.String}).filter(
+            pl.col("event").is_in(names)
+        )
+        for k in ("summary", "bins")
+        if (p := site.correlation_summary_path(k)).exists()
+    }
+    return SiteData(site, events, df, background, inter, corr)
 
 
 def _range_axis(ax: plt.Axes) -> None:
@@ -524,6 +534,75 @@ def plot_interpulse_vs_range(
     return fig
 
 
+# Times between strikes (s) at which the correlation is compared against range,
+# with their labels, after the consecutive strikes.
+CORRELATION_DT = {60.0: "1 min", 300.0: "5 min"}
+
+
+def correlation_vs_range(data: list[SiteData]) -> pl.DataFrame:
+    """Median rho_ij against range for each event and sensor on the detection
+    channel: of consecutive strikes (`rho_first`), and in the bin of time
+    between strikes nearest each of CORRELATION_DT (`rho_<label>`, e.g.
+    `rho_1min`), with the decorrelation times `T_<x>`."""
+    frames = []
+    for d in data:
+        if not {"summary", "bins"} <= d.correlation.keys():
+            continue
+        s = detection_channels(d.site, d.correlation["summary"])
+        b = detection_channels(d.site, d.correlation["bins"])
+        centers = b["dt_s"].unique().sort().to_numpy()
+        for t, label in CORRELATION_DT.items():
+            c = centers[np.argmin(np.abs(centers - t))]
+            at = b.filter(pl.col("dt_s") == c).select(
+                "event", "sensor", pl.col("rho_median").alias(_rho_column(label))
+            )
+            s = s.join(at, on=["event", "sensor"], how="left")
+        frames.append(
+            s.with_columns(
+                site=pl.lit(d.site.name), range_km=pl.col("range_m") / 1e3
+            ).drop("range_m")
+        )
+    if not frames:
+        return pl.DataFrame()
+    out = pl.concat(frames, how="diagonal_relaxed")
+    first = ["site", "event", "sensor", "channel", "depth_m", "serial_number"]
+    first += ["range_km", "n_pulses", "rho_first"]
+    first += [_rho_column(v) for v in CORRELATION_DT.values()]
+    return out.select(first + [c for c in out.columns if c not in first]).sort(
+        "site", "range_km"
+    )
+
+
+def _rho_column(label: str) -> str:
+    return "rho_" + label.replace(" ", "")
+
+
+def plot_correlation_vs_range(pts: pl.DataFrame) -> plt.Figure:
+    """Median rho_ij of consecutive strikes and at each of CORRELATION_DT
+    against range, one panel each, colored by site."""
+    panels = [("rho_first", "Consecutive strikes")] + [
+        (_rho_column(v), f"{v} between strikes") for v in CORRELATION_DT.values()
+    ]
+    fig, axs = plt.subplots(
+        1, len(panels), figsize=(8.5, 3.0), layout="constrained", sharey=True
+    )
+    sites = pts["site"].unique(maintain_order=True).to_list()
+    for ax, (col, title) in zip(axs, panels):
+        for k, site in enumerate(sites):
+            d = pts.filter(pl.col("site") == site, pl.col(col).is_not_null())
+            ax.plot(
+                d["range_km"], d[col], MARKERS[k], ms=4, color=f"C{k}", label=site
+            )
+        ax.set_title(title, fontsize="small")
+        ax.set_xlabel("Range (km)")
+        _range_axis(ax)
+        ax.grid(True, which="both", lw=0.3)
+        ax.legend(fontsize="x-small", loc="lower left")
+    axs[0].set_ylabel(f"Median {METRIC_LABELS['rho'][0]}")
+    axs[0].set_ylim(RHO_MIN, 1.0)
+    return fig
+
+
 def plot_interpulse_bands(data: list[SiteData]) -> plt.Figure | None:
     """Median excess over the background noise in each decidecade band between pulses,
     per sensor (median over events), one panel per site."""
@@ -731,6 +810,15 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
     masking = masking_table(data)
     if not masking.is_empty():
         masking.write_csv(tables / "masking.csv")
+    corr = correlation_vs_range(data)
+    if not corr.is_empty():
+        corr.write_csv(tables / "correlation_vs_range.csv")
+        _save(
+            plot_correlation_vs_range(corr),
+            figs / "correlation_vs_range.png",
+            cfg.dpi,
+            cfg.titles,
+        )
     masking_bands = masking_bands_table(data)
     if not masking_bands.is_empty():
         masking_bands.write_csv(tables / "masking_bands.csv")
@@ -806,6 +894,8 @@ def compare_sites(sites: list[SiteConfig], output: Path) -> None:
         _interpulse_section(
             doc, data, figs, masking, ip_bands is not None, not masking_bands.is_empty()
         )
+    if not corr.is_empty():
+        _correlation_section(doc, data, figs)
     path = output / "compare.docx"
     doc.save(path)
     logger.info(f"[compare] {path}")
@@ -898,6 +988,22 @@ def _interpulse_section(
             "figure). The area remaining is the square of the range remaining. "
             "Bands below about 50 Hz are approximate (see above).",
         )
+
+
+def _correlation_section(doc: Document, data: list[SiteData], figs: Path) -> None:
+    """Correlation between pulses against range in compare.docx."""
+    c = data[0].site.correlation
+    lo, hi = c.band
+    times = _and([f"about {v}" for v in CORRELATION_DT.values()])
+    doc.heading("Correlation between pulses versus range", 2)
+    doc.figure(
+        figs / "correlation_vs_range.png",
+        f"Median maximum normalized cross-correlation coefficient ρ_{{ij}} "
+        f"between pulses ({lo:g} Hz to {hi:g} Hz) against range, for each event "
+        f"and sensor on the detection channel: for consecutive strikes (pairs "
+        f"less than {c.bin_s:g} s apart), and for strikes {times} apart (the "
+        f"{c.bin_s:g}-s bin of time between strikes nearest each).",
+    )
 
 
 def _background_section(

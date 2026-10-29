@@ -27,7 +27,7 @@ fi
 cd "$ROOT"
 if [[ $# -eq 0 ]]; then
     uv run soundscape detect --reselect --site "$SITE"
-    set -- metrics psd background kurtosis interpulse report supplement
+    set -- metrics psd background kurtosis interpulse correlation report supplement
 fi
 for step in "$@"; do
     uv run soundscape "$step" --site "$SITE"

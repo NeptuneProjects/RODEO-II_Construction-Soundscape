@@ -250,6 +250,38 @@ class InterpulseConfig(StrictModel):
     filter: FilterConfig | None = FilterConfig(type="highpass", freq=10.0)
 
 
+class CorrelationConfig(StrictModel):
+    """Correlation between pulses (Jenkins & Lin, Sci. Rep., Eqs. 5-6).
+
+    Each pulse window is detrended, tapered over `taper_pc` of its length at
+    each end, band-passed to `band`, and downsampled by the largest integer
+    factor that keeps the sampling rate at or above `target_fs`. The maximum
+    normalized cross-correlation coefficient and its lag are computed for
+    every pair of valid pulses on each hydrophone (rodeo CrossCorr.jl, on
+    `threads` Julia threads) and saved in full. Summaries describe the
+    correlation against the time between strikes out to `max_dt_s`, in bins
+    of `bin_s`, and give the time at which the median falls below each of
+    `levels`.
+    """
+
+    band: tuple[float, float] = (10.0, 200.0)
+    target_fs: float = Field(default=1000.0, gt=0.0)
+    taper_pc: float = Field(default=0.05, ge=0.0, lt=0.5)
+    max_dt_s: float = Field(default=300.0, gt=0.0)
+    bin_s: float = Field(default=2.0, gt=0.0)
+    levels: list[float] = [0.9, 0.8]
+    threads: int = Field(default=32, ge=1)
+
+    @model_validator(mode="after")
+    def _check_band(self) -> "CorrelationConfig":
+        lo, hi = self.band
+        if not 0 < lo < hi < self.target_fs / 2:
+            raise ValueError(
+                f"band {self.band} must lie between 0 Hz and half of target_fs"
+            )
+        return self
+
+
 class BandsConfig(StrictModel):
     """Decidecade bands for band levels: those with lower edge at least
     `fmin` and upper edge at most `fmax`. By default `fmax` is
@@ -412,6 +444,7 @@ class SiteConfig(StrictModel):
     pulse_psd: PulsePSDConfig = PulsePSDConfig()
     kurtosis: KurtosisConfig = KurtosisConfig()
     interpulse: InterpulseConfig = InterpulseConfig()
+    correlation: CorrelationConfig = CorrelationConfig()
     bands: BandsConfig = BandsConfig()
     report: ReportConfig = ReportConfig()
 
@@ -490,6 +523,9 @@ class SiteConfig(StrictModel):
     def interpulse_background_path(self, event: str, sensor: str) -> Path:
         return self.event_dir(event) / f"interpulse_background_{sensor}.parquet"
 
+    def correlation_path(self, event: str, sensor: str) -> Path:
+        return self.event_dir(event) / f"correlation_{sensor}.h5"
+
     @property
     def background_segment_s(self) -> float:
         """Averaging time of background noise levels: the pulse window by default."""
@@ -518,6 +554,10 @@ class SiteConfig(StrictModel):
     def interpulse_summary_path(self, kind: str) -> Path:
         """Site-wide inter-pulse summary table (see interpulse.summarize_site)."""
         return self.output_dir / f"interpulse_{kind}.csv"
+
+    def correlation_summary_path(self, kind: str) -> Path:
+        """Site-wide correlation summary table (see correlation.summarize_site)."""
+        return self.output_dir / f"correlation_{kind}.csv"
 
 
 def load_site(path: Path) -> SiteConfig:

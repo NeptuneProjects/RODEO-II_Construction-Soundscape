@@ -10,6 +10,7 @@ Stages, in order:
     background    background noise preceding each event
     kurtosis   kurtosis of the recording in 60 s windows over each event
     interpulse sound between strikes in 100 ms segments, and background noise likewise
+    correlation maximum normalized cross-correlation between every pair of pulses
     report     figures, LaTeX tables, and a Word document
     supplement PDF table of every pulse (data supplement)
     run        all of the above
@@ -32,6 +33,8 @@ from tritonoa.data.reader import NoDataError
 from soundscape import detect as det
 from soundscape.compare import compare_sites
 from soundscape.config import SensorConfig, SiteConfig, load_site
+from soundscape.correlation import correlate, write_correlation
+from soundscape.correlation import summarize_site as summarize_correlation
 from soundscape.events import Event, load_events, too_few_strikes
 from soundscape.extract import extract
 from soundscape.interpulse import background_segments, interpulse, summarize_site
@@ -344,6 +347,33 @@ class Workflow:
                 table.write_csv(self.site.interpulse_summary_path(kind))
         logger.info(f"[interpulse] summaries -> {self.site.output_dir}")
 
+    def correlation(self) -> None:
+        def _correlation(event: Event, sensor) -> None:
+            pulses = self.site.pulses_path(event.name, sensor.name)
+            path = self.site.metrics_path(event.name, sensor.name)
+            for p in (pulses, path):
+                if not p.exists():
+                    logger.warning(f"[correlation] missing {p}")
+                    return
+            if too_few_strikes(self.site, event.name, sensor.name):
+                logger.info(
+                    f"[correlation] {event.name}/{sensor.name}: fewer than "
+                    f"{self.site.min_strikes} strikes, skipped"
+                )
+                return
+            data, attrs = correlate(pulses, read_table(path), self.site.correlation)
+            dest = self.site.correlation_path(event.name, sensor.name)
+            write_correlation(dest, data, attrs)
+            logger.info(f"[correlation] {event.name}/{sensor.name} -> {dest}")
+
+        self._each(_correlation, "correlation")
+        # Summaries over every event in the site file, not only those rerun.
+        tables = summarize_correlation(self.site, load_events(self.site))
+        for kind, table in tables.items():
+            if not table.is_empty():
+                table.write_csv(self.site.correlation_summary_path(kind))
+        logger.info(f"[correlation] summaries -> {self.site.output_dir}")
+
     def report(self) -> None:
         make_report(self.site, self.events)
 
@@ -359,6 +389,7 @@ class Workflow:
         self.background()
         self.kurtosis()
         self.interpulse()
+        self.correlation()
         self.report()
         self.supplement()
 
@@ -385,6 +416,7 @@ COMMANDS = [
     "background",
     "kurtosis",
     "interpulse",
+    "correlation",
     "report",
     "supplement",
     "run",

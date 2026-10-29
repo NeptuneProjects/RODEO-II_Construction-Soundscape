@@ -339,6 +339,26 @@ def test_rich_text(tmp_path):
     assert runs[1].font.subscript and runs[3].font.superscript
 
 
+def test_tables_kept_on_one_page():
+    from docx.oxml.ns import qn
+
+    doc = Document()
+    doc.table(["A", "B"], [["1", "2"], ["3", ""], ["5", "6"]], "A caption.")
+    table = doc.doc.tables[-1]
+    # No row breaks across pages, and every row but the last stays with the
+    # next, so a table that fits on a page moves to the next page whole.
+    for row in table.rows:
+        assert row._tr.trPr.find(qn("w:cantSplit")) is not None
+    keep = [
+        all(p.paragraph_format.keep_with_next for c in row.cells for p in c.paragraphs)
+        for row in table.rows
+    ]
+    assert keep == [True, True, True, False]
+    # The caption is never split, and stays with the table.
+    caption = doc.doc.paragraphs[-2].paragraph_format
+    assert caption.keep_with_next and caption.keep_together
+
+
 def test_compare(wf, site, tmp_path):
     site.background.offset_s = -600.0
     site.background.duration_s = 120.0

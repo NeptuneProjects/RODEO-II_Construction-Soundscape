@@ -18,6 +18,8 @@ The analyses in `scripts/` outside the workflow need the `full` extra (`uv sync 
 To pick up newer rodeo commits, run `uv lock --upgrade-package rodeo`.
 To work on rodeo alongside this project, run `uv pip install -e ../core` after `uv sync`; the next `uv sync` restores the locked commit.
 
+To release a version, change `version` in `pyproject.toml` and push to `main`; a GitHub Actions workflow (`.github/workflows/tag-release.yml`) tags the commit `v<version>`.
+
 ## Workflow
 
 ```mermaid
